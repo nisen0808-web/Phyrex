@@ -12,7 +12,7 @@
     <header class="topbar">
       <div>
         <h1>MUD 修仙世界</h1>
-        <p>浏览器本地原型 · 不需要 Python · 双击 index.html 可运行</p>
+        <p>浏览器本地原型 · 世界只在你手动推演时前进 · 不会因为现实离线自动老死</p>
       </div>
       <div class="top-actions">
         <button id="btnSave">保存</button>
@@ -26,9 +26,9 @@
         <div class="world-sub" id="worldSub">世界正在等待第一道命令。</div>
       </div>
       <div class="world-controls">
-        <button id="btnTick">推进一天</button>
-        <button id="btnTick10">推进十天</button>
-        <button id="btnOffline">模拟离线30天</button>
+        <button id="btnTick">推演一天</button>
+        <button id="btnTick10">推演十天</button>
+        <button id="btnOffline">推演三十天</button>
       </div>
     </section>
 
@@ -39,7 +39,7 @@
       </section>
 
       <section class="card">
-        <h2>下达命令</h2>
+        <h2>下达长期命令</h2>
         <div class="form-row">
           <label for="actionSelect">行动</label>
           <select id="actionSelect">
@@ -61,8 +61,8 @@
           <label for="daysInput">持续天数</label>
           <input id="daysInput" type="number" min="1" max="365" value="7" />
         </div>
-        <button id="btnAssign" class="primary">下达离线命令</button>
-        <p class="hint">越危险的行动收益越高，但也越可能受伤或死亡。高情感值更容易组队和求助，也更容易被偷袭成功。</p>
+        <button id="btnAssign" class="primary">下达命令</button>
+        <p class="hint">命令只会在你手动推演世界时间时结算。睡觉、关浏览器、电脑关机，都不会自动推进寿命。</p>
       </section>
 
       <section class="card span-2">
