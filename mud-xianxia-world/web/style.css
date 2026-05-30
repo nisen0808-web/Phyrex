@@ -21,112 +21,71 @@ body {
 }
 
 button, input, select { font: inherit; }
-
-button {
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--text);
-  padding: 10px 14px;
-  border-radius: 10px;
-  cursor: pointer;
-}
-
+button { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); padding: 10px 14px; border-radius: 10px; cursor: pointer; }
 button:hover { border-color: var(--gold); }
 button.primary { background: #4b3920; border-color: var(--gold); }
 button.danger { background: #3a2020; border-color: #684040; }
 
-.app-shell {
-  width: min(1880px, calc(100vw - 28px));
-  margin: 0 auto;
-  padding: 22px 0 42px;
-}
-
-.topbar {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
+.app-shell { width: min(1880px, calc(100vw - 28px)); margin: 0 auto; padding: 18px 0 42px; }
+.topbar { display: flex; justify-content: space-between; gap: 18px; align-items: center; margin-bottom: 14px; }
 .topbar h1 { margin: 0 0 6px; font-size: 30px; }
 .topbar p { margin: 0; color: var(--muted); }
 .top-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
-.card {
-  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)), var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  padding: 18px;
-  box-shadow: 0 18px 40px rgba(0,0,0,0.22);
-}
-
+.card { background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)), var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px; box-shadow: 0 18px 40px rgba(0,0,0,0.22); }
 .card h2 { margin: 0 0 14px; font-size: 18px; }
 
-.world-panel {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 16px;
-}
-
+.world-panel { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 14px; }
 .world-date { font-size: 24px; font-weight: 700; color: var(--gold); }
 .world-sub { margin-top: 6px; color: var(--muted); }
 .world-controls { display: flex; gap: 10px; flex-wrap: wrap; }
 
-.game-shell {
-  display: grid !important;
-  grid-template-columns: 360px minmax(520px, 1fr) 340px !important;
-  gap: 16px;
-  align-items: start;
-}
+.game-shell { display: grid !important; grid-template-columns: 640px minmax(520px, 1fr) 440px !important; gap: 16px; align-items: start; }
+.left-map-column, .center-story-column, .right-contact-column { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.left-map-column, .right-contact-column { position: sticky; top: 12px; }
 
-.left-map-column,
-.center-story-column,
-.right-contact-column {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
-
-.left-map-column,
-.right-contact-column {
-  position: sticky;
-  top: 12px;
-}
-
-.map-card .world-map { min-height: 640px; }
-.scene-card { min-height: 280px; }
+.map-card .world-map { min-height: 760px; }
+.scene-card { min-height: 260px; }
 .scene-title { font-size: 22px; color: var(--gold); font-weight: 800; margin-bottom: 10px; }
 .scene-panel p { color: #c7d2df; line-height: 1.8; }
 .scene-block { border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-top: 12px; background: rgba(255,255,255,0.025); }
 .scene-block h3 { margin: 0 0 8px; font-size: 15px; color: var(--gold); }
 .tutorial-list { display: grid; gap: 8px; }
 .tutorial-item { padding: 9px 10px; border-radius: 10px; background: rgba(255,255,255,0.035); color: #c7d2df; line-height: 1.6; }
-.npc-sidebar-card .npc-list,
-.relation-sidebar .contact-list { max-height: 560px; overflow: auto; }
+
+.center-story-column .card:last-child { order: -10; border-color: rgba(214,168,79,.28); }
+.center-story-column .card:last-child h2::after { content: " · 身边信息"; color: var(--muted); font-weight: 400; font-size: 13px; }
+.center-story-column .log-list { max-height: 180px; overflow: auto; }
+.center-story-column .log-item { padding: 8px 10px; border-radius: 10px; }
+
+.npc-sidebar-card .npc-list, .relation-sidebar .contact-list { max-height: 560px; overflow: auto; }
+.npc-sidebar-card .npc-list { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.npc-sidebar-card .npc-card { padding: 10px; display: block; }
+.npc-sidebar-card .npc-card .stat-grid { display: none; }
+.npc-sidebar-card .npc-card .npc-title { margin-bottom: 6px; }
+.npc-sidebar-card .npc-card .badge:not(.alive):not(.dead):not(.team) { display: none; }
+.npc-sidebar-card .npc-card .npc-meta { font-size: 12px; max-height: 42px; overflow: hidden; }
+
+.relation-sidebar .relations-grid { display: grid; grid-template-columns: 1fr; gap: 10px; max-height: 560px; overflow: auto; }
+.relation-sidebar .relation { padding: 12px; }
+.relation-sidebar .relation-title { margin-bottom: 6px; }
+.relation-sidebar .relation-meta { font-size: 12px; }
 
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .span-2 { grid-column: span 2; }
 .character-card, .npc-card { display: grid; gap: 10px; }
-
 .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .stat { background: rgba(255,255,255,0.035); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
 .stat .label { color: var(--muted); font-size: 12px; }
 .stat .value { margin-top: 4px; font-size: 18px; font-weight: 700; }
-
 .badge { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: rgba(255,255,255,0.04); padding: 5px 9px; border-radius: 999px; color: var(--muted); font-size: 12px; }
 .badge.alive { color: var(--green); border-color: rgba(101,193,140,0.45); }
 .badge.dead { color: var(--red); border-color: rgba(232,106,106,0.45); }
 .badge.team { color: var(--blue); border-color: rgba(118,169,250,0.45); }
-
 .form-row { display: grid; grid-template-columns: 90px 1fr; align-items: center; gap: 10px; margin-bottom: 12px; }
 .form-row label { color: var(--muted); }
 input, select { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
 .hint { color: var(--muted); line-height: 1.7; margin-bottom: 0; }
-
 .orders-list, .npc-list, .relations-grid, .log-list { display: grid; gap: 10px; }
 .order, .npc-card, .relation, .log-item { border: 1px solid var(--line); background: rgba(255,255,255,0.03); border-radius: 14px; padding: 12px; }
 .order-title, .npc-title, .relation-title { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 8px; }
@@ -138,13 +97,5 @@ input, select { width: 100%; background: var(--panel-2); color: var(--text); bor
 .log-item strong { color: var(--gold); }
 .empty { color: var(--muted); border: 1px dashed var(--line); border-radius: 14px; padding: 16px; text-align: center; }
 
-@media (max-width: 1200px) {
-  .topbar, .world-panel { flex-direction: column; align-items: stretch; }
-  .game-shell { grid-template-columns: 1fr !important; }
-  .left-map-column, .right-contact-column { position: static; }
-  .map-card .world-map { min-height: 520px; }
-  .grid { grid-template-columns: 1fr; }
-  .span-2 { grid-column: span 1; }
-  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .relations-grid { grid-template-columns: 1fr; }
-}
+@media (max-width: 1500px) { .game-shell { grid-template-columns: 420px minmax(480px, 1fr) 360px !important; } .map-card .world-map { min-height: 640px; } }
+@media (max-width: 1200px) { .topbar, .world-panel { flex-direction: column; align-items: stretch; } .game-shell { grid-template-columns: 1fr !important; } .left-map-column, .right-contact-column { position: static; } .map-card .world-map { min-height: 520px; } .grid { grid-template-columns: 1fr; } .span-2 { grid-column: span 1; } .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .relations-grid { grid-template-columns: 1fr; } }
