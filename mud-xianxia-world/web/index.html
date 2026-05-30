@@ -33,64 +33,78 @@
       </div>
     </section>
 
-    <main class="grid game-layout">
-      <section class="card">
-        <h2>玩家</h2>
-        <div id="playerCard" class="character-card"></div>
+    <main class="game-shell">
+      <aside class="left-map-column">
+        <section class="card map-card">
+          <h2>世界地图</h2>
+          <div id="worldMap" class="world-map"></div>
+          <div id="locationLegend" class="location-legend"></div>
+        </section>
+      </aside>
+
+      <section class="center-story-column">
+        <section class="card scene-card">
+          <h2>当前场景</h2>
+          <div id="scenePanel" class="scene-panel">
+            <div class="scene-title">新手村</div>
+            <p>这里以后会显示当前地点描述、附近人物、当天事件、行动结果和剧情文本。</p>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>玩家</h2>
+          <div id="playerCard" class="character-card"></div>
+        </section>
+
+        <section class="card">
+          <h2>下达长期命令</h2>
+          <div class="form-row">
+            <label for="actionSelect">行动</label>
+            <select id="actionSelect">
+              <option value="cultivate">修炼</option>
+              <option value="meditate">打坐</option>
+              <option value="work">赚钱</option>
+              <option value="explore">探索</option>
+              <option value="socialize">社交</option>
+              <option value="askItem">索要物品</option>
+              <option value="inviteTeam">邀请组队</option>
+              <option value="ambush">偷袭</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="targetSelect">目标</label>
+            <select id="targetSelect"></select>
+          </div>
+          <div class="form-row">
+            <label for="daysInput">持续天数</label>
+            <input id="daysInput" type="number" min="1" max="365" value="7" />
+          </div>
+          <button id="btnAssign" class="primary">下达命令</button>
+          <p class="hint">命令只会在你手动推演世界时间时结算。睡觉、关浏览器、电脑关机，都不会自动推进寿命。</p>
+        </section>
+
+        <section class="card">
+          <h2>当前命令</h2>
+          <div id="ordersList" class="orders-list"></div>
+        </section>
+
+        <section class="card">
+          <h2>世界日志</h2>
+          <div id="logList" class="log-list"></div>
+        </section>
       </section>
 
-      <section class="card">
-        <h2>下达长期命令</h2>
-        <div class="form-row">
-          <label for="actionSelect">行动</label>
-          <select id="actionSelect">
-            <option value="cultivate">修炼</option>
-            <option value="meditate">打坐</option>
-            <option value="work">赚钱</option>
-            <option value="explore">探索</option>
-            <option value="socialize">社交</option>
-            <option value="askItem">索要物品</option>
-            <option value="inviteTeam">邀请组队</option>
-            <option value="ambush">偷袭</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <label for="targetSelect">目标</label>
-          <select id="targetSelect"></select>
-        </div>
-        <div class="form-row">
-          <label for="daysInput">持续天数</label>
-          <input id="daysInput" type="number" min="1" max="365" value="7" />
-        </div>
-        <button id="btnAssign" class="primary">下达命令</button>
-        <p class="hint">命令只会在你手动推演世界时间时结算。睡觉、关浏览器、电脑关机，都不会自动推进寿命。</p>
-      </section>
+      <aside class="right-contact-column">
+        <section class="card relation-sidebar">
+          <h2>人物关系</h2>
+          <div id="relationsGrid" class="relations-grid contact-list"></div>
+        </section>
 
-      <section class="card relation-sidebar">
-        <h2>人物关系</h2>
-        <div id="relationsGrid" class="relations-grid contact-list"></div>
-      </section>
-
-      <section class="card span-2 main-wide">
-        <h2>世界地图</h2>
-        <div id="worldMap" class="world-map"></div>
-        <div id="locationLegend" class="location-legend"></div>
-      </section>
-
-      <section class="card span-2 main-wide">
-        <h2>当前命令</h2>
-        <div id="ordersList" class="orders-list"></div>
-      </section>
-
-      <section class="card span-2 main-wide">
-        <h2>NPC</h2>
-        <div id="npcList" class="npc-list"></div>
-      </section>
-
-      <section class="card span-2 main-wide">
-        <h2>世界日志</h2>
-        <div id="logList" class="log-list"></div>
-      </section>
+        <section class="card npc-sidebar-card">
+          <h2>NPC</h2>
+          <div id="npcList" class="npc-list"></div>
+        </section>
+      </aside>
     </main>
   </div>
 
