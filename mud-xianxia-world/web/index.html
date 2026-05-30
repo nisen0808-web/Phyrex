@@ -6,6 +6,7 @@
   <title>MUD Xianxia World</title>
   <link rel="stylesheet" href="./style.css" />
   <link rel="stylesheet" href="./map.css" />
+  <link rel="stylesheet" href="./relations.css" />
 </head>
 <body>
   <div class="app-shell">
@@ -32,7 +33,7 @@
       </div>
     </section>
 
-    <main class="grid">
+    <main class="grid game-layout">
       <section class="card">
         <h2>玩家</h2>
         <div id="playerCard" class="character-card"></div>
@@ -65,28 +66,28 @@
         <p class="hint">命令只会在你手动推演世界时间时结算。睡觉、关浏览器、电脑关机，都不会自动推进寿命。</p>
       </section>
 
-      <section class="card span-2">
+      <section class="card relation-sidebar">
+        <h2>人物关系</h2>
+        <div id="relationsGrid" class="relations-grid contact-list"></div>
+      </section>
+
+      <section class="card span-2 main-wide">
         <h2>世界地图</h2>
         <div id="worldMap" class="world-map"></div>
         <div id="locationLegend" class="location-legend"></div>
       </section>
 
-      <section class="card span-2">
+      <section class="card span-2 main-wide">
         <h2>当前命令</h2>
         <div id="ordersList" class="orders-list"></div>
       </section>
 
-      <section class="card span-2">
-        <h2>人物关系</h2>
-        <div id="relationsGrid" class="relations-grid"></div>
-      </section>
-
-      <section class="card span-2">
+      <section class="card span-2 main-wide">
         <h2>NPC</h2>
         <div id="npcList" class="npc-list"></div>
       </section>
 
-      <section class="card span-2">
+      <section class="card span-2 main-wide">
         <h2>世界日志</h2>
         <div id="logList" class="log-list"></div>
       </section>
@@ -94,5 +95,6 @@
   </div>
 
   <script src="./game.js"></script>
+  <script src="./relations.js"></script>
 </body>
 </html>
