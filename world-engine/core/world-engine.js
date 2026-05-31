@@ -108,9 +108,10 @@ function processActionQueue(world, options = {}) {
   const completed = [];
   const active = [];
   const failed = [];
+  const actionOptions = { ...options, emitEvent };
 
   for (const action of world.actionQueue) {
-    const result = applyActionTick(world, action, options);
+    const result = applyActionTick(world, action, actionOptions);
     if (result.status === 'completed') completed.push(result);
     else if (result.status === 'failed') failed.push(result);
     else active.push(action);
