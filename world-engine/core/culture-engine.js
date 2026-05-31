@@ -121,7 +121,7 @@ function syncOrganizationCultures(world) {
     if (org.type === 'guild' || org.type === 'company') traits[CULTURE_TRAITS.TRADE] = 55;
     if (org.type === 'state') traits[CULTURE_TRAITS.ORDER] = 60;
     if (org.type === 'church') traits[CULTURE_TRAITS.FAITH] = 65;
-    if (org.type === 'gang') traits[CULTURE_TRAITS.SEcrecy] = 35;
+    if (org.type === 'gang') traits[CULTURE_TRAITS.SECRECY] = 35;
     synced.push(upsertCulture(world, {
       ownerType: CULTURE_SCOPE.ORGANIZATION,
       ownerId: org.id,
@@ -173,10 +173,11 @@ function syncSpeciesCultures(world) {
 function updateCultureDrift(world, options = {}) {
   const drifted = [];
   for (const culture of Object.values(ensureCultureState(world).byId)) {
-    const memoryInfluence = calculateMemoryCultureInfluence(world, culture, options);
-    const economyInfluence = calculateEconomyCultureInfluence(world, culture, options);
-    const identityInfluence = calculateIdentityCultureInfluence(world, culture, options);
-    const influences = [memoryInfluence, economyInfluence, identityInfluence];
+    const influences = [
+      calculateMemoryCultureInfluence(world, culture, options),
+      calculateEconomyCultureInfluence(world, culture, options),
+      calculateIdentityCultureInfluence(world, culture, options),
+    ];
     for (const influence of influences) {
       for (const [trait, amount] of Object.entries(influence)) {
         culture.traits[trait] = clamp(Number(culture.traits[trait] || 0) + amount, 0, 100);
@@ -201,7 +202,7 @@ function calculateMemoryCultureInfluence(world, culture, options = {}) {
     if (memory.type === 'trauma') out[CULTURE_TRAITS.SURVIVAL] = (out[CULTURE_TRAITS.SURVIVAL] || 0) + options.memoryInfluence;
     if (memory.type === 'achievement') out[CULTURE_TRAITS.LEGACY] = (out[CULTURE_TRAITS.LEGACY] || 0) + options.memoryInfluence;
     if (memory.type === 'obligation') out[CULTURE_TRAITS.ORDER] = (out[CULTURE_TRAITS.ORDER] || 0) + options.memoryInfluence;
-    if (memory.type === 'rumor') out[CULTURE_TRAITS.SEcrecy] = (out[CULTURE_TRAITS.SEcrecy] || 0) + options.memoryInfluence;
+    if (memory.type === 'rumor') out[CULTURE_TRAITS.SECRECY] = (out[CULTURE_TRAITS.SECRECY] || 0) + options.memoryInfluence;
   }
   return normalizeTraits(out);
 }
