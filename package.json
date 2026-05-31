@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "test": "node world-engine/tests/smoke-test.js"
+  },
+  "devDependencies": {}
+}
