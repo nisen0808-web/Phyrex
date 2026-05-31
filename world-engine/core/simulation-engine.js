@@ -9,6 +9,8 @@ const { processContractsTick } = require('./contract-engine');
 const { processOrganizationsTick } = require('./organization-engine');
 const { ensureEconomyState, seedIndustriesFromOrganizations, processEconomyTick } = require('./economy-engine');
 const { processCityTick } = require('./city-engine');
+const { processInformationTick } = require('./information-engine');
+const { processMemoryTick } = require('./memory-engine');
 const { ingestWorldMemory } = require('./history-engine');
 const { calculateAllNarrativeScores } = require('./narrative-score-engine');
 const { updateNovelBlueprints } = require('./novel-engine');
@@ -22,6 +24,8 @@ const DEFAULT_SIMULATION_OPTIONS = {
   autoOrganizations: true,
   autoEconomy: true,
   autoCity: true,
+  autoInformation: true,
+  autoMemory: true,
   autoHistory: true,
   autoNarrative: true,
   autoNovel: true,
@@ -50,6 +54,10 @@ function ensureSimulationState(world) {
         industriesSeeded: 0,
         economyTicks: 0,
         cityTicks: 0,
+        informationCreated: 0,
+        informationSpread: 0,
+        memoriesCreated: 0,
+        memoriesFaded: 0,
         historyEvents: 0,
       },
     };
@@ -91,6 +99,8 @@ function runSimulationTick(world, options = {}) {
     organizations: null,
     economy: null,
     city: null,
+    information: null,
+    memories: null,
     plans: [],
     world: null,
     history: [],
@@ -151,6 +161,18 @@ function runSimulationTick(world, options = {}) {
   report.world = advanceOneTick(world, config.world || {});
   report.tickAfter = world.tick;
 
+  if (config.autoInformation) {
+    report.information = processInformationTick(world, config.information || {});
+    simulation.counters.informationCreated += report.information.createdFromMemory.length;
+    simulation.counters.informationSpread += report.information.spread.length;
+  }
+
+  if (config.autoMemory) {
+    report.memories = processMemoryTick(world, config.memory || {});
+    simulation.counters.memoriesCreated += report.memories.created.length;
+    simulation.counters.memoriesFaded += report.memories.faded.length;
+  }
+
   if (config.autoHistory) {
     report.history = ingestWorldMemory(world, config.history || {});
     simulation.counters.historyEvents += report.history.length;
@@ -185,6 +207,10 @@ function compactReport(report) {
     industriesSeeded: report.economy?.seededIndustries?.length || 0,
     economyProcessed: Boolean(report.economy),
     cityProcessed: Boolean(report.city),
+    informationCreated: report.information?.createdFromMemory?.length || 0,
+    informationSpread: report.information?.spread?.length || 0,
+    memoriesCreated: report.memories?.created?.length || 0,
+    memoriesFaded: report.memories?.faded?.length || 0,
     plannedActions: report.plans?.length || 0,
     completedActions: report.world?.actions?.completed?.length || 0,
     processedEvents: report.world?.events?.processed?.length || 0,
