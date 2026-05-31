@@ -1,0 +1,9 @@
+{
+  "name": "world-engine",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test": "node tests/smoke-test.js"
+  },
+  "devDependencies": {}
+}
