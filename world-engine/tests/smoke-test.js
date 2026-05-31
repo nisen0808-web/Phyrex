@@ -13,6 +13,7 @@ const { assignSpecies } = require('../core/species-engine');
 const { getPopulationStats } = require('../core/population-engine');
 const { syncFamiliesFromPopulation } = require('../core/family-engine');
 const { createOrganization } = require('../core/organization-engine');
+const { createContract, CONTRACT_TYPES } = require('../core/contract-engine');
 const { seedIndustriesFromOrganizations, processEconomyTick } = require('../core/economy-engine');
 const { processCityTick } = require('../core/city-engine');
 
@@ -51,6 +52,7 @@ function main() {
     autoNarrative: false,
     maxActionPlansPerTick: 20,
     population: { baseBirthChance: 0 },
+    seedIndustriesEveryTicks: 1,
   });
 
   const familySync = syncFamiliesFromPopulation(world, { createForUnassigned: true });
@@ -63,6 +65,14 @@ function main() {
     currency: 100,
   });
   assert.ok(org.id, 'organization should be created');
+
+  const contract = createContract(world, {
+    type: CONTRACT_TYPES.EMPLOYMENT,
+    controllerId: 'alice',
+    subjectId: 'bob',
+    durationTicks: 10,
+  });
+  assert.ok(contract.id, 'contract should be created');
 
   const industries = seedIndustriesFromOrganizations(world);
   assert.ok(industries.length >= 1, 'organization should seed at least one industry');
@@ -77,9 +87,15 @@ function main() {
     autoNovel: false,
     autoNarrative: false,
     population: { baseBirthChance: 0 },
+    seedIndustriesEveryTicks: 1,
+    city: { minPopulationForSettlement: 1 },
   });
 
   assert.strictEqual(reports.length, 5, 'simulation should return one report per tick');
+  assert.ok(reports.every(report => Array.isArray(report.contracts)), 'simulation should process contracts every tick');
+  assert.ok(reports.every(report => Array.isArray(report.organizations)), 'simulation should process organizations every tick');
+  assert.ok(reports.every(report => report.economy && report.economy.markets && report.economy.markets.global), 'simulation should process economy every tick');
+  assert.ok(reports.every(report => report.city && Array.isArray(report.city.updated)), 'simulation should process city every tick');
   assert.ok(world.tick >= 5, 'world tick should advance');
   assert.ok(world.memory.length > 0, 'world memory should be populated');
   assert.ok(world.history, 'history state should exist');
@@ -90,6 +106,10 @@ function main() {
 
   const summary = getSimulationSummary(world);
   assert.ok(summary.counters.ticks >= 5, 'simulation summary should count ticks');
+  assert.ok(summary.counters.contractsProcessed >= 1, 'simulation summary should count contract processing');
+  assert.ok(summary.counters.organizationsProcessed >= 1, 'simulation summary should count organization processing');
+  assert.ok(summary.counters.economyTicks >= 5, 'simulation summary should count economy ticks');
+  assert.ok(summary.counters.cityTicks >= 5, 'simulation summary should count city ticks');
 
   console.log('world-engine smoke test passed');
 }
