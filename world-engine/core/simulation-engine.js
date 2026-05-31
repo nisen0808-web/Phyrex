@@ -5,6 +5,10 @@ const { planAllEntityActions } = require('./goal-engine');
 const { processPopulationTick, initializePopulation } = require('./population-engine');
 const { syncFamiliesFromPopulation, updateFamilyStatuses } = require('./family-engine');
 const { createLegacyForRecentDeaths, processPendingLegacies } = require('./legacy-engine');
+const { processContractsTick } = require('./contract-engine');
+const { processOrganizationsTick } = require('./organization-engine');
+const { ensureEconomyState, seedIndustriesFromOrganizations, processEconomyTick } = require('./economy-engine');
+const { processCityTick } = require('./city-engine');
 const { ingestWorldMemory } = require('./history-engine');
 const { calculateAllNarrativeScores } = require('./narrative-score-engine');
 const { updateNovelBlueprints } = require('./novel-engine');
@@ -14,11 +18,16 @@ const DEFAULT_SIMULATION_OPTIONS = {
   autoPopulation: true,
   autoFamilies: true,
   autoLegacy: true,
+  autoContracts: true,
+  autoOrganizations: true,
+  autoEconomy: true,
+  autoCity: true,
   autoHistory: true,
   autoNarrative: true,
   autoNovel: true,
   narrativeEveryTicks: 24,
   novelEveryTicks: 72,
+  seedIndustriesEveryTicks: 24,
   maxActionPlansPerTick: 500,
 };
 
@@ -36,6 +45,11 @@ function ensureSimulationState(world) {
         deaths: 0,
         legaciesCreated: 0,
         legaciesSettled: 0,
+        contractsProcessed: 0,
+        organizationsProcessed: 0,
+        industriesSeeded: 0,
+        economyTicks: 0,
+        cityTicks: 0,
         historyEvents: 0,
       },
     };
@@ -48,6 +62,11 @@ function initializeSimulation(world, options = {}) {
   simulation.options = { ...DEFAULT_SIMULATION_OPTIONS, ...(options || {}) };
   initializePopulation(world, options.population || {});
   syncFamiliesFromPopulation(world, { createForUnassigned: true });
+  ensureEconomyState(world);
+  if (options.seedIndustries !== false) {
+    const seeded = seedIndustriesFromOrganizations(world, options.economy || {});
+    simulation.counters.industriesSeeded += seeded.length;
+  }
   return simulation;
 }
 
@@ -68,6 +87,10 @@ function runSimulationTick(world, options = {}) {
     population: null,
     families: null,
     legacy: null,
+    contracts: null,
+    organizations: null,
+    economy: null,
+    city: null,
     plans: [],
     world: null,
     history: [],
@@ -92,6 +115,30 @@ function runSimulationTick(world, options = {}) {
     report.legacy = { created, processed };
     simulation.counters.legaciesCreated += created.length;
     simulation.counters.legaciesSettled += processed.settled.length;
+  }
+
+  if (config.autoContracts) {
+    report.contracts = processContractsTick(world, config.contract || {});
+    simulation.counters.contractsProcessed += report.contracts.length;
+  }
+
+  if (config.autoOrganizations) {
+    report.organizations = processOrganizationsTick(world, config.organization || {});
+    simulation.counters.organizationsProcessed += report.organizations.length;
+  }
+
+  if (config.autoEconomy) {
+    const shouldSeedIndustries = config.seedIndustriesEveryTicks === 1 || shouldRunEvery(world.tick || 1, config.seedIndustriesEveryTicks);
+    const seededIndustries = shouldSeedIndustries ? seedIndustriesFromOrganizations(world, config.economy || {}) : [];
+    report.economy = processEconomyTick(world, config.economy || {});
+    report.economy.seededIndustries = seededIndustries;
+    simulation.counters.industriesSeeded += seededIndustries.length;
+    simulation.counters.economyTicks += 1;
+  }
+
+  if (config.autoCity) {
+    report.city = processCityTick(world, config.city || {});
+    simulation.counters.cityTicks += 1;
   }
 
   if (config.autoPlanActions) {
@@ -133,6 +180,11 @@ function compactReport(report) {
     familyCreated: report.families?.created?.length || 0,
     legacyCreated: report.legacy?.created?.length || 0,
     legacySettled: report.legacy?.processed?.settled?.length || 0,
+    contractsProcessed: report.contracts?.length || 0,
+    organizationsProcessed: report.organizations?.length || 0,
+    industriesSeeded: report.economy?.seededIndustries?.length || 0,
+    economyProcessed: Boolean(report.economy),
+    cityProcessed: Boolean(report.city),
     plannedActions: report.plans?.length || 0,
     completedActions: report.world?.actions?.completed?.length || 0,
     processedEvents: report.world?.events?.processed?.length || 0,
