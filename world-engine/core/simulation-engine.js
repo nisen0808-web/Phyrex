@@ -13,6 +13,8 @@ const { processIdentityTick } = require('./identity-engine');
 const { processInformationTick } = require('./information-engine');
 const { processMemoryTick } = require('./memory-engine');
 const { processCultureTick } = require('./culture-engine');
+const { processReligionTick } = require('./religion-engine');
+const { processCivilizationTick } = require('./civilization-engine');
 const { ingestWorldMemory } = require('./history-engine');
 const { calculateAllNarrativeScores } = require('./narrative-score-engine');
 const { updateNovelBlueprints } = require('./novel-engine');
@@ -30,6 +32,8 @@ const DEFAULT_SIMULATION_OPTIONS = {
   autoInformation: true,
   autoMemory: true,
   autoCulture: true,
+  autoReligion: true,
+  autoCivilization: true,
   autoHistory: true,
   autoNarrative: true,
   autoNovel: true,
@@ -65,6 +69,10 @@ function ensureSimulationState(world) {
         memoriesFaded: 0,
         culturesSynced: 0,
         culturesDrifted: 0,
+        religionsCreated: 0,
+        religionConversions: 0,
+        civilizationsCreated: 0,
+        civilizationsUpdated: 0,
         historyEvents: 0,
       },
     };
@@ -110,6 +118,8 @@ function runSimulationTick(world, options = {}) {
     information: null,
     memories: null,
     cultures: null,
+    religions: null,
+    civilizations: null,
     plans: [],
     world: null,
     history: [],
@@ -193,6 +203,18 @@ function runSimulationTick(world, options = {}) {
     simulation.counters.culturesDrifted += report.cultures.drifted.length;
   }
 
+  if (config.autoReligion) {
+    report.religions = processReligionTick(world, config.religion || {});
+    simulation.counters.religionsCreated += report.religions.created.length;
+    simulation.counters.religionConversions += report.religions.spread.length;
+  }
+
+  if (config.autoCivilization) {
+    report.civilizations = processCivilizationTick(world, config.civilization || {});
+    simulation.counters.civilizationsCreated += report.civilizations.created.length;
+    simulation.counters.civilizationsUpdated += report.civilizations.updated.length;
+  }
+
   if (config.autoHistory) {
     report.history = ingestWorldMemory(world, config.history || {});
     simulation.counters.historyEvents += report.history.length;
@@ -234,6 +256,10 @@ function compactReport(report) {
     memoriesFaded: report.memories?.faded?.length || 0,
     culturesSynced: report.cultures?.synced?.length || 0,
     culturesDrifted: report.cultures?.drifted?.length || 0,
+    religionsCreated: report.religions?.created?.length || 0,
+    religionConversions: report.religions?.spread?.length || 0,
+    civilizationsCreated: report.civilizations?.created?.length || 0,
+    civilizationsUpdated: report.civilizations?.updated?.length || 0,
     plannedActions: report.plans?.length || 0,
     completedActions: report.world?.actions?.completed?.length || 0,
     processedEvents: report.world?.events?.processed?.length || 0,
