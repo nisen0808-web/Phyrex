@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "test": "node world-engine/tests/smoke-test.js"
+    "test": "node world-engine/tests/run-all.js"
   },
   "devDependencies": {}
 }
