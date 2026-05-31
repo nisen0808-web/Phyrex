@@ -1,6 +1,6 @@
 'use strict';
 
-const { clamp } = require('./schema');
+const { clamp, createEvent } = require('./schema');
 
 const DEFAULT_ACTION_HANDLERS = {
   move: handleMove,
@@ -70,7 +70,7 @@ function checkActionPreconditions(world, action, actor) {
   return { ok: true };
 }
 
-function handleMove(world, action, actor) {
+function handleMove(world, action, actor, options = {}) {
   const to = action.payload.to || action.targetId || action.locationId;
   if (!to || !world.locations[to]) throw new Error('move action requires valid target location');
 
@@ -94,12 +94,12 @@ function handleMove(world, action, actor) {
     locationId: to,
     payload: { from, to },
     actionId: action.id,
-  });
+  }, options);
 
   return { moved: true, from, to };
 }
 
-function handleGather(world, action, actor) {
+function handleGather(world, action, actor, options = {}) {
   const location = world.locations[actor.locationId];
   if (!location) throw new Error('gather requires actor location');
 
@@ -117,12 +117,12 @@ function handleGather(world, action, actor) {
     locationId: actor.locationId,
     payload: { resource: key, amount: gathered },
     actionId: action.id,
-  });
+  }, options);
 
   return { resource: key, amount: gathered };
 }
 
-function handleRest(world, action, actor) {
+function handleRest(world, action, actor, options = {}) {
   const healthGain = Number(action.payload.health || 10);
   const energyGain = Number(action.payload.energy || 15);
 
@@ -135,12 +135,12 @@ function handleRest(world, action, actor) {
     locationId: actor.locationId,
     payload: { healthGain, energyGain },
     actionId: action.id,
-  });
+  }, options);
 
   return { health: actor.stats.health, energy: actor.stats.energy };
 }
 
-function handleWork(world, action, actor) {
+function handleWork(world, action, actor, options = {}) {
   const resource = action.payload.resource || 'currency';
   const amount = Number(action.payload.amount || 5);
   const energyCost = Number(action.payload.energyCost || 5);
@@ -154,12 +154,12 @@ function handleWork(world, action, actor) {
     locationId: actor.locationId,
     payload: { resource, amount, energyCost },
     actionId: action.id,
-  });
+  }, options);
 
   return { resource, amount, energyCost };
 }
 
-function handleInteract(world, action, actor) {
+function handleInteract(world, action, actor, options = {}) {
   const target = world.entities[action.targetId];
   if (!target) throw new Error('interact requires entity target');
 
@@ -172,12 +172,12 @@ function handleInteract(world, action, actor) {
     locationId: actor.locationId,
     payload: { effect, amount },
     actionId: action.id,
-  });
+  }, options);
 
   return { targetId: target.id, effect, amount };
 }
 
-function handleTransfer(world, action, actor) {
+function handleTransfer(world, action, actor, options = {}) {
   const target = world.entities[action.targetId];
   if (!target) throw new Error('transfer requires entity target');
 
@@ -195,12 +195,12 @@ function handleTransfer(world, action, actor) {
     locationId: actor.locationId,
     payload: { resource, amount: transferred },
     actionId: action.id,
-  });
+  }, options);
 
   return { targetId: target.id, resource, amount: transferred };
 }
 
-function handleDamage(world, action, actor) {
+function handleDamage(world, action, actor, options = {}) {
   const target = world.entities[action.targetId];
   if (!target) throw new Error('damage requires entity target');
 
@@ -217,7 +217,7 @@ function handleDamage(world, action, actor) {
     locationId: target.locationId,
     payload: { amount, targetStatus: target.status },
     actionId: action.id,
-  });
+  }, options);
 
   return { targetId: target.id, amount, targetStatus: target.status };
 }
@@ -231,21 +231,13 @@ function fail(action, reason) {
   };
 }
 
-function pushEvent(world, input) {
-  world.events.push({
-    id: `event_${world.tick}_${world.events.length + 1}`,
-    type: input.type,
-    status: 'pending',
-    tick: world.tick,
-    actorIds: input.actorIds || [],
-    locationId: input.locationId || null,
-    factionIds: input.factionIds || [],
-    payload: input.payload || {},
-    effects: input.effects || [],
-    causeIds: input.causeIds || [],
-    actionId: input.actionId || null,
-    tags: input.tags || [],
-  });
+function pushEvent(world, input, options = {}) {
+  if (typeof options.emitEvent === 'function') {
+    return options.emitEvent(world, input);
+  }
+  const event = createEvent({ ...input, tick: input.tick ?? world.tick });
+  world.events.push(event);
+  return event;
 }
 
 module.exports = {
@@ -259,4 +251,5 @@ module.exports = {
   handleInteract,
   handleTransfer,
   handleDamage,
+  pushEvent,
 };
