@@ -9,8 +9,10 @@ const { processContractsTick } = require('./contract-engine');
 const { processOrganizationsTick } = require('./organization-engine');
 const { ensureEconomyState, seedIndustriesFromOrganizations, processEconomyTick } = require('./economy-engine');
 const { processCityTick } = require('./city-engine');
+const { processIdentityTick } = require('./identity-engine');
 const { processInformationTick } = require('./information-engine');
 const { processMemoryTick } = require('./memory-engine');
+const { processCultureTick } = require('./culture-engine');
 const { ingestWorldMemory } = require('./history-engine');
 const { calculateAllNarrativeScores } = require('./narrative-score-engine');
 const { updateNovelBlueprints } = require('./novel-engine');
@@ -24,8 +26,10 @@ const DEFAULT_SIMULATION_OPTIONS = {
   autoOrganizations: true,
   autoEconomy: true,
   autoCity: true,
+  autoIdentity: true,
   autoInformation: true,
   autoMemory: true,
+  autoCulture: true,
   autoHistory: true,
   autoNarrative: true,
   autoNovel: true,
@@ -54,10 +58,13 @@ function ensureSimulationState(world) {
         industriesSeeded: 0,
         economyTicks: 0,
         cityTicks: 0,
+        identitiesSynced: 0,
         informationCreated: 0,
         informationSpread: 0,
         memoriesCreated: 0,
         memoriesFaded: 0,
+        culturesSynced: 0,
+        culturesDrifted: 0,
         historyEvents: 0,
       },
     };
@@ -99,8 +106,10 @@ function runSimulationTick(world, options = {}) {
     organizations: null,
     economy: null,
     city: null,
+    identities: null,
     information: null,
     memories: null,
+    cultures: null,
     plans: [],
     world: null,
     history: [],
@@ -151,6 +160,11 @@ function runSimulationTick(world, options = {}) {
     simulation.counters.cityTicks += 1;
   }
 
+  if (config.autoIdentity) {
+    report.identities = processIdentityTick(world, config.identity || {});
+    simulation.counters.identitiesSynced += report.identities.synced.length;
+  }
+
   if (config.autoPlanActions) {
     const plans = planAllEntityActions(world, config.goal || {}).slice(0, config.maxActionPlansPerTick);
     for (const plan of plans) enqueueAction(world, plan.action);
@@ -171,6 +185,12 @@ function runSimulationTick(world, options = {}) {
     report.memories = processMemoryTick(world, config.memory || {});
     simulation.counters.memoriesCreated += report.memories.created.length;
     simulation.counters.memoriesFaded += report.memories.faded.length;
+  }
+
+  if (config.autoCulture) {
+    report.cultures = processCultureTick(world, config.culture || {});
+    simulation.counters.culturesSynced += report.cultures.synced.length;
+    simulation.counters.culturesDrifted += report.cultures.drifted.length;
   }
 
   if (config.autoHistory) {
@@ -207,10 +227,13 @@ function compactReport(report) {
     industriesSeeded: report.economy?.seededIndustries?.length || 0,
     economyProcessed: Boolean(report.economy),
     cityProcessed: Boolean(report.city),
+    identitiesSynced: report.identities?.synced?.length || 0,
     informationCreated: report.information?.createdFromMemory?.length || 0,
     informationSpread: report.information?.spread?.length || 0,
     memoriesCreated: report.memories?.created?.length || 0,
     memoriesFaded: report.memories?.faded?.length || 0,
+    culturesSynced: report.cultures?.synced?.length || 0,
+    culturesDrifted: report.cultures?.drifted?.length || 0,
     plannedActions: report.plans?.length || 0,
     completedActions: report.world?.actions?.completed?.length || 0,
     processedEvents: report.world?.events?.processed?.length || 0,
