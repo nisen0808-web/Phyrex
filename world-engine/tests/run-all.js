@@ -7,6 +7,7 @@ const tests = [
   'information-memory-test.js',
   'identity-culture-test.js',
   'religion-civilization-test.js',
+  'desire-opportunity-test.js',
 ];
 
 for (const test of tests) {
