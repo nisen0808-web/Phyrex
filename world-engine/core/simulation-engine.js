@@ -17,8 +17,10 @@ const { processMemoryTick } = require('./memory-engine');
 const { processCultureTick } = require('./culture-engine');
 const { processReligionTick } = require('./religion-engine');
 const { processCivilizationTick } = require('./civilization-engine');
+const { processGovernanceTick } = require('./governance-engine');
 const { processProcessesTick } = require('./process-engine');
 const { processEmergenceTick } = require('./emergence-engine');
+const { processConflictTick } = require('./conflict-engine');
 const { ingestWorldMemory } = require('./history-engine');
 const { calculateAllNarrativeScores } = require('./narrative-score-engine');
 const { updateNovelBlueprints } = require('./novel-engine');
@@ -40,8 +42,10 @@ const DEFAULT_SIMULATION_OPTIONS = {
   autoCulture: true,
   autoReligion: true,
   autoCivilization: true,
+  autoGovernance: true,
   autoProcess: true,
   autoEmergence: true,
+  autoConflict: true,
   autoHistory: true,
   autoNarrative: true,
   autoNovel: true,
@@ -86,11 +90,19 @@ function ensureSimulationState(world) {
         religionConversions: 0,
         civilizationsCreated: 0,
         civilizationsUpdated: 0,
+        governmentsCreated: 0,
+        governmentsUpdated: 0,
+        unrestEvents: 0,
+        taxCollected: 0,
         processesCreated: 0,
         processesUpdated: 0,
         processesResolved: 0,
         emergencesDetected: 0,
         emergencesResolved: 0,
+        conflictsCreated: 0,
+        conflictsEscalated: 0,
+        conflictEvents: 0,
+        conflictsResolved: 0,
         historyEvents: 0,
       },
     };
@@ -140,8 +152,10 @@ function runSimulationTick(world, options = {}) {
     cultures: null,
     religions: null,
     civilizations: null,
+    governance: null,
     processes: null,
     emergences: null,
+    conflicts: null,
     plans: [],
     world: null,
     history: [],
@@ -250,6 +264,14 @@ function runSimulationTick(world, options = {}) {
     simulation.counters.civilizationsUpdated += report.civilizations.updated.length;
   }
 
+  if (config.autoGovernance) {
+    report.governance = processGovernanceTick(world, config.governance || {});
+    simulation.counters.governmentsCreated += report.governance.created.length;
+    simulation.counters.governmentsUpdated += report.governance.updated.length;
+    simulation.counters.unrestEvents += report.governance.unrest.length;
+    simulation.counters.taxCollected += report.governance.taxCollected;
+  }
+
   if (config.autoProcess) {
     report.processes = processProcessesTick(world, config.process || {});
     simulation.counters.processesCreated += report.processes.created.length;
@@ -261,6 +283,14 @@ function runSimulationTick(world, options = {}) {
     report.emergences = processEmergenceTick(world, config.emergence || {});
     simulation.counters.emergencesDetected += report.emergences.detected.length;
     simulation.counters.emergencesResolved += report.emergences.resolved.length;
+  }
+
+  if (config.autoConflict) {
+    report.conflicts = processConflictTick(world, config.conflict || {});
+    simulation.counters.conflictsCreated += report.conflicts.created.length;
+    simulation.counters.conflictsEscalated += report.conflicts.escalated.length;
+    simulation.counters.conflictEvents += report.conflicts.battles.length;
+    simulation.counters.conflictsResolved += report.conflicts.resolved.length;
   }
 
   if (config.autoHistory) {
@@ -313,11 +343,19 @@ function compactReport(report) {
     religionConversions: report.religions?.spread?.length || 0,
     civilizationsCreated: report.civilizations?.created?.length || 0,
     civilizationsUpdated: report.civilizations?.updated?.length || 0,
+    governmentsCreated: report.governance?.created?.length || 0,
+    governmentsUpdated: report.governance?.updated?.length || 0,
+    unrestEvents: report.governance?.unrest?.length || 0,
+    taxCollected: report.governance?.taxCollected || 0,
     processesCreated: report.processes?.created?.length || 0,
     processesUpdated: report.processes?.updated?.length || 0,
     processesResolved: report.processes?.resolved?.length || 0,
     emergencesDetected: report.emergences?.detected?.length || 0,
     emergencesResolved: report.emergences?.resolved?.length || 0,
+    conflictsCreated: report.conflicts?.created?.length || 0,
+    conflictsEscalated: report.conflicts?.escalated?.length || 0,
+    conflictEvents: report.conflicts?.battles?.length || 0,
+    conflictsResolved: report.conflicts?.resolved?.length || 0,
     plannedActions: report.plans?.length || 0,
     completedActions: report.world?.actions?.completed?.length || 0,
     processedEvents: report.world?.events?.processed?.length || 0,
