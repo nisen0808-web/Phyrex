@@ -17,6 +17,8 @@ const { processMemoryTick } = require('./memory-engine');
 const { processCultureTick } = require('./culture-engine');
 const { processReligionTick } = require('./religion-engine');
 const { processCivilizationTick } = require('./civilization-engine');
+const { processTechnologyTick } = require('./technology-engine');
+const { processInfrastructureTick } = require('./infrastructure-engine');
 const { processGovernanceTick } = require('./governance-engine');
 const { processProcessesTick } = require('./process-engine');
 const { processEmergenceTick } = require('./emergence-engine');
@@ -42,6 +44,8 @@ const DEFAULT_SIMULATION_OPTIONS = {
   autoCulture: true,
   autoReligion: true,
   autoCivilization: true,
+  autoTechnology: true,
+  autoInfrastructure: true,
   autoGovernance: true,
   autoProcess: true,
   autoEmergence: true,
@@ -90,6 +94,13 @@ function ensureSimulationState(world) {
         religionConversions: 0,
         civilizationsCreated: 0,
         civilizationsUpdated: 0,
+        technologiesInitialized: 0,
+        technologiesResearched: 0,
+        technologiesUnlocked: 0,
+        infrastructurePlanned: 0,
+        infrastructureBuilt: 0,
+        infrastructureMaintained: 0,
+        infrastructureDegraded: 0,
         governmentsCreated: 0,
         governmentsUpdated: 0,
         unrestEvents: 0,
@@ -152,6 +163,8 @@ function runSimulationTick(world, options = {}) {
     cultures: null,
     religions: null,
     civilizations: null,
+    technologies: null,
+    infrastructure: null,
     governance: null,
     processes: null,
     emergences: null,
@@ -264,6 +277,21 @@ function runSimulationTick(world, options = {}) {
     simulation.counters.civilizationsUpdated += report.civilizations.updated.length;
   }
 
+  if (config.autoTechnology) {
+    report.technologies = processTechnologyTick(world, config.technology || {});
+    simulation.counters.technologiesInitialized += report.technologies.initialized.length;
+    simulation.counters.technologiesResearched += report.technologies.researched.length;
+    simulation.counters.technologiesUnlocked += report.technologies.unlocked.length;
+  }
+
+  if (config.autoInfrastructure) {
+    report.infrastructure = processInfrastructureTick(world, config.infrastructure || {});
+    simulation.counters.infrastructurePlanned += report.infrastructure.planned.length;
+    simulation.counters.infrastructureBuilt += report.infrastructure.built.length;
+    simulation.counters.infrastructureMaintained += report.infrastructure.maintained.length;
+    simulation.counters.infrastructureDegraded += report.infrastructure.degraded.length;
+  }
+
   if (config.autoGovernance) {
     report.governance = processGovernanceTick(world, config.governance || {});
     simulation.counters.governmentsCreated += report.governance.created.length;
@@ -343,6 +371,13 @@ function compactReport(report) {
     religionConversions: report.religions?.spread?.length || 0,
     civilizationsCreated: report.civilizations?.created?.length || 0,
     civilizationsUpdated: report.civilizations?.updated?.length || 0,
+    technologiesInitialized: report.technologies?.initialized?.length || 0,
+    technologiesResearched: report.technologies?.researched?.length || 0,
+    technologiesUnlocked: report.technologies?.unlocked?.length || 0,
+    infrastructurePlanned: report.infrastructure?.planned?.length || 0,
+    infrastructureBuilt: report.infrastructure?.built?.length || 0,
+    infrastructureMaintained: report.infrastructure?.maintained?.length || 0,
+    infrastructureDegraded: report.infrastructure?.degraded?.length || 0,
     governmentsCreated: report.governance?.created?.length || 0,
     governmentsUpdated: report.governance?.updated?.length || 0,
     unrestEvents: report.governance?.unrest?.length || 0,
