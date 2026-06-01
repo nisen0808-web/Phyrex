@@ -10,11 +10,13 @@ const { processOrganizationsTick } = require('./organization-engine');
 const { ensureEconomyState, seedIndustriesFromOrganizations, processEconomyTick } = require('./economy-engine');
 const { processCityTick } = require('./city-engine');
 const { processIdentityTick } = require('./identity-engine');
+const { processDesireTick } = require('./desire-engine');
 const { processInformationTick } = require('./information-engine');
 const { processMemoryTick } = require('./memory-engine');
 const { processCultureTick } = require('./culture-engine');
 const { processReligionTick } = require('./religion-engine');
 const { processCivilizationTick } = require('./civilization-engine');
+const { processOpportunityTick } = require('./opportunity-engine');
 const { ingestWorldMemory } = require('./history-engine');
 const { calculateAllNarrativeScores } = require('./narrative-score-engine');
 const { updateNovelBlueprints } = require('./novel-engine');
@@ -29,11 +31,13 @@ const DEFAULT_SIMULATION_OPTIONS = {
   autoEconomy: true,
   autoCity: true,
   autoIdentity: true,
+  autoDesire: true,
   autoInformation: true,
   autoMemory: true,
   autoCulture: true,
   autoReligion: true,
   autoCivilization: true,
+  autoOpportunity: true,
   autoHistory: true,
   autoNarrative: true,
   autoNovel: true,
@@ -63,6 +67,8 @@ function ensureSimulationState(world) {
         economyTicks: 0,
         cityTicks: 0,
         identitiesSynced: 0,
+        desiresUpdated: 0,
+        desireGoalsGenerated: 0,
         informationCreated: 0,
         informationSpread: 0,
         memoriesCreated: 0,
@@ -73,6 +79,9 @@ function ensureSimulationState(world) {
         religionConversions: 0,
         civilizationsCreated: 0,
         civilizationsUpdated: 0,
+        opportunitiesGenerated: 0,
+        opportunitiesClaimed: 0,
+        opportunitiesExpired: 0,
         historyEvents: 0,
       },
     };
@@ -115,11 +124,13 @@ function runSimulationTick(world, options = {}) {
     economy: null,
     city: null,
     identities: null,
+    desires: null,
     information: null,
     memories: null,
     cultures: null,
     religions: null,
     civilizations: null,
+    opportunities: null,
     plans: [],
     world: null,
     history: [],
@@ -173,6 +184,19 @@ function runSimulationTick(world, options = {}) {
   if (config.autoIdentity) {
     report.identities = processIdentityTick(world, config.identity || {});
     simulation.counters.identitiesSynced += report.identities.synced.length;
+  }
+
+  if (config.autoDesire) {
+    report.desires = processDesireTick(world, config.desire || {});
+    simulation.counters.desiresUpdated += report.desires.updated.length;
+    simulation.counters.desireGoalsGenerated += report.desires.generatedGoals.length;
+  }
+
+  if (config.autoOpportunity) {
+    report.opportunities = processOpportunityTick(world, config.opportunity || {});
+    simulation.counters.opportunitiesGenerated += report.opportunities.generated.length;
+    simulation.counters.opportunitiesClaimed += report.opportunities.claimed.length;
+    simulation.counters.opportunitiesExpired += report.opportunities.expired.length;
   }
 
   if (config.autoPlanActions) {
@@ -250,6 +274,11 @@ function compactReport(report) {
     economyProcessed: Boolean(report.economy),
     cityProcessed: Boolean(report.city),
     identitiesSynced: report.identities?.synced?.length || 0,
+    desiresUpdated: report.desires?.updated?.length || 0,
+    desireGoalsGenerated: report.desires?.generatedGoals?.length || 0,
+    opportunitiesGenerated: report.opportunities?.generated?.length || 0,
+    opportunitiesClaimed: report.opportunities?.claimed?.length || 0,
+    opportunitiesExpired: report.opportunities?.expired?.length || 0,
     informationCreated: report.information?.createdFromMemory?.length || 0,
     informationSpread: report.information?.spread?.length || 0,
     memoriesCreated: report.memories?.created?.length || 0,
