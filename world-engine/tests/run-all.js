@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const tests = [
   'smoke-test.js',
@@ -13,9 +14,26 @@ const tests = [
   'technology-infrastructure-test.js',
 ];
 
+const results = [];
+
 for (const test of tests) {
   const file = path.join(__dirname, test);
-  require(file);
+  const result = spawnSync(process.execPath, [file], { encoding: 'utf8' });
+  const passed = result.status === 0;
+  results.push({ test, passed, status: result.status, stdout: result.stdout, stderr: result.stderr });
+
+  if (passed) {
+    console.log(`PASS ${test}`);
+  } else {
+    console.error(`FAIL ${test}`);
+    if (result.stdout) console.error(result.stdout);
+    if (result.stderr) console.error(result.stderr);
+  }
 }
 
-console.log(`world-engine test runner passed ${tests.length} tests`);
+const failed = results.filter(result => !result.passed);
+console.log(`world-engine test runner completed ${results.length} tests: ${results.length - failed.length} passed, ${failed.length} failed`);
+
+if (failed.length) {
+  process.exitCode = 1;
+}
