@@ -22,6 +22,10 @@ const PROCESS_TYPES = {
 
 const DEFAULT_PROCESS_OPTIONS = {
   maxSteps: 200,
+  maxSourceIds: 200,
+  maxParticipants: 200,
+  maxProcesses: 1000,
+  maxInactiveProcesses: 300,
   staleAfterTicks: 720,
   resolveProgress: 100,
   memoryLimit: 1000,
@@ -33,9 +37,10 @@ function ensureProcessState(world) {
       byId: {},
       indexes: { byType: {}, byStatus: {}, byParticipant: {}, byOwner: {} },
       consumedMemoryIds: [],
-      stats: { created: 0, updated: 0, resolved: 0, stalled: 0 },
+      stats: { created: 0, updated: 0, resolved: 0, stalled: 0, pruned: 0 },
     };
   }
+  if (world.processes.stats.pruned === undefined) world.processes.stats.pruned = 0;
   return world.processes;
 }
 
@@ -54,9 +59,9 @@ function createProcess(world, input = {}) {
     resolvedAt: null,
     progress: clamp(input.progress ?? 0, 0, 100),
     strength: Number(input.strength || 1),
-    participants: Array.isArray(input.participants) ? [...input.participants] : [],
-    sourceIds: Array.isArray(input.sourceIds) ? [...input.sourceIds] : [],
-    steps: Array.isArray(input.steps) ? [...input.steps] : [],
+    participants: Array.isArray(input.participants) ? [...input.participants].slice(-DEFAULT_PROCESS_OPTIONS.maxParticipants) : [],
+    sourceIds: Array.isArray(input.sourceIds) ? [...input.sourceIds].slice(-DEFAULT_PROCESS_OPTIONS.maxSourceIds) : [],
+    steps: Array.isArray(input.steps) ? [...input.steps].slice(-DEFAULT_PROCESS_OPTIONS.maxSteps) : [],
     tags: Array.isArray(input.tags) ? [...input.tags] : [],
     payload: { ...(input.payload || {}) },
   };
@@ -93,8 +98,9 @@ function processProcessesTick(world, options = {}) {
     }
   }
 
+  const pruned = pruneProcesses(world, config);
   rebuildProcessIndexes(world);
-  return { created, updated, resolved, stalled, stats: getProcessStats(world) };
+  return { created, updated, resolved, stalled, pruned, stats: getProcessStats(world) };
 }
 
 function ingestWorldMemoryAsProcesses(world, options = {}) {
@@ -167,8 +173,9 @@ function describeProcessFromMemory(world, memory) {
 }
 
 function inferProcessType(type, payload = {}) {
+  if (type.includes('contract.broken') || type.includes('damaged')) return PROCESS_TYPES.CONFLICT;
   if (type.includes('goal.completed')) return PROCESS_TYPES.RISE;
-  if (type.includes('death') || type.includes('damaged')) return PROCESS_TYPES.DECLINE;
+  if (type.includes('death')) return PROCESS_TYPES.DECLINE;
   if (type.includes('relationship') || type.includes('interacted')) return PROCESS_TYPES.LIFE_ARC;
   if (type.includes('legacy')) return PROCESS_TYPES.LEGACY;
   if (type.includes('moved')) return PROCESS_TYPES.MIGRATION;
@@ -177,12 +184,12 @@ function inferProcessType(type, payload = {}) {
   if (type.includes('religion')) return PROCESS_TYPES.RELIGIOUS_SPREAD;
   if (type.includes('civilization')) return PROCESS_TYPES.CIVILIZATION_GROWTH;
   if (type.includes('opportunity')) return PROCESS_TYPES.OPPORTUNITY_CHAIN;
-  if (type.includes('contract.broken') || type.includes('damaged')) return PROCESS_TYPES.CONFLICT;
   return PROCESS_TYPES.LIFE_ARC;
 }
 
 function inferOwner(memory, world) {
   const payload = memory.payload || {};
+  if (payload.conflictId) return { ownerType: 'conflict', ownerId: payload.conflictId };
   if (payload.civilizationId) return { ownerType: 'civilization', ownerId: payload.civilizationId };
   if (payload.religionId) return { ownerType: 'religion', ownerId: payload.religionId };
   if (payload.organizationId) return { ownerType: 'organization', ownerId: payload.organizationId };
@@ -194,6 +201,7 @@ function inferOwner(memory, world) {
 }
 
 function inferProcessKey(type, owner, payload = {}, participants = []) {
+  if (payload.conflictId) return `conflict:${payload.conflictId}`;
   if (payload.contractId) return `contract:${payload.contractId}`;
   if (payload.opportunityId) return `opportunity:${payload.opportunityId}`;
   if (payload.cityId) return `city:${payload.cityId}:${type}`;
@@ -208,8 +216,8 @@ function addProcessStep(world, processId, step, options = {}) {
   if (process.steps.length > (options.maxSteps || DEFAULT_PROCESS_OPTIONS.maxSteps)) process.steps.shift();
   process.lastUpdatedAt = world.tick;
   process.strength += Number(step.importance || 1) * 0.01;
-  process.sourceIds = unique([...process.sourceIds, step.sourceId].filter(Boolean));
-  process.participants = unique([...process.participants, ...(step.participants || [])].filter(Boolean));
+  process.sourceIds = unique([...process.sourceIds, step.sourceId].filter(Boolean)).slice(-(options.maxSourceIds || DEFAULT_PROCESS_OPTIONS.maxSourceIds));
+  process.participants = unique([...process.participants, ...(step.participants || [])].filter(Boolean)).slice(-(options.maxParticipants || DEFAULT_PROCESS_OPTIONS.maxParticipants));
   ensureProcessState(world).stats.updated += 1;
   return process;
 }
@@ -222,6 +230,30 @@ function updateProcessProgress(world, processId) {
   const participantScore = process.participants.length * 2;
   process.progress = clamp(stepScore + strengthScore + participantScore, 0, 100);
   return process;
+}
+
+function pruneProcesses(world, options = {}) {
+  const state = ensureProcessState(world);
+  const all = Object.values(state.byId);
+  const inactive = all.filter(p => p.status !== PROCESS_STATUS.ACTIVE).sort((a, b) => (b.resolvedAt || b.lastUpdatedAt) - (a.resolvedAt || a.lastUpdatedAt));
+  const keepInactive = new Set(inactive.slice(0, options.maxInactiveProcesses || DEFAULT_PROCESS_OPTIONS.maxInactiveProcesses).map(p => p.id));
+  const remove = [];
+
+  for (const process of inactive) {
+    if (!keepInactive.has(process.id)) remove.push(process.id);
+  }
+
+  const remainingCount = all.length - remove.length;
+  if (remainingCount > (options.maxProcesses || DEFAULT_PROCESS_OPTIONS.maxProcesses)) {
+    const candidates = all
+      .filter(p => !remove.includes(p.id))
+      .sort((a, b) => a.lastUpdatedAt - b.lastUpdatedAt);
+    for (const process of candidates.slice(0, remainingCount - options.maxProcesses)) remove.push(process.id);
+  }
+
+  for (const id of remove) delete state.byId[id];
+  state.stats.pruned += remove.length;
+  return remove;
 }
 
 function findActiveProcess(world, type, ownerType, ownerId, key) {
@@ -266,6 +298,7 @@ function getProcessStats(world) {
     active: Object.values(state.byId).filter(process => process.status === PROCESS_STATUS.ACTIVE).length,
     resolved: Object.values(state.byId).filter(process => process.status === PROCESS_STATUS.RESOLVED).length,
     stalled: Object.values(state.byId).filter(process => process.status === PROCESS_STATUS.STALLED).length,
+    pruned: state.stats.pruned,
     byType: countIndex(state.indexes.byType),
     byStatus: countIndex(state.indexes.byStatus),
   };
@@ -338,6 +371,7 @@ module.exports = {
   processProcessesTick,
   ingestWorldMemoryAsProcesses,
   addProcessStep,
+  pruneProcesses,
   getProcess,
   getProcessChronicle,
   getProcessStats,
