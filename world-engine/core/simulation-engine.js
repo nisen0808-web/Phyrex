@@ -11,12 +11,14 @@ const { ensureEconomyState, seedIndustriesFromOrganizations, processEconomyTick 
 const { processCityTick } = require('./city-engine');
 const { processIdentityTick } = require('./identity-engine');
 const { processDesireTick } = require('./desire-engine');
+const { processOpportunityTick } = require('./opportunity-engine');
 const { processInformationTick } = require('./information-engine');
 const { processMemoryTick } = require('./memory-engine');
 const { processCultureTick } = require('./culture-engine');
 const { processReligionTick } = require('./religion-engine');
 const { processCivilizationTick } = require('./civilization-engine');
-const { processOpportunityTick } = require('./opportunity-engine');
+const { processProcessesTick } = require('./process-engine');
+const { processEmergenceTick } = require('./emergence-engine');
 const { ingestWorldMemory } = require('./history-engine');
 const { calculateAllNarrativeScores } = require('./narrative-score-engine');
 const { updateNovelBlueprints } = require('./novel-engine');
@@ -32,12 +34,14 @@ const DEFAULT_SIMULATION_OPTIONS = {
   autoCity: true,
   autoIdentity: true,
   autoDesire: true,
+  autoOpportunity: true,
   autoInformation: true,
   autoMemory: true,
   autoCulture: true,
   autoReligion: true,
   autoCivilization: true,
-  autoOpportunity: true,
+  autoProcess: true,
+  autoEmergence: true,
   autoHistory: true,
   autoNarrative: true,
   autoNovel: true,
@@ -69,6 +73,9 @@ function ensureSimulationState(world) {
         identitiesSynced: 0,
         desiresUpdated: 0,
         desireGoalsGenerated: 0,
+        opportunitiesGenerated: 0,
+        opportunitiesClaimed: 0,
+        opportunitiesExpired: 0,
         informationCreated: 0,
         informationSpread: 0,
         memoriesCreated: 0,
@@ -79,9 +86,11 @@ function ensureSimulationState(world) {
         religionConversions: 0,
         civilizationsCreated: 0,
         civilizationsUpdated: 0,
-        opportunitiesGenerated: 0,
-        opportunitiesClaimed: 0,
-        opportunitiesExpired: 0,
+        processesCreated: 0,
+        processesUpdated: 0,
+        processesResolved: 0,
+        emergencesDetected: 0,
+        emergencesResolved: 0,
         historyEvents: 0,
       },
     };
@@ -125,12 +134,14 @@ function runSimulationTick(world, options = {}) {
     city: null,
     identities: null,
     desires: null,
+    opportunities: null,
     information: null,
     memories: null,
     cultures: null,
     religions: null,
     civilizations: null,
-    opportunities: null,
+    processes: null,
+    emergences: null,
     plans: [],
     world: null,
     history: [],
@@ -239,6 +250,19 @@ function runSimulationTick(world, options = {}) {
     simulation.counters.civilizationsUpdated += report.civilizations.updated.length;
   }
 
+  if (config.autoProcess) {
+    report.processes = processProcessesTick(world, config.process || {});
+    simulation.counters.processesCreated += report.processes.created.length;
+    simulation.counters.processesUpdated += report.processes.updated.length;
+    simulation.counters.processesResolved += report.processes.resolved.length;
+  }
+
+  if (config.autoEmergence) {
+    report.emergences = processEmergenceTick(world, config.emergence || {});
+    simulation.counters.emergencesDetected += report.emergences.detected.length;
+    simulation.counters.emergencesResolved += report.emergences.resolved.length;
+  }
+
   if (config.autoHistory) {
     report.history = ingestWorldMemory(world, config.history || {});
     simulation.counters.historyEvents += report.history.length;
@@ -289,6 +313,11 @@ function compactReport(report) {
     religionConversions: report.religions?.spread?.length || 0,
     civilizationsCreated: report.civilizations?.created?.length || 0,
     civilizationsUpdated: report.civilizations?.updated?.length || 0,
+    processesCreated: report.processes?.created?.length || 0,
+    processesUpdated: report.processes?.updated?.length || 0,
+    processesResolved: report.processes?.resolved?.length || 0,
+    emergencesDetected: report.emergences?.detected?.length || 0,
+    emergencesResolved: report.emergences?.resolved?.length || 0,
     plannedActions: report.plans?.length || 0,
     completedActions: report.world?.actions?.completed?.length || 0,
     processedEvents: report.world?.events?.processed?.length || 0,
