@@ -10,6 +10,7 @@ const tests = [
   'desire-opportunity-test.js',
   'process-emergence-test.js',
   'governance-conflict-test.js',
+  'technology-infrastructure-test.js',
 ];
 
 for (const test of tests) {
