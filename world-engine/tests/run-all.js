@@ -6,6 +6,7 @@ const tests = [
   'smoke-test.js',
   'information-memory-test.js',
   'identity-culture-test.js',
+  'religion-civilization-test.js',
 ];
 
 for (const test of tests) {
