@@ -125,7 +125,6 @@ function initializeSimulation(world, options = {}) {
   const simulation = ensureSimulationState(world);
   simulation.options = { ...DEFAULT_SIMULATION_OPTIONS, ...(options || {}) };
   initializePopulation(world, options.population || {});
-  syncFamiliesFromPopulation(world, { createForUnassigned: true });
   ensureEconomyState(world);
   if (options.seedIndustries !== false) {
     const seeded = seedIndustriesFromOrganizations(world, options.economy || {});
@@ -152,6 +151,7 @@ function runSimulationTick(world, options = {}) {
     families: null,
     legacy: null,
     contracts: null,
+    contractsProcessed: 0,
     organizations: null,
     economy: null,
     city: null,
@@ -196,8 +196,9 @@ function runSimulationTick(world, options = {}) {
   }
 
   if (config.autoContracts) {
+    report.contractsProcessed = countActiveContracts(world);
     report.contracts = processContractsTick(world, config.contract || {});
-    simulation.counters.contractsProcessed += report.contracts.length;
+    simulation.counters.contractsProcessed += report.contractsProcessed;
   }
 
   if (config.autoOrganizations) {
@@ -350,7 +351,7 @@ function compactReport(report) {
     familyCreated: report.families?.created?.length || 0,
     legacyCreated: report.legacy?.created?.length || 0,
     legacySettled: report.legacy?.processed?.settled?.length || 0,
-    contractsProcessed: report.contracts?.length || 0,
+    contractsProcessed: report.contractsProcessed || report.contracts?.length || 0,
     organizationsProcessed: report.organizations?.length || 0,
     industriesSeeded: report.economy?.seededIndustries?.length || 0,
     economyProcessed: Boolean(report.economy),
@@ -398,6 +399,10 @@ function compactReport(report) {
     narrativeUpdated: Boolean(report.narrative),
     novelsUpdated: Array.isArray(report.novels) ? report.novels.length : 0,
   };
+}
+
+function countActiveContracts(world) {
+  return Object.values(world.contracts?.byId || {}).filter(contract => contract.status === 'active').length;
 }
 
 function shouldRunEvery(tick, every) {
