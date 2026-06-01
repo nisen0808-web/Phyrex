@@ -69,6 +69,21 @@ function createEntity(input = {}) {
     tags: Array.isArray(input.tags) ? [...input.tags] : [],
     memory: [],
     cooldowns: {},
+    demographics: {
+      birthTick: input.demographics?.birthTick ?? 0,
+      deathTick: input.demographics?.deathTick ?? null,
+      age: input.demographics?.age ?? input.meta?.age ?? 0,
+      ageGroup: input.demographics?.ageGroup || 'adult',
+      sex: input.demographics?.sex || null,
+      generation: input.demographics?.generation ?? 1,
+      fatherId: input.demographics?.fatherId || null,
+      motherId: input.demographics?.motherId || null,
+      childrenIds: Array.isArray(input.demographics?.childrenIds) ? [...input.demographics.childrenIds] : [],
+      fertility: input.demographics?.fertility ?? 1,
+      lifeExpectancy: input.demographics?.lifeExpectancy || null,
+      familyId: input.demographics?.familyId || input.familyId || null,
+      ...(input.demographics || {}),
+    },
     meta: { ...(input.meta || {}) },
   };
 }
