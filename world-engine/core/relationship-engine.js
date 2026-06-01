@@ -46,7 +46,7 @@ function changeRelationship(world, fromId, toId, changes = {}, options = {}) {
   }
 
   if (options.record !== false) {
-    world.memory.push({
+    pushWorldMemory(world, {
       id: `memory_${world.tick}_${world.memory.length + 1}`,
       tick: world.tick,
       type: 'relationship.changed',
@@ -88,83 +88,54 @@ function invertRelationshipChanges(changes, event) {
       hatred: changes.hatred,
     };
   }
-
-  if (event.type === 'resource.transferred') {
-    return {
-      affection: changes.affection * 0.8,
-      trust: changes.trust,
-      debt: -changes.debt,
-    };
-  }
-
-  return { ...changes };
-}
-
-function decayRelationships(world, options = {}) {
-  const decay = Number(options.decay || 0.02);
-  const deadZone = Number(options.deadZone || 0.5);
-
-  for (const relation of Object.values(world.relationships)) {
-    for (const key of RELATION_KEYS) {
-      const value = Number(relation[key] || 0);
-      if (Math.abs(value) <= deadZone) {
-        relation[key] = 0;
-      } else if (value > 0) {
-        relation[key] = clamp(value - decay, -100, 100);
-      } else {
-        relation[key] = clamp(value + decay, -100, 100);
-      }
-    }
-  }
-}
-
-function propagateRelationship(world, fromId, toId, options = {}) {
-  const relation = getRelationship(world, fromId, toId);
-  const strength = Number(options.strength || 0.1);
-  const fromEntity = world.entities[fromId];
-  const toEntity = world.entities[toId];
-
-  if (!fromEntity || !toEntity) return [];
-
-  const affected = [];
-  const factionId = fromEntity.factionId;
-  if (!factionId) return affected;
-
-  for (const entity of Object.values(world.entities)) {
-    if (entity.id === fromId || entity.id === toId) continue;
-    if (entity.factionId !== factionId) continue;
-
-    const propagated = {};
-    for (const key of ['trust', 'fear', 'hatred', 'loyalty']) {
-      propagated[key] = Number(relation[key] || 0) * strength;
-    }
-
-    changeRelationship(world, entity.id, toId, propagated, { reason: 'relationship.propagated' });
-    affected.push(entity.id);
-  }
-
-  return affected;
+  return changes;
 }
 
 function scoreRelationship(world, fromId, toId) {
-  const r = getRelationship(world, fromId, toId);
+  const relation = getRelationship(world, fromId, toId);
   return {
-    cooperation: clamp((r.affection * 0.35) + (r.trust * 0.45) + (r.loyalty * 0.25) - (r.fear * 0.15) - (r.hatred * 0.6), -100, 100),
-    hostility: clamp((r.hatred * 0.55) + (r.fear * 0.2) - (r.affection * 0.2) - (r.trust * 0.25), -100, 100),
-    vulnerability: clamp((r.trust * 0.5) + (r.affection * 0.25) - (r.hatred * 0.4) - (r.fear * 0.2), -100, 100),
-    obligation: clamp((r.debt * 0.65) + (r.loyalty * 0.35), -100, 100),
+    cooperation: relation.affection + relation.trust + relation.loyalty + relation.debt * 0.5 - relation.fear * 0.3 - relation.hatred,
+    hostility: relation.hatred + relation.fear * 0.5 - relation.trust * 0.4,
+    vulnerability: relation.trust + relation.affection + relation.loyalty - relation.fear,
+    obligation: relation.debt + relation.loyalty + relation.affection * 0.3,
   };
 }
 
-function rebuildRelationshipIndexes(world) {
-  if (!world.indexes.relationshipsByEntity) world.indexes.relationshipsByEntity = {};
-  world.indexes.relationshipsByEntity = {};
-
-  for (const key of Object.keys(world.relationships)) {
-    const [fromId, toId] = key.split('->');
-    if (!world.indexes.relationshipsByEntity[fromId]) world.indexes.relationshipsByEntity[fromId] = [];
-    world.indexes.relationshipsByEntity[fromId].push({ toId, key });
+function decayRelationships(world, rate = 0.01) {
+  for (const relation of Object.values(world.relationships)) {
+    for (const key of RELATION_KEYS) {
+      relation[key] = relation[key] > 0
+        ? Math.max(0, relation[key] - rate)
+        : Math.min(0, relation[key] + rate);
+    }
   }
+}
+
+function propagateRelationship(world, sourceId, targetId, amount = 1) {
+  for (const entity of Object.values(world.entities || {})) {
+    if (entity.id === sourceId || entity.id === targetId) continue;
+    const towardSource = getRelationship(world, entity.id, sourceId);
+    if (towardSource.trust + towardSource.affection < 20) continue;
+    changeRelationship(world, entity.id, targetId, { trust: amount * 0.2, affection: amount * 0.2 }, { reason: 'relationship.propagated' });
+  }
+}
+
+function rebuildRelationshipIndexes(world) {
+  if (!world.relationshipIndexes) world.relationshipIndexes = { byEntity: {} };
+  world.relationshipIndexes.byEntity = {};
+  for (const key of Object.keys(world.relationships || {})) {
+    const [fromId, toId] = key.split('->');
+    if (!world.relationshipIndexes.byEntity[fromId]) world.relationshipIndexes.byEntity[fromId] = [];
+    if (!world.relationshipIndexes.byEntity[toId]) world.relationshipIndexes.byEntity[toId] = [];
+    world.relationshipIndexes.byEntity[fromId].push(key);
+    world.relationshipIndexes.byEntity[toId].push(key);
+  }
+}
+
+function pushWorldMemory(world, memory) {
+  world.memory.push(memory);
+  if (world.memory.length > 1000) world.memory.shift();
+  return memory;
 }
 
 module.exports = {
@@ -173,8 +144,9 @@ module.exports = {
   setRelationshipValue,
   changeRelationship,
   applyEventRelationshipEffects,
+  invertRelationshipChanges,
+  scoreRelationship,
   decayRelationships,
   propagateRelationship,
-  scoreRelationship,
   rebuildRelationshipIndexes,
 };
