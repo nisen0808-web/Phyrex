@@ -1,9 +1,7 @@
 'use strict';
 
-const { createOpportunity, OPPORTUNITY_TYPES } = require('./opportunity-engine');
 const { createProcess, PROCESS_TYPES } = require('./process-engine');
 const { createInformation, INFORMATION_TYPES } = require('./information-engine');
-const { changeRelationship } = require('./relationship-engine');
 
 const CONFLICT_STATUS = {
   TENSION: 'tension',
@@ -114,9 +112,9 @@ function detectConflicts(world, options = {}) {
   if (active.length >= options.maxActiveConflicts) return [];
   const created = [];
   created.push(...detectOrganizationRivalries(world, options));
-  created.push(...detectFamilyFeuds(world, options));
+  created.push(...detectFamilyFeuds(world));
   created.push(...detectGovernanceRevolts(world, options));
-  created.push(...detectResourceConflicts(world, options));
+  created.push(...detectResourceConflicts(world));
   return created;
 }
 
@@ -143,11 +141,11 @@ function detectOrganizationRivalries(world, options = {}) {
   return out;
 }
 
-function detectFamilyFeuds(world, options = {}) {
+function detectFamilyFeuds(world) {
   const out = [];
   const families = Object.values(world.families?.byId || {}).filter(family => family.status !== 'extinct');
   for (const family of families) {
-    for (const enemyId of family.rivals || family.enemies || []) {
+    for (const enemyId of normalizeRivalIds(family.rivals || family.enemies || [])) {
       const enemy = world.families?.byId?.[enemyId];
       if (!enemy || hasConflictBetween(world, 'family', family.id, 'family', enemy.id)) continue;
       out.push(createConflict(world, {
@@ -185,7 +183,7 @@ function detectGovernanceRevolts(world, options = {}) {
   return out;
 }
 
-function detectResourceConflicts(world, options = {}) {
+function detectResourceConflicts(world) {
   const out = [];
   for (const emergence of Object.values(world.emergence?.byId || {})) {
     if (emergence.type !== 'economic_shortage' || emergence.status !== 'active') continue;
@@ -368,6 +366,12 @@ function normalizeSide(side) {
     id: side.id || 'unknown',
     entityIds: Array.isArray(side.entityIds) ? [...side.entityIds] : [],
   };
+}
+
+function normalizeRivalIds(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') return Object.keys(value);
+  return [];
 }
 
 function unique(items) { return Array.from(new Set(items)); }
