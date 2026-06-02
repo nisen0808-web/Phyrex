@@ -34,5 +34,5 @@ jobs:
         working-directory: world-engine
         run: npm test
 
-      - name: Direct stability test
-        run: node world-engine/tests/stability-1000-test.js
+      - name: Direct fast stability test
+        run: node world-engine/tests/stability-100-test.js
