@@ -57,6 +57,7 @@ const DEFAULT_SIMULATION_OPTIONS = {
   novelEveryTicks: 72,
   seedIndustriesEveryTicks: 24,
   maxActionPlansPerTick: 500,
+  maxWorldMemory: 1000,
 };
 
 function ensureSimulationState(world) {
@@ -335,6 +336,7 @@ function runSimulationTick(world, options = {}) {
     report.novels = updateNovelBlueprints(world, config.novel || {});
   }
 
+  trimWorldMemory(world, config.maxWorldMemory);
   simulation.counters.ticks += 1;
   simulation.lastTickReport = compactReport(report);
   simulation.reports.push(simulation.lastTickReport);
@@ -399,6 +401,12 @@ function compactReport(report) {
     narrativeUpdated: Boolean(report.narrative),
     novelsUpdated: Array.isArray(report.novels) ? report.novels.length : 0,
   };
+}
+
+function trimWorldMemory(world, limit = 1000) {
+  if (!Array.isArray(world.memory)) world.memory = [];
+  while (world.memory.length > limit) world.memory.shift();
+  return world.memory.length;
 }
 
 function countActiveContracts(world) {
