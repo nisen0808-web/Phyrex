@@ -18,7 +18,9 @@ const DEFAULT_INFORMATION_OPTIONS = {
   spreadChance: 0.18,
   rumorMutationChance: 0.08,
   confidenceDecay: 0.002,
-  maxKnownItemsPerOwner: 500,
+  maxKnownItemsPerOwner: 120,
+  maxInformationItems: 1000,
+  maxConsumedMemoryIds: 3000,
 };
 
 function ensureInformationState(world) {
@@ -33,13 +35,21 @@ function ensureInformationState(world) {
         byTag: {},
       },
       consumedMemoryIds: [],
+      _consumedSet: new Set(),
+      _indexDirty: true,
+      _lastIndexedItemCount: 0,
       stats: {
         created: 0,
         spread: 0,
         rumors: 0,
+        pruned: 0,
       },
     };
   }
+  if (!world.information._consumedSet) world.information._consumedSet = new Set(world.information.consumedMemoryIds || []);
+  if (world.information._indexDirty === undefined) world.information._indexDirty = true;
+  if (world.information._lastIndexedItemCount === undefined) world.information._lastIndexedItemCount = 0;
+  if (world.information.stats.pruned === undefined) world.information.stats.pruned = 0;
   return world.information;
 }
 
@@ -70,19 +80,21 @@ function createInformation(world, input = {}) {
 
   state.items[id] = item;
   state.stats.created += 1;
+  state._indexDirty = true;
   indexInformation(world, item);
 
   for (const owner of input.knownBy || []) {
     revealInformation(world, id, owner.ownerType, owner.ownerId, owner);
   }
 
+  trimInformationItems(world, input.maxInformationItems || DEFAULT_INFORMATION_OPTIONS.maxInformationItems);
   return item;
 }
 
 function revealInformation(world, informationId, ownerType, ownerId, options = {}) {
   const state = ensureInformationState(world);
   const item = state.items[informationId];
-  if (!item) throw new Error(`Missing information ${informationId}`);
+  if (!item) return null;
   const key = ownerKey(ownerType, ownerId);
   if (!state.knownBy[key]) state.knownBy[key] = [];
 
@@ -106,25 +118,32 @@ function revealInformation(world, informationId, ownerType, ownerId, options = {
   };
 
   state.knownBy[key].push(entry);
-  if (state.knownBy[key].length > (options.maxKnownItemsPerOwner || DEFAULT_INFORMATION_OPTIONS.maxKnownItemsPerOwner)) {
-    state.knownBy[key].shift();
+  const limit = options.maxKnownItemsPerOwner || DEFAULT_INFORMATION_OPTIONS.maxKnownItemsPerOwner;
+  if (state.knownBy[key].length > limit) {
+    state.knownBy[key] = state.knownBy[key]
+      .sort((a, b) => scoreKnownInformation(state, b) - scoreKnownInformation(state, a))
+      .slice(0, limit);
   }
   return entry;
 }
 
 function processInformationTick(world, options = {}) {
-  const state = ensureInformationState(world);
+  ensureInformationState(world);
   const config = { ...DEFAULT_INFORMATION_OPTIONS, ...(options || {}) };
   const createdFromMemory = ingestWorldMemoryAsInformation(world, config);
   const spread = spreadInformation(world, config);
   const expired = expireInformation(world, config);
   decayKnownInformation(world, config);
-  return { createdFromMemory, spread, expired };
+  const pruned = trimInformationItems(world, config.maxInformationItems);
+  trimConsumedMemoryIds(world, config.maxConsumedMemoryIds);
+  rebuildInformationIndexes(world, expired.length > 0 || pruned.length > 0);
+  return { createdFromMemory, spread, expired, pruned };
 }
 
 function ingestWorldMemoryAsInformation(world, options = {}) {
   const state = ensureInformationState(world);
-  const consumed = new Set(state.consumedMemoryIds || []);
+  const consumed = state._consumedSet || new Set(state.consumedMemoryIds || []);
+  state._consumedSet = consumed;
   const created = [];
 
   for (const memory of world.memory || []) {
@@ -147,12 +166,13 @@ function ingestWorldMemoryAsInformation(world, options = {}) {
       tags: ['memory', memory.type],
       payload: { memoryId: memory.id, ...payload },
       knownBy: actorIds.map(id => ({ ownerType: 'entity', ownerId: id, confidence: 90 })),
+      maxInformationItems: options.maxInformationItems,
     });
     created.push(item);
     consumed.add(memory.id);
   }
 
-  state.consumedMemoryIds = Array.from(consumed);
+  trimConsumedMemoryIds(world, options.maxConsumedMemoryIds || DEFAULT_INFORMATION_OPTIONS.maxConsumedMemoryIds);
   return created;
 }
 
@@ -167,7 +187,7 @@ function spreadInformation(world, options = {}) {
       if (!known.length) continue;
       for (const targetId of entityIds) {
         if (targetId === sourceId) continue;
-        for (const entry of known.slice(0, 10)) {
+        for (const entry of known.slice(0, 6)) {
           const item = state.items[entry.informationId];
           if (!item || Math.random() > spreadProbability(item, entry, options)) continue;
           const targetItem = maybeMutateRumor(world, item, options);
@@ -175,6 +195,7 @@ function spreadInformation(world, options = {}) {
             confidence: Math.max(5, entry.confidence - item.secrecy * 0.1 - 5),
             sourceOwnerType: 'entity',
             sourceOwnerId: sourceId,
+            maxKnownItemsPerOwner: options.maxKnownItemsPerOwner,
           });
           state.stats.spread += 1;
           spread.push({ from: sourceId, to: targetId, informationId: targetItem.id });
@@ -204,6 +225,7 @@ function maybeMutateRumor(world, item, options = {}) {
     originLocationId: item.originLocationId,
     tags: [...(item.tags || []), 'rumor'],
     payload: { sourceInformationId: item.id },
+    maxInformationItems: options.maxInformationItems,
   });
   state.stats.rumors += 1;
   return rumor;
@@ -219,7 +241,7 @@ function expireInformation(world) {
       expired.push(item.id);
     }
   }
-  rebuildInformationIndexes(world);
+  if (expired.length) ensureInformationState(world)._indexDirty = true;
   return expired;
 }
 
@@ -234,13 +256,19 @@ function decayKnownInformation(world, options = {}) {
 
 function getKnownInformation(world, ownerType, ownerId, filters = {}) {
   const state = ensureInformationState(world);
-  const entries = state.knownBy[ownerKey(ownerType, ownerId)] || [];
-  return entries
+  const key = ownerKey(ownerType, ownerId);
+  const entries = state.knownBy[key] || [];
+  const filtered = entries
     .map(entry => ({ ...entry, item: state.items[entry.informationId] }))
     .filter(entry => entry.item)
     .filter(entry => !filters.status || entry.item.status === filters.status)
     .filter(entry => !filters.type || entry.item.type === filters.type)
     .filter(entry => !filters.tag || entry.item.tags.includes(filters.tag));
+
+  if (filtered.length !== entries.length) {
+    state.knownBy[key] = filtered.map(({ item, ...entry }) => entry);
+  }
+  return filtered;
 }
 
 function groupAliveEntitiesByLocation(world) {
@@ -271,10 +299,56 @@ function inferSpreadability(type) {
   return 35;
 }
 
-function rebuildInformationIndexes(world) {
+function trimInformationItems(world, limit = DEFAULT_INFORMATION_OPTIONS.maxInformationItems) {
   const state = ensureInformationState(world);
+  const items = Object.values(state.items);
+  if (items.length <= limit) return [];
+
+  const remove = items
+    .sort((a, b) => scoreInformationForRetention(a) - scoreInformationForRetention(b))
+    .slice(0, items.length - limit)
+    .map(item => item.id);
+
+  for (const id of remove) delete state.items[id];
+  const removed = new Set(remove);
+  for (const key of Object.keys(state.knownBy)) {
+    state.knownBy[key] = (state.knownBy[key] || []).filter(entry => !removed.has(entry.informationId));
+  }
+  state.stats.pruned += remove.length;
+  state._indexDirty = true;
+  return remove;
+}
+
+function trimConsumedMemoryIds(world, limit = DEFAULT_INFORMATION_OPTIONS.maxConsumedMemoryIds) {
+  const state = ensureInformationState(world);
+  if (!state._consumedSet) state._consumedSet = new Set(state.consumedMemoryIds || []);
+  if (state._consumedSet.size > limit) {
+    const kept = Array.from(state._consumedSet).slice(-limit);
+    state._consumedSet = new Set(kept);
+  }
+  state.consumedMemoryIds = Array.from(state._consumedSet).slice(-limit);
+}
+
+function scoreInformationForRetention(item) {
+  const statusScore = item.status === INFORMATION_STATUS.ACTIVE ? 1000 : item.status === INFORMATION_STATUS.EXPIRED ? 100 : 0;
+  const typeScore = item.type === INFORMATION_TYPES.SECRET ? 500 : item.type === INFORMATION_TYPES.FACT ? 300 : item.type === INFORMATION_TYPES.DISCOVERY ? 200 : 0;
+  return statusScore + typeScore + Number(item.confidence || 0) + Number(item.spreadability || 0) + Number(item.createdAt || 0) * 0.01;
+}
+
+function scoreKnownInformation(state, entry) {
+  const item = state.items[entry.informationId];
+  if (!item) return -Infinity;
+  return Number(entry.confidence || 0) + Number(entry.lastUpdatedAt || entry.learnedAt || 0) * 0.01 + (item.status === INFORMATION_STATUS.ACTIVE ? 10 : 0);
+}
+
+function rebuildInformationIndexes(world, force = false) {
+  const state = ensureInformationState(world);
+  const count = Object.keys(state.items).length;
+  if (!force && !state._indexDirty && state._lastIndexedItemCount === count) return;
   state.indexes = { byType: {}, byStatus: {}, byLocation: {}, byTag: {} };
   for (const item of Object.values(state.items)) indexInformation(world, item);
+  state._indexDirty = false;
+  state._lastIndexedItemCount = count;
 }
 
 function indexInformation(world, item) {
@@ -309,5 +383,6 @@ module.exports = {
   ingestWorldMemoryAsInformation,
   spreadInformation,
   getKnownInformation,
+  trimInformationItems,
   rebuildInformationIndexes,
 };
