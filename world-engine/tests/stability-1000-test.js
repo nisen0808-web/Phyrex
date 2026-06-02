@@ -32,6 +32,8 @@ function main() {
     autoNarrative: false,
     population: { baseBirthChance: 0, baseMortalityChance: 0 },
     city: { minPopulationForSettlement: 1 },
+    information: { maxInformationItems: 1000, maxKnownItemsPerOwner: 120 },
+    memory: { maxGlobalMemories: 3000, maxMemoriesPerOwner: 50 },
     process: { maxProcesses: 500, maxInactiveProcesses: 150, staleAfterTicks: 120 },
     opportunity: { discoveryChance: 0.01, crisisChance: 0.005, claimChance: 0.2 },
     conflict: { battleChance: 0.01 },
@@ -63,6 +65,8 @@ function main() {
     autoNarrative: false,
     population: { baseBirthChance: 0, baseMortalityChance: 0 },
     city: { minPopulationForSettlement: 1 },
+    information: { maxInformationItems: 1000, maxKnownItemsPerOwner: 120 },
+    memory: { maxGlobalMemories: 3000, maxMemoriesPerOwner: 50 },
     process: { maxProcesses: 500, maxInactiveProcesses: 150, staleAfterTicks: 120 },
     opportunity: { discoveryChance: 0.01, crisisChance: 0.005, claimChance: 0.2 },
     conflict: { battleChance: 0.01 },
@@ -70,12 +74,16 @@ function main() {
 
   const summary = getSimulationSummary(world);
   const processStats = getProcessStats(world);
+  const informationCount = Object.keys(world.information?.items || {}).length;
+  const memoryCount = Object.keys(world.memories?.byId || {}).length;
 
   assert.strictEqual(world.tick, 1000, 'world should advance exactly 1000 ticks');
   assert.ok(world.simulation.reports.length <= 200, 'simulation reports should be capped at 200');
   assert.ok(world.memory.length <= 1000, 'world memory should be capped at 1000');
   assert.ok(Object.keys(world.processes?.byId || {}).length <= 500, 'process count should be capped at 500');
   assert.ok(processStats.total <= 500, 'process stats should respect process cap');
+  assert.ok(informationCount <= 1000, 'information items should be capped at 1000');
+  assert.ok(memoryCount <= 3000, 'memory byId should be capped at 3000');
   assert.ok(summary.counters.ticks >= 1000, 'simulation counters should count ticks');
   assert.ok(world.economy?.markets?.global, 'economy should remain available');
   assert.ok(world.cities?.byId && Object.keys(world.cities.byId).length >= 1, 'cities should remain available');
