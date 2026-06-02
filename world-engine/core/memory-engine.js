@@ -20,10 +20,12 @@ const MEMORY_TYPES = {
 };
 
 const DEFAULT_MEMORY_OPTIONS = {
-  importanceDecay: 0.01,
-  clarityDecay: 0.015,
-  traumaRetentionMultiplier: 0.2,
-  maxMemoriesPerOwner: 1000,
+  importanceDecay: 0.5,
+  clarityDecay: 0.25,
+  traumaRetentionMultiplier: 0.35,
+  maxMemoriesPerOwner: 50,
+  maxGlobalMemories: 3000,
+  maxConsumedWorldMemoryIds: 3000,
 };
 
 function ensureMemoryState(world) {
@@ -33,9 +35,16 @@ function ensureMemoryState(world) {
       byOwner: {},
       indexes: { byType: {}, byScope: {}, byTag: {} },
       consumedWorldMemoryIds: [],
-      stats: { created: 0, reinforced: 0, faded: 0 },
+      _consumedSet: new Set(),
+      _indexDirty: true,
+      _lastIndexedCount: 0,
+      stats: { created: 0, reinforced: 0, faded: 0, pruned: 0 },
     };
   }
+  if (!world.memories._consumedSet) world.memories._consumedSet = new Set(world.memories.consumedWorldMemoryIds || []);
+  if (world.memories._indexDirty === undefined) world.memories._indexDirty = true;
+  if (world.memories._lastIndexedCount === undefined) world.memories._lastIndexedCount = 0;
+  if (world.memories.stats.pruned === undefined) world.memories.stats.pruned = 0;
   return world.memories;
 }
 
@@ -65,7 +74,9 @@ function createMemory(world, input = {}) {
   state.byId[id] = memory;
   addOwnerMemory(world, memory.ownerType, memory.ownerId, id, input.maxMemoriesPerOwner);
   indexMemory(world, memory);
+  state._indexDirty = true;
   state.stats.created += 1;
+  trimGlobalMemories(world, input.maxGlobalMemories || DEFAULT_MEMORY_OPTIONS.maxGlobalMemories, input.maxMemoriesPerOwner || DEFAULT_MEMORY_OPTIONS.maxMemoriesPerOwner);
   return memory;
 }
 
@@ -76,24 +87,36 @@ function addOwnerMemory(world, ownerType, ownerId, memoryId, maxMemoriesPerOwner
   state.byOwner[key].push(memoryId);
   const limit = maxMemoriesPerOwner || DEFAULT_MEMORY_OPTIONS.maxMemoriesPerOwner;
   if (state.byOwner[key].length > limit) {
-    const removed = state.byOwner[key].shift();
-    delete state.byId[removed];
+    state.byOwner[key] = state.byOwner[key]
+      .map(id => state.byId[id])
+      .filter(Boolean)
+      .sort((a, b) => scoreMemoryForRetention(b) - scoreMemoryForRetention(a))
+      .slice(0, limit)
+      .map(memory => memory.id);
+    const kept = new Set(state.byOwner[key]);
+    for (const [id, memory] of Object.entries(state.byId)) {
+      if (ownerKey(memory.ownerType, memory.ownerId) === key && !kept.has(id)) delete state.byId[id];
+    }
+    state._indexDirty = true;
   }
 }
 
 function processMemoryTick(world, options = {}) {
-  const state = ensureMemoryState(world);
+  ensureMemoryState(world);
   const config = { ...DEFAULT_MEMORY_OPTIONS, ...(options || {}) };
   const created = ingestWorldMemory(world, config);
   const reinforced = reinforceImportantMemories(world, config);
   const faded = decayMemories(world, config);
-  rebuildMemoryIndexes(world);
-  return { created, reinforced, faded };
+  const pruned = trimGlobalMemories(world, config.maxGlobalMemories, config.maxMemoriesPerOwner);
+  trimConsumedWorldMemoryIds(world, config.maxConsumedWorldMemoryIds);
+  rebuildMemoryIndexes(world, Boolean(faded.length || pruned.length));
+  return { created, reinforced, faded, pruned };
 }
 
 function ingestWorldMemory(world, options = {}) {
   const state = ensureMemoryState(world);
-  const consumed = new Set(state.consumedWorldMemoryIds || []);
+  const consumed = state._consumedSet || new Set(state.consumedWorldMemoryIds || []);
+  state._consumedSet = consumed;
   const created = [];
 
   for (const item of world.memory || []) {
@@ -121,6 +144,8 @@ function ingestWorldMemory(world, options = {}) {
         participants: entityIds,
         tags: ['world_memory', item.type],
         payload,
+        maxMemoriesPerOwner: options.maxMemoriesPerOwner,
+        maxGlobalMemories: options.maxGlobalMemories,
       }));
     }
 
@@ -136,6 +161,8 @@ function ingestWorldMemory(world, options = {}) {
         participants: entityIds,
         tags: ['family_memory', item.type],
         payload,
+        maxMemoriesPerOwner: options.maxMemoriesPerOwner,
+        maxGlobalMemories: options.maxGlobalMemories,
       }));
     }
 
@@ -151,13 +178,15 @@ function ingestWorldMemory(world, options = {}) {
         participants: entityIds,
         tags: ['organization_memory', item.type],
         payload,
+        maxMemoriesPerOwner: options.maxMemoriesPerOwner,
+        maxGlobalMemories: options.maxGlobalMemories,
       }));
     }
 
     consumed.add(item.id);
   }
 
-  state.consumedWorldMemoryIds = Array.from(consumed);
+  trimConsumedWorldMemoryIds(world, options.maxConsumedWorldMemoryIds || DEFAULT_MEMORY_OPTIONS.maxConsumedWorldMemoryIds);
   return created;
 }
 
@@ -199,8 +228,8 @@ function collectOrganizationIdsFromMemory(memory, world) {
 function reinforceImportantMemories(world, options = {}) {
   const reinforced = [];
   for (const memory of Object.values(ensureMemoryState(world).byId)) {
-    if (memory.importance >= 100 || Math.abs(memory.emotionalWeight) >= 60) {
-      memory.clarity = clamp(memory.clarity + 0.5, 0, 100);
+    if (memory.importance >= 150 || Math.abs(memory.emotionalWeight) >= 75) {
+      memory.clarity = clamp(memory.clarity + 0.2, 0, 100);
       memory.lastReinforcedAt = world.tick;
       reinforced.push(memory.id);
     }
@@ -216,10 +245,11 @@ function decayMemories(world, options = {}) {
     const traumaMultiplier = memory.type === MEMORY_TYPES.TRAUMA ? options.traumaRetentionMultiplier : 1;
     memory.importance = clamp(memory.importance - options.importanceDecay * traumaMultiplier, 0, 1000);
     memory.clarity = clamp(memory.clarity - options.clarityDecay * traumaMultiplier, 0, 100);
-    if (memory.clarity <= 1 && memory.importance <= 1) faded.push(memory.id);
+    if (memory.clarity <= 1 || memory.importance <= 1) faded.push(memory.id);
   }
   for (const id of faded) deleteMemory(world, id);
   state.stats.faded += faded.length;
+  if (faded.length) state._indexDirty = true;
   return faded;
 }
 
@@ -230,6 +260,7 @@ function reinforceMemory(world, memoryId, amount = 10) {
   memory.clarity = clamp(memory.clarity + amount * 0.5, 0, 100);
   memory.lastReinforcedAt = world.tick;
   ensureMemoryState(world).stats.reinforced += 1;
+  ensureMemoryState(world)._indexDirty = true;
   return memory;
 }
 
@@ -240,19 +271,78 @@ function deleteMemory(world, memoryId) {
   const key = ownerKey(memory.ownerType, memory.ownerId);
   state.byOwner[key] = (state.byOwner[key] || []).filter(id => id !== memoryId);
   delete state.byId[memoryId];
+  state._indexDirty = true;
   return true;
+}
+
+function trimGlobalMemories(world, maxGlobal = DEFAULT_MEMORY_OPTIONS.maxGlobalMemories, maxPerOwner = DEFAULT_MEMORY_OPTIONS.maxMemoriesPerOwner) {
+  const state = ensureMemoryState(world);
+  const pruned = [];
+
+  for (const key of Object.keys(state.byOwner)) {
+    const memories = (state.byOwner[key] || []).map(id => state.byId[id]).filter(Boolean);
+    const kept = memories.sort((a, b) => scoreMemoryForRetention(b) - scoreMemoryForRetention(a)).slice(0, maxPerOwner);
+    const keptIds = new Set(kept.map(memory => memory.id));
+    for (const memory of memories) {
+      if (!keptIds.has(memory.id)) {
+        delete state.byId[memory.id];
+        pruned.push(memory.id);
+      }
+    }
+    state.byOwner[key] = kept.map(memory => memory.id);
+  }
+
+  const all = Object.values(state.byId);
+  if (all.length > maxGlobal) {
+    const keep = new Set(all.sort((a, b) => scoreMemoryForRetention(b) - scoreMemoryForRetention(a)).slice(0, maxGlobal).map(memory => memory.id));
+    for (const memory of all) {
+      if (!keep.has(memory.id)) {
+        delete state.byId[memory.id];
+        pruned.push(memory.id);
+      }
+    }
+    for (const key of Object.keys(state.byOwner)) {
+      state.byOwner[key] = (state.byOwner[key] || []).filter(id => keep.has(id));
+    }
+  }
+
+  if (pruned.length) {
+    state.stats.pruned += pruned.length;
+    state._indexDirty = true;
+  }
+  return pruned;
+}
+
+function trimConsumedWorldMemoryIds(world, limit = DEFAULT_MEMORY_OPTIONS.maxConsumedWorldMemoryIds) {
+  const state = ensureMemoryState(world);
+  if (!state._consumedSet) state._consumedSet = new Set(state.consumedWorldMemoryIds || []);
+  if (state._consumedSet.size > limit) {
+    const kept = Array.from(state._consumedSet).slice(-limit);
+    state._consumedSet = new Set(kept);
+  }
+  state.consumedWorldMemoryIds = Array.from(state._consumedSet).slice(-limit);
+}
+
+function scoreMemoryForRetention(memory) {
+  return Number(memory.importance || 0) * 2
+    + Number(memory.clarity || 0)
+    + Math.abs(Number(memory.emotionalWeight || 0))
+    + Number(memory.lastReinforcedAt || memory.createdAt || 0) * 0.01;
 }
 
 function getMemories(world, ownerType, ownerId, filters = {}) {
   const state = ensureMemoryState(world);
-  const ids = state.byOwner[ownerKey(ownerType, ownerId)] || [];
-  return ids
+  const key = ownerKey(ownerType, ownerId);
+  const ids = state.byOwner[key] || [];
+  const memories = ids
     .map(id => state.byId[id])
     .filter(Boolean)
     .filter(memory => !filters.type || memory.type === filters.type)
     .filter(memory => !filters.tag || memory.tags.includes(filters.tag))
     .filter(memory => filters.minImportance === undefined || memory.importance >= filters.minImportance)
     .sort((a, b) => b.importance - a.importance);
+  if (memories.length !== ids.length) state.byOwner[key] = memories.map(memory => memory.id);
+  return memories;
 }
 
 function inferMemoryType(type) {
@@ -284,10 +374,14 @@ function inferEmotionalWeight(type) {
   return 0;
 }
 
-function rebuildMemoryIndexes(world) {
+function rebuildMemoryIndexes(world, force = false) {
   const state = ensureMemoryState(world);
+  const count = Object.keys(state.byId).length;
+  if (!force && !state._indexDirty && state._lastIndexedCount === count) return;
   state.indexes = { byType: {}, byScope: {}, byTag: {} };
   for (const memory of Object.values(state.byId)) indexMemory(world, memory);
+  state._indexDirty = false;
+  state._lastIndexedCount = count;
 }
 
 function indexMemory(world, memory) {
@@ -320,5 +414,6 @@ module.exports = {
   ingestWorldMemory,
   reinforceMemory,
   getMemories,
+  trimGlobalMemories,
   rebuildMemoryIndexes,
 };
