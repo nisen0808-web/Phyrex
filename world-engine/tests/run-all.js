@@ -13,6 +13,7 @@ const tests = [
   'governance-conflict-test.js',
   'technology-infrastructure-test.js',
   'snapshot-test.js',
+  'viewer-test.js',
   'stability-100-test.js',
 ];
 
