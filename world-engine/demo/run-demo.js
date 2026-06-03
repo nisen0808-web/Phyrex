@@ -1,54 +1,40 @@
 'use strict';
 
 const { createWorld, registerEntity, registerLocation, connectLocations } = require('../core/world-engine');
-const { initializeSimulation, runSimulationTicks, getSimulationSummary } = require('../core/simulation-engine');
+const { initializeSimulation, runSimulationTicks } = require('../core/simulation-engine');
 const { assignSpecies } = require('../core/species-engine');
 const { createOrganization } = require('../core/organization-engine');
 const { createContract, CONTRACT_TYPES } = require('../core/contract-engine');
 const { processCityTick } = require('../core/city-engine');
-const { getPopulationStats } = require('../core/population-engine');
-const { getCivilizationStats, getCivilizationChronicle } = require('../core/civilization-engine');
-const { getTechnologyStats } = require('../core/technology-engine');
-const { getInfrastructureStats } = require('../core/infrastructure-engine');
-const { getGovernanceStats } = require('../core/governance-engine');
-const { getConflictStats } = require('../core/conflict-engine');
-const { getProcessStats } = require('../core/process-engine');
+const { createWorldSnapshot } = require('../core/snapshot-engine');
 
-const ticks = Number(process.argv[2] || 100);
+const DEFAULT_DEMO_OPTIONS = {
+  autoNovel: false,
+  autoNarrative: false,
+  population: { baseBirthChance: 0.001, baseMortalityChance: 0.0001 },
+  city: { minPopulationForSettlement: 1 },
+  information: { maxInformationItems: 1000, maxKnownItemsPerOwner: 120 },
+  memory: { maxGlobalMemories: 3000, maxMemoriesPerOwner: 50 },
+  process: { maxProcesses: 500, maxInactiveProcesses: 150, staleAfterTicks: 120 },
+  opportunity: { discoveryChance: 0.015, crisisChance: 0.005, claimChance: 0.25 },
+  conflict: { battleChance: 0.02 },
+  technology: { passiveResearch: 20, maxResearchPerTick: 80 },
+  infrastructure: { autoPlan: true, buildRate: 40 },
+};
 
 function main() {
+  const ticks = Number(process.argv[2] || 100);
   const world = buildDemoWorld();
-  initializeSimulation(world, {
-    autoNovel: false,
-    autoNarrative: false,
-    population: { baseBirthChance: 0.001, baseMortalityChance: 0.0001 },
-    city: { minPopulationForSettlement: 1 },
-    information: { maxInformationItems: 1000, maxKnownItemsPerOwner: 120 },
-    memory: { maxGlobalMemories: 3000, maxMemoriesPerOwner: 50 },
-    process: { maxProcesses: 500, maxInactiveProcesses: 150, staleAfterTicks: 120 },
-    opportunity: { discoveryChance: 0.015, crisisChance: 0.005, claimChance: 0.25 },
-    conflict: { battleChance: 0.02 },
-    technology: { passiveResearch: 20, maxResearchPerTick: 80 },
-    infrastructure: { autoPlan: true, buildRate: 40 },
-  });
-
-  processCityTick(world, { minPopulationForSettlement: 1 });
-
-  runSimulationTicks(world, ticks, {
-    autoNovel: false,
-    autoNarrative: false,
-    population: { baseBirthChance: 0.001, baseMortalityChance: 0.0001 },
-    city: { minPopulationForSettlement: 1 },
-    information: { maxInformationItems: 1000, maxKnownItemsPerOwner: 120 },
-    memory: { maxGlobalMemories: 3000, maxMemoriesPerOwner: 50 },
-    process: { maxProcesses: 500, maxInactiveProcesses: 150, staleAfterTicks: 120 },
-    opportunity: { discoveryChance: 0.015, crisisChance: 0.005, claimChance: 0.25 },
-    conflict: { battleChance: 0.02 },
-    technology: { passiveResearch: 20, maxResearchPerTick: 80 },
-    infrastructure: { autoPlan: true, buildRate: 40 },
-  });
-
+  runDemoWorld(world, ticks);
   printDemoSummary(world, ticks);
+}
+
+function runDemoWorld(world, ticks = 100, options = {}) {
+  const config = mergeDemoOptions(DEFAULT_DEMO_OPTIONS, options);
+  initializeSimulation(world, config);
+  processCityTick(world, { minPopulationForSettlement: 1 });
+  runSimulationTicks(world, ticks, config);
+  return world;
 }
 
 function buildDemoWorld() {
@@ -131,43 +117,64 @@ function buildDemoWorld() {
 }
 
 function printDemoSummary(world, ticks) {
-  const summary = getSimulationSummary(world);
-  const population = getPopulationStats(world);
-  const civilizationStats = getCivilizationStats(world);
-  const technologyStats = getTechnologyStats(world);
-  const infrastructureStats = getInfrastructureStats(world);
-  const governanceStats = getGovernanceStats(world);
-  const conflictStats = getConflictStats(world);
-  const processStats = getProcessStats(world);
-  const cityCount = Object.keys(world.cities?.byId || {}).length;
-  const orgCount = Object.keys(world.organizations?.byId || {}).length;
-  const infoCount = Object.keys(world.information?.items || {}).length;
-  const memoryCount = Object.keys(world.memories?.byId || {}).length;
-  const civ = Object.values(world.civilizations?.byId || {})[0];
-  const civChronicle = civ ? getCivilizationChronicle(world, civ.id) : null;
+  const snapshot = createWorldSnapshot(world, {
+    topEntities: 10,
+    topOrganizations: 10,
+    topCities: 10,
+    topCivilizations: 5,
+    recentReports: 10,
+  });
 
   console.log('\n=== World Engine Demo ===');
   console.log(`Requested ticks: ${ticks}`);
-  console.log(`World tick: ${world.tick}`);
-  console.log(`Alive population: ${population.alive}`);
-  console.log(`Cities: ${cityCount}`);
-  console.log(`Organizations: ${orgCount}`);
-  console.log(`Civilizations: ${civilizationStats.total}`);
-  if (civChronicle) {
-    console.log(`Top civilization: ${civChronicle.name} / ${civChronicle.level} / score ${civChronicle.score}`);
+  console.log(`World tick: ${snapshot.world.tick}`);
+  console.log(`Alive population: ${snapshot.population.alive}`);
+  console.log(`Cities: ${snapshot.cities.length}`);
+  console.log(`Organizations: ${snapshot.organizations.length}`);
+  console.log(`Civilizations: ${snapshot.civilizations.length}`);
+  if (snapshot.civilizations[0]) {
+    const civ = snapshot.civilizations[0];
+    console.log(`Top civilization: ${civ.name} / ${civ.level} / score ${civ.score}`);
   }
-  console.log(`Technologies unlocked: ${technologyStats.unlocked}`);
-  console.log(`Infrastructure total/active: ${infrastructureStats.total}/${infrastructureStats.active}`);
-  console.log(`Governments total/unstable: ${governanceStats.total}/${governanceStats.unstable}`);
-  console.log(`Conflicts total/active: ${conflictStats.total}/${conflictStats.active}`);
-  console.log(`Processes total/active: ${processStats.total}/${processStats.active}`);
-  console.log(`World memory: ${world.memory.length}/1000`);
-  console.log(`Information items: ${infoCount}/1000`);
-  console.log(`Structured memories: ${memoryCount}/3000`);
-  console.log(`Simulation reports: ${world.simulation.reports.length}/200`);
+  console.log(`Technologies unlocked: ${snapshot.technology.unlocked}`);
+  console.log(`Infrastructure total/active: ${snapshot.infrastructure.total}/${snapshot.infrastructure.active}`);
+  console.log(`Governments total/unstable: ${snapshot.governance.total}/${snapshot.governance.unstable}`);
+  console.log(`Conflicts total/active: ${snapshot.conflicts.total}/${snapshot.conflicts.active}`);
+  console.log(`Processes total/active: ${snapshot.processes.total}/${snapshot.processes.active}`);
+  console.log(`World memory: ${snapshot.limits.worldMemory.current}/${snapshot.limits.worldMemory.limit}`);
+  console.log(`Information items: ${snapshot.limits.information.current}/${snapshot.limits.information.limit}`);
+  console.log(`Structured memories: ${snapshot.limits.memories.current}/${snapshot.limits.memories.limit}`);
+  console.log(`Simulation reports: ${snapshot.limits.reports.current}/${snapshot.limits.reports.limit}`);
+  console.log('\nTop organizations:');
+  for (const org of snapshot.organizations.slice(0, 5)) {
+    console.log(`- ${org.name} (${org.type}) members=${org.members} wealth=${org.wealth} authority=${org.authority}`);
+  }
+  console.log('\nTop entities:');
+  for (const entity of snapshot.narrative.topEntities.slice(0, 5)) {
+    console.log(`- ${entity.name} score=${entity.score} status=${entity.status}`);
+  }
   console.log('\nCounters:');
-  console.log(JSON.stringify(summary.counters, null, 2));
+  console.log(JSON.stringify(snapshot.counters, null, 2));
   console.log('\nDemo completed.');
 }
 
-main();
+function mergeDemoOptions(base, patch) {
+  const out = { ...base };
+  for (const [key, value] of Object.entries(patch || {})) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && base[key] && typeof base[key] === 'object') {
+      out[key] = mergeDemoOptions(base[key], value);
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+if (require.main === module) main();
+
+module.exports = {
+  DEFAULT_DEMO_OPTIONS,
+  buildDemoWorld,
+  runDemoWorld,
+  printDemoSummary,
+};
