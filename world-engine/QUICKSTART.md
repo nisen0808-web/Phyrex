@@ -29,6 +29,7 @@ process-emergence-test.js
 governance-conflict-test.js
 technology-infrastructure-test.js
 snapshot-test.js
+viewer-test.js
 stability-100-test.js
 ```
 
@@ -167,7 +168,50 @@ limits
 recentReports
 ```
 
-## 5. 运行 1000 tick 手动压测
+## 5. 浏览器查看世界快照
+
+先生成 snapshot：
+
+```bash
+npm run snapshot
+```
+
+再启动本地 viewer：
+
+```bash
+npm run viewer
+```
+
+打开：
+
+```text
+http://localhost:8787/viewer/index.html
+```
+
+viewer 默认读取：
+
+```text
+world-engine/output/demo-snapshot.json
+```
+
+如果在 `world-engine` 目录内运行：
+
+```bash
+cd world-engine
+npm run snapshot
+npm run viewer
+```
+
+viewer 是零依赖静态页面，文件位于：
+
+```text
+world-engine/viewer/index.html
+world-engine/viewer/app.js
+world-engine/viewer/styles.css
+world-engine/viewer/serve-viewer.js
+```
+
+## 6. 运行 1000 tick 手动压测
 
 默认测试不跑 1000 tick，因为部分沙箱或 CI 环境可能超时。
 
@@ -189,7 +233,7 @@ node world-engine/tests/stability-1000-test.js
 npm run stress
 ```
 
-## 6. 测试策略
+## 7. 测试策略
 
 ```text
 npm test
@@ -209,7 +253,13 @@ npm run snapshot
 
 用于生成前端可读取的 demo snapshot JSON。
 
-## 7. 当前关键上限
+```text
+npm run viewer
+```
+
+用于本地浏览器查看 demo snapshot。
+
+## 8. 当前关键上限
 
 ```text
 world.memory <= 1000
@@ -221,13 +271,14 @@ memories.byId <= 3000
 
 这些限制是为了避免世界长期运行后状态无限膨胀。
 
-## 8. 常见命令
+## 9. 常见命令
 
 ```bash
 # 根目录
 npm test
 npm run demo
 npm run snapshot
+npm run viewer
 npm run stress
 
 # world-engine 目录
@@ -235,6 +286,7 @@ cd world-engine
 npm test
 npm run demo
 npm run snapshot
+npm run viewer
 npm run stress
 
 # 指定 demo tick
