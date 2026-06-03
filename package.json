@@ -1,7 +1,8 @@
 {
   "scripts": {
     "test": "node world-engine/tests/run-all.js",
-    "stress": "node world-engine/tests/stability-1000-test.js"
+    "stress": "node world-engine/tests/stability-1000-test.js",
+    "demo": "node world-engine/demo/run-demo.js"
   },
   "devDependencies": {}
 }
