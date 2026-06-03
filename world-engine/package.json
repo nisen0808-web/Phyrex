@@ -5,7 +5,8 @@
   "scripts": {
     "test": "node tests/run-all.js",
     "stress": "node tests/stability-1000-test.js",
-    "demo": "node demo/run-demo.js"
+    "demo": "node demo/run-demo.js",
+    "snapshot": "node demo/export-snapshot.js"
   },
   "devDependencies": {}
 }
