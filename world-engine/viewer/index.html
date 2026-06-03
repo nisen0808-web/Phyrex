@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>World Engine Viewer</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>World Engine Viewer</h1>
+      <p>Static viewer for generated world snapshots.</p>
+    </div>
+    <div class="toolbar">
+      <input id="snapshot-url" type="text" value="../output/demo-snapshot.json" aria-label="Snapshot URL">
+      <button id="load-button">Load Snapshot</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="status" class="status">Loading snapshot...</section>
+
+    <section class="grid metrics" id="metrics"></section>
+
+    <section class="grid two-col">
+      <article class="card">
+        <h2>Civilizations</h2>
+        <div id="civilizations"></div>
+      </article>
+      <article class="card">
+        <h2>Cities</h2>
+        <div id="cities"></div>
+      </article>
+    </section>
+
+    <section class="grid two-col">
+      <article class="card">
+        <h2>Organizations</h2>
+        <div id="organizations"></div>
+      </article>
+      <article class="card">
+        <h2>Top Entities</h2>
+        <div id="entities"></div>
+      </article>
+    </section>
+
+    <section class="grid two-col">
+      <article class="card">
+        <h2>Systems</h2>
+        <div id="systems"></div>
+      </article>
+      <article class="card">
+        <h2>Limits</h2>
+        <div id="limits"></div>
+      </article>
+    </section>
+
+    <section class="card">
+      <h2>Recent Reports</h2>
+      <div id="reports"></div>
+    </section>
+
+    <section class="card">
+      <h2>Raw Snapshot</h2>
+      <pre id="raw"></pre>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
