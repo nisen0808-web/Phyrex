@@ -28,6 +28,7 @@ desire-opportunity-test.js
 process-emergence-test.js
 governance-conflict-test.js
 technology-infrastructure-test.js
+snapshot-test.js
 stability-100-test.js
 ```
 
@@ -109,7 +110,64 @@ Simulation reports / 200
 Simulation counters
 ```
 
-## 4. 运行 1000 tick 手动压测
+## 4. 导出前端可读快照 JSON
+
+在仓库根目录运行：
+
+```bash
+npm run snapshot
+```
+
+默认输出：
+
+```text
+world-engine/output/demo-snapshot.json
+```
+
+也可以指定 tick 数：
+
+```bash
+node world-engine/demo/export-snapshot.js 300
+```
+
+也可以指定输出路径：
+
+```bash
+node world-engine/demo/export-snapshot.js 300 world-engine/output/demo-300.json
+```
+
+在 `world-engine` 目录运行：
+
+```bash
+cd world-engine
+npm run snapshot
+```
+
+Snapshot 是给 UI / 前端读取的整理后数据，不需要前端直接读取完整 world state。
+
+主要字段：
+
+```text
+world
+counters
+population
+cities
+organizations
+civilizations
+technology
+infrastructure
+governance
+conflicts
+processes
+emergence
+information
+memories
+narrative
+limits
+recentReports
+```
+
+## 5. 运行 1000 tick 手动压测
 
 默认测试不跑 1000 tick，因为部分沙箱或 CI 环境可能超时。
 
@@ -131,7 +189,7 @@ node world-engine/tests/stability-1000-test.js
 npm run stress
 ```
 
-## 5. 测试策略
+## 6. 测试策略
 
 ```text
 npm test
@@ -145,7 +203,13 @@ npm run stress
 
 用于手动长周期压测，覆盖 1000 tick 稳定性。
 
-## 6. 当前关键上限
+```text
+npm run snapshot
+```
+
+用于生成前端可读取的 demo snapshot JSON。
+
+## 7. 当前关键上限
 
 ```text
 world.memory <= 1000
@@ -157,21 +221,27 @@ memories.byId <= 3000
 
 这些限制是为了避免世界长期运行后状态无限膨胀。
 
-## 7. 常见命令
+## 8. 常见命令
 
 ```bash
 # 根目录
 npm test
 npm run demo
+npm run snapshot
 npm run stress
 
 # world-engine 目录
 cd world-engine
 npm test
 npm run demo
+npm run snapshot
 npm run stress
 
 # 指定 demo tick
 node world-engine/demo/run-demo.js 300
 node world-engine/demo/run-demo.js 1000
+
+# 指定 snapshot tick 和输出路径
+node world-engine/demo/export-snapshot.js 300
+node world-engine/demo/export-snapshot.js 300 world-engine/output/demo-300.json
 ```
