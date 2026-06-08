@@ -64,7 +64,13 @@ function submitPlayerCommand(world, playerId, input = {}, options = {}) {
 
 function executePlayerCommand(world, playerId, input = {}, options = {}) {
   const command = submitPlayerCommand(world, playerId, input, options);
-  const result = dispatchCommand(world, command, options);
+  let result;
+  try {
+    result = dispatchCommand(world, command, options);
+  } catch (error) {
+    result = reject(command, error.message || 'command_error');
+  }
+
   command.status = result.ok ? result.completed ? COMMAND_STATUS.COMPLETED : COMMAND_STATUS.ACCEPTED : COMMAND_STATUS.REJECTED;
   command.result = result;
   command.updatedAt = world.tick;
@@ -172,7 +178,7 @@ function normalizeCommand(world, playerId, input = {}) {
 
 function copyCommandTopLevelPayload(input) {
   const out = {};
-  for (const key of ['locationId', 'targetId', 'organizationId', 'entityId', 'resource', 'amount', 'ticks', 'role', 'goalType', 'priority', 'effect']) {
+  for (const key of ['locationId', 'targetId', 'targetType', 'organizationId', 'entityId', 'resource', 'amount', 'ticks', 'role', 'goalType', 'priority', 'effect', 'energyCost', 'health', 'energy', 'power', 'lethal', 'createContract']) {
     if (input[key] !== undefined) out[key] = input[key];
   }
   return out;
