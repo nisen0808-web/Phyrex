@@ -23,6 +23,7 @@ const { processGovernanceTick } = require('./governance-engine');
 const { processProcessesTick } = require('./process-engine');
 const { processEmergenceTick } = require('./emergence-engine');
 const { processConflictTick } = require('./conflict-engine');
+const { processPlayersTick } = require('./player-engine');
 const { ingestWorldMemory } = require('./history-engine');
 const { calculateAllNarrativeScores } = require('./narrative-score-engine');
 const { updateNovelBlueprints } = require('./novel-engine');
@@ -50,6 +51,7 @@ const DEFAULT_SIMULATION_OPTIONS = {
   autoProcess: true,
   autoEmergence: true,
   autoConflict: true,
+  autoPlayers: true,
   autoHistory: true,
   autoNarrative: true,
   autoNovel: true,
@@ -115,10 +117,12 @@ function ensureSimulationState(world) {
         conflictsEscalated: 0,
         conflictEvents: 0,
         conflictsResolved: 0,
+        playersChanged: 0,
         historyEvents: 0,
       },
     };
   }
+  if (world.simulation.counters.playersChanged === undefined) world.simulation.counters.playersChanged = 0;
   return world.simulation;
 }
 
@@ -170,6 +174,7 @@ function runSimulationTick(world, options = {}) {
     processes: null,
     emergences: null,
     conflicts: null,
+    players: null,
     plans: [],
     world: null,
     history: [],
@@ -323,6 +328,11 @@ function runSimulationTick(world, options = {}) {
     simulation.counters.conflictsResolved += report.conflicts.resolved.length;
   }
 
+  if (config.autoPlayers) {
+    report.players = processPlayersTick(world, config.player || {});
+    simulation.counters.playersChanged += report.players.changed.length;
+  }
+
   if (config.autoHistory) {
     report.history = ingestWorldMemory(world, config.history || {});
     simulation.counters.historyEvents += report.history.length;
@@ -394,6 +404,7 @@ function compactReport(report) {
     conflictsEscalated: report.conflicts?.escalated?.length || 0,
     conflictEvents: report.conflicts?.battles?.length || 0,
     conflictsResolved: report.conflicts?.resolved?.length || 0,
+    playersChanged: report.players?.changed?.length || 0,
     plannedActions: report.plans?.length || 0,
     completedActions: report.world?.actions?.completed?.length || 0,
     processedEvents: report.world?.events?.processed?.length || 0,
