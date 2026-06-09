@@ -14,6 +14,7 @@ const tests = [
   'technology-infrastructure-test.js',
   'snapshot-test.js',
   'viewer-test.js',
+  'player-command-test.js',
   'stability-100-test.js',
 ];
 
