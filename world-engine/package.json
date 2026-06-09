@@ -6,6 +6,7 @@
     "test": "node tests/run-all.js",
     "stress": "node tests/stability-1000-test.js",
     "demo": "node demo/run-demo.js",
+    "play": "node demo/play-demo.js",
     "snapshot": "node demo/export-snapshot.js",
     "viewer": "node viewer/serve-viewer.js"
   },
