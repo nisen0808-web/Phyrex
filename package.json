@@ -3,6 +3,7 @@
     "test": "node world-engine/tests/run-all.js",
     "stress": "node world-engine/tests/stability-1000-test.js",
     "demo": "node world-engine/demo/run-demo.js",
+    "play": "node world-engine/demo/play-demo.js",
     "snapshot": "node world-engine/demo/export-snapshot.js",
     "viewer": "node world-engine/viewer/serve-viewer.js"
   },
