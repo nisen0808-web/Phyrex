@@ -5,6 +5,8 @@ const DEFAULT_SNAPSHOT_OPTIONS = {
   topOrganizations: 10,
   topCities: 10,
   topCivilizations: 5,
+  topPlayers: 10,
+  recentCommands: 20,
   recentReports: 20,
 };
 
@@ -15,6 +17,8 @@ function createWorldSnapshot(world, options = {}) {
     world: summarizeWorld(world),
     counters: summarizeCounters(world),
     population: summarizePopulation(world),
+    players: summarizePlayers(world, config.topPlayers),
+    commands: summarizeCommands(world, config.recentCommands),
     cities: summarizeCities(world, config.topCities),
     organizations: summarizeOrganizations(world, config.topOrganizations),
     civilizations: summarizeCivilizations(world, config.topCivilizations),
@@ -57,6 +61,56 @@ function summarizePopulation(world) {
     byLocation: countBy(alive.map(entity => entity.locationId || 'unknown')),
     averagePower: average(alive.map(entity => entity.stats?.power || 0)),
     averageHappiness: average(alive.map(entity => entity.meta?.happiness || 0)),
+  };
+}
+
+function summarizePlayers(world, limit) {
+  const players = Object.values(world.players?.byId || {});
+  return {
+    total: players.length,
+    active: players.filter(player => player.status === 'active').length,
+    observing: players.filter(player => player.status === 'observing').length,
+    dead: players.filter(player => player.status === 'dead').length,
+    byStatus: countBy(players.map(player => player.status)),
+    items: players.slice(0, limit).map(player => {
+      const entity = player.activeEntityId ? world.entities?.[player.activeEntityId] : null;
+      return {
+        id: player.id,
+        name: player.name,
+        status: player.status,
+        controlMode: player.controlMode,
+        activeEntityId: player.activeEntityId,
+        activeEntityName: entity?.name || null,
+        activeEntityStatus: entity?.status || null,
+        locationId: entity?.locationId || player.observerLocationId || null,
+        controlledEntities: (player.controlledEntityIds || []).length,
+        updatedAt: player.updatedAt,
+      };
+    }),
+  };
+}
+
+function summarizeCommands(world, limit) {
+  const state = world.commands || { byId: {}, log: [], stats: {} };
+  const recent = (state.log || []).slice(-limit).map(id => state.byId?.[id]).filter(Boolean);
+  return {
+    total: Object.keys(state.byId || {}).length,
+    stats: { ...(state.stats || {}) },
+    recent: recent.map(command => ({
+      id: command.id,
+      playerId: command.playerId,
+      type: command.type,
+      status: command.status,
+      createdAt: command.createdAt,
+      updatedAt: command.updatedAt,
+      result: command.result ? {
+        ok: command.result.ok,
+        completed: command.result.completed,
+        reason: command.result.reason || null,
+        actionId: command.result.actionId || null,
+        actionType: command.result.actionType || null,
+      } : null,
+    })),
   };
 }
 
@@ -234,6 +288,7 @@ function summarizeLimits(world) {
     processes: { current: Object.keys(world.processes?.byId || {}).length, limit: 500 },
     information: { current: Object.keys(world.information?.items || {}).length, limit: 1000 },
     memories: { current: Object.keys(world.memories?.byId || {}).length, limit: 3000 },
+    commands: { current: Object.keys(world.commands?.byId || {}).length, limit: 500 },
   };
 }
 
@@ -273,6 +328,8 @@ module.exports = {
   createWorldSnapshot,
   summarizeWorld,
   summarizePopulation,
+  summarizePlayers,
+  summarizeCommands,
   summarizeCities,
   summarizeOrganizations,
   summarizeCivilizations,
