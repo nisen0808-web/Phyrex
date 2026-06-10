@@ -6,6 +6,8 @@ const els = {
   url: document.getElementById('snapshot-url'),
   load: document.getElementById('load-button'),
   metrics: document.getElementById('metrics'),
+  players: document.getElementById('players'),
+  commands: document.getElementById('commands'),
   civilizations: document.getElementById('civilizations'),
   cities: document.getElementById('cities'),
   organizations: document.getElementById('organizations'),
@@ -25,6 +27,8 @@ async function loadSnapshot(url) {
 
 function render(snapshot) {
   renderMetrics(snapshot);
+  renderPlayers(snapshot.players?.items || []);
+  renderCommands(snapshot.commands?.recent || []);
   renderCivilizations(snapshot.civilizations || []);
   renderCities(snapshot.cities || []);
   renderOrganizations(snapshot.organizations || []);
@@ -40,6 +44,8 @@ function renderMetrics(snapshot) {
   const metrics = [
     ['Tick', snapshot.world?.tick ?? 0],
     ['Alive', snapshot.population?.alive ?? 0],
+    ['Players', snapshot.players?.total ?? 0],
+    ['Commands', snapshot.commands?.total ?? 0],
     ['Cities', snapshot.cities?.length ?? 0],
     ['Organizations', snapshot.organizations?.length ?? 0],
     ['Civilizations', snapshot.civilizations?.length ?? 0],
@@ -54,6 +60,23 @@ function renderMetrics(snapshot) {
       <div class="metric-value">${escapeHtml(String(formatNumber(value)))}</div>
     </article>
   `).join('');
+}
+
+function renderPlayers(items) {
+  els.players.innerHTML = renderList(items, item => `
+    <strong>${escapeHtml(item.name || item.id)}</strong>
+    <span>${escapeHtml(item.status || 'unknown')} · ${escapeHtml(item.controlMode || 'unknown')}</span>
+    <span>entity ${escapeHtml(item.activeEntityName || item.activeEntityId || 'none')} · location ${escapeHtml(item.locationId || 'unknown')}</span>
+    <span>controlled entities ${formatNumber(item.controlledEntities || 0)}</span>
+  `);
+}
+
+function renderCommands(items) {
+  els.commands.innerHTML = renderList(items.slice().reverse(), item => `
+    <strong>${escapeHtml(item.type || 'command')} · ${escapeHtml(item.status || 'unknown')}</strong>
+    <span>player ${escapeHtml(item.playerId || 'unknown')} · tick ${formatNumber(item.updatedAt ?? item.createdAt ?? 0)}</span>
+    <span>${item.result?.ok ? 'ok' : 'not ok'}${item.result?.reason ? ` · ${escapeHtml(item.result.reason)}` : ''}${item.result?.actionType ? ` · action ${escapeHtml(item.result.actionType)}` : ''}</span>
+  `);
 }
 
 function renderCivilizations(items) {
@@ -90,6 +113,7 @@ function renderEntities(items) {
 
 function renderSystems(snapshot) {
   const rows = [
+    ['Players', `${snapshot.players?.active || 0}/${snapshot.players?.total || 0} active · commands ${snapshot.commands?.total || 0}`],
     ['Infrastructure', `${snapshot.infrastructure?.active || 0}/${snapshot.infrastructure?.total || 0} active`],
     ['Governance', `${snapshot.governance?.active || 0}/${snapshot.governance?.total || 0} active · unrest ${formatNumber(snapshot.governance?.averageUnrest || 0)}`],
     ['Conflicts', `${snapshot.conflicts?.active || 0} active · casualties ${formatNumber(snapshot.conflicts?.casualties || 0)}`],
@@ -120,7 +144,7 @@ function renderReports(reports) {
   els.reports.innerHTML = renderList(reports.slice().reverse(), report => `
     <strong>tick ${formatNumber(report.tickAfter ?? report.tickBefore ?? 0)}</strong>
     <span>births ${report.births || 0} · deaths ${report.deaths || 0} · actions ${report.completedActions || 0} · events ${report.processedEvents || 0}</span>
-    <span>cities ${report.cityProcessed ? 'yes' : 'no'} · economy ${report.economyProcessed ? 'yes' : 'no'} · conflicts ${report.conflictsCreated || 0}</span>
+    <span>players ${report.playersChanged || 0} · cities ${report.cityProcessed ? 'yes' : 'no'} · economy ${report.economyProcessed ? 'yes' : 'no'} · conflicts ${report.conflictsCreated || 0}</span>
   `);
 }
 
