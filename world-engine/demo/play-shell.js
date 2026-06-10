@@ -1,12 +1,14 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 const readline = require('readline');
 const { buildDemoWorld, runDemoWorld } = require('./run-demo');
 const { createPlayerWithCharacter } = require('../core/player-engine');
 const { createShellSession, executeShellInput, SHELL_STATUS, HELP_TEXT } = require('../core/shell-engine');
 
 const PLAYER_ID = 'shell_player';
+const DEFAULT_SHELL_SNAPSHOT = path.join(__dirname, '..', 'output', 'shell-snapshot.json');
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -31,11 +33,11 @@ function main() {
   });
 
   const session = createShellSession(world, player.id, {
-    snapshotPath: args.snapshotPath || 'world-engine/output/shell-snapshot.json',
+    snapshotPath: args.snapshotPath || DEFAULT_SHELL_SNAPSHOT,
   });
 
   if (args.script) {
-    runScript(session, args.script);
+    runScript(session, args.script, { echo: args.echo !== false });
     return;
   }
 
@@ -69,18 +71,23 @@ function startInteractiveShell(session) {
   });
 }
 
-function runScript(session, scriptPath) {
-  const text = fs.readFileSync(scriptPath, 'utf8');
+function runScript(session, scriptPath, options = {}) {
+  const absolute = path.resolve(scriptPath);
+  const text = fs.readFileSync(absolute, 'utf8');
   const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+  const results = [];
   console.log('\n=== World Engine Scripted Shell ===');
-  console.log(`Script: ${scriptPath}`);
+  console.log(`Script: ${absolute}`);
   for (const line of lines) {
-    console.log(`\n> ${line}`);
+    if (options.echo !== false) console.log(`\n> ${line}`);
     const result = executeShellInput(session, line);
+    results.push({ line, result });
     if (result.message) console.log(result.message);
+    if (result.status === SHELL_STATUS.ERROR) process.exitCode = 1;
     if (result.status === SHELL_STATUS.EXIT) break;
   }
   console.log('\nScript completed.');
+  return results;
 }
 
 function parseArgs(argv) {
@@ -98,6 +105,7 @@ function parseArgs(argv) {
         '  --player <name>       Player display name',
         '  --character <name>    Character display name',
         '  --location <id>       Starting location id',
+        '  --no-echo             Do not echo script commands',
         '',
         HELP_TEXT,
       ].join('\n'));
@@ -109,6 +117,7 @@ function parseArgs(argv) {
     else if (arg === '--player') out.playerName = argv[++i];
     else if (arg === '--character') out.characterName = argv[++i];
     else if (arg === '--location') out.locationId = argv[++i];
+    else if (arg === '--no-echo') out.echo = false;
   }
   return out;
 }
@@ -116,6 +125,9 @@ function parseArgs(argv) {
 if (require.main === module) main();
 
 module.exports = {
+  DEFAULT_SHELL_SNAPSHOT,
   main,
+  startInteractiveShell,
+  runScript,
   parseArgs,
 };
