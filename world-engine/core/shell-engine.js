@@ -14,6 +14,19 @@ const SHELL_STATUS = {
   ERROR: 'error',
 };
 
+const DEFAULT_SHELL_OPTIONS = {
+  defaultWaitTicks: 1,
+  snapshotPath: path.join(__dirname, '..', 'output', 'shell-snapshot.json'),
+  simulation: {
+    autoNovel: false,
+    autoNarrative: false,
+    population: { baseBirthChance: 0, baseMortalityChance: 0 },
+    information: { maxInformationItems: 1000, maxKnownItemsPerOwner: 120 },
+    memory: { maxGlobalMemories: 3000, maxMemoriesPerOwner: 50 },
+    process: { maxProcesses: 500, maxInactiveProcesses: 150, staleAfterTicks: 120 },
+  },
+};
+
 const HELP_TEXT = [
   'Commands:',
   '  help                         Show this help',
@@ -39,19 +52,7 @@ function createShellSession(world, playerId, options = {}) {
   return {
     world,
     playerId,
-    options: {
-      defaultWaitTicks: 1,
-      snapshotPath: path.join(process.cwd(), 'world-engine', 'output', 'shell-snapshot.json'),
-      simulation: {
-        autoNovel: false,
-        autoNarrative: false,
-        population: { baseBirthChance: 0, baseMortalityChance: 0 },
-        information: { maxInformationItems: 1000, maxKnownItemsPerOwner: 120 },
-        memory: { maxGlobalMemories: 3000, maxMemoriesPerOwner: 50 },
-        process: { maxProcesses: 500, maxInactiveProcesses: 150, staleAfterTicks: 120 },
-      },
-      ...(options || {}),
-    },
+    options: mergeOptions(DEFAULT_SHELL_OPTIONS, options),
     history: [],
     createdAt: world.tick,
   };
@@ -72,8 +73,7 @@ function executeShellInput(session, line) {
   if (session.history.length > 200) session.history.shift();
 
   try {
-    const result = dispatchShellCommand(session, parsed);
-    return result;
+    return dispatchShellCommand(session, parsed);
   } catch (error) {
     return fail(error.message || 'shell_error');
   }
@@ -171,6 +171,7 @@ function inspectTarget(world, playerId, targetType, targetId) {
   const normalized = normalizeInspectType(targetType);
   if (normalized === 'player') return ok(formatPlayerStatus(world, playerId), queryWorld(world, { type: 'player', playerId }));
   if (normalized === 'world') return ok(formatWorldOverview(queryWorld(world, { type: 'world' })), queryWorld(world, { type: 'world' }));
+  if (!targetId) return fail(`Missing target id for inspect ${normalized}`);
   if (normalized === 'location') return ok(formatJson(queryWorld(world, { type: 'location', locationId: targetId })), queryWorld(world, { type: 'location', locationId: targetId }));
   if (normalized === 'entity') return ok(formatJson(queryWorld(world, { type: 'entity', entityId: targetId })), queryWorld(world, { type: 'entity', entityId: targetId }));
   if (normalized === 'city') return ok(formatJson(queryWorld(world, { type: 'city', cityId: targetId })), queryWorld(world, { type: 'city', cityId: targetId }));
@@ -281,8 +282,21 @@ function tokenize(input) {
   return out;
 }
 
+function mergeOptions(base, patch) {
+  const out = { ...base };
+  for (const [key, value] of Object.entries(patch || {})) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && base[key] && typeof base[key] === 'object') {
+      out[key] = mergeOptions(base[key], value);
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 module.exports = {
   SHELL_STATUS,
+  DEFAULT_SHELL_OPTIONS,
   HELP_TEXT,
   createShellSession,
   parseShellInput,
