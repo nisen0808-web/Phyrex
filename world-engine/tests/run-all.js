@@ -16,6 +16,7 @@ const tests = [
   'viewer-test.js',
   'player-command-test.js',
   'shell-engine-test.js',
+  'shell-script-test.js',
   'stability-100-test.js',
 ];
 
