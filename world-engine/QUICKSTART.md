@@ -31,6 +31,8 @@ technology-infrastructure-test.js
 snapshot-test.js
 viewer-test.js
 player-command-test.js
+shell-engine-test.js
+shell-script-test.js
 stability-100-test.js
 ```
 
@@ -140,7 +142,63 @@ world-engine/demo/play-demo.js
 world-engine/tests/player-command-test.js
 ```
 
-## 5. 导出前端可读快照 JSON
+## 5. 运行交互式 Shell
+
+在仓库根目录运行：
+
+```bash
+npm run shell
+```
+
+在 `world-engine` 目录运行：
+
+```bash
+cd world-engine
+npm run shell
+```
+
+进入 shell 后可以输入：
+
+```text
+help
+status
+world
+inspect location
+move mist_forest
+work currency 20
+wait 1
+gather wood 5
+train 3
+join "Qingyun Sect"
+leaderboard overall
+commands
+snapshot
+quit
+```
+
+也可以运行脚本化命令：
+
+```bash
+npm run shell:sample
+```
+
+或手动指定脚本：
+
+```bash
+node world-engine/demo/play-shell.js --script world-engine/demo/sample-commands.txt
+```
+
+Shell 相关文件：
+
+```text
+world-engine/core/shell-engine.js
+world-engine/demo/play-shell.js
+world-engine/demo/sample-commands.txt
+world-engine/tests/shell-engine-test.js
+world-engine/tests/shell-script-test.js
+```
+
+## 6. 导出前端可读快照 JSON
 
 在仓库根目录运行：
 
@@ -199,7 +257,7 @@ limits
 recentReports
 ```
 
-## 6. 浏览器查看世界快照
+## 7. 浏览器查看世界快照
 
 先生成 snapshot：
 
@@ -242,7 +300,7 @@ world-engine/viewer/styles.css
 world-engine/viewer/serve-viewer.js
 ```
 
-## 7. 运行 1000 tick 手动压测
+## 8. 运行 1000 tick 手动压测
 
 默认测试不跑 1000 tick，因为部分沙箱或 CI 环境可能超时。
 
@@ -264,7 +322,7 @@ node world-engine/tests/stability-1000-test.js
 npm run stress
 ```
 
-## 8. 测试策略
+## 9. 测试策略
 
 ```text
 npm test
@@ -276,7 +334,19 @@ npm test
 npm run play
 ```
 
-用于验证最小可玩链路。
+用于验证固定的最小可玩链路。
+
+```text
+npm run shell
+```
+
+用于人工交互式试玩。
+
+```text
+npm run shell:sample
+```
+
+用于脚本化 shell 测试。
 
 ```text
 npm run stress
@@ -296,7 +366,7 @@ npm run viewer
 
 用于本地浏览器查看 demo snapshot。
 
-## 9. 当前关键上限
+## 10. 当前关键上限
 
 ```text
 world.memory <= 1000
@@ -309,13 +379,15 @@ commands.byId <= 500
 
 这些限制是为了避免世界长期运行后状态无限膨胀。
 
-## 10. 常见命令
+## 11. 常见命令
 
 ```bash
 # 根目录
 npm test
 npm run demo
 npm run play
+npm run shell
+npm run shell:sample
 npm run snapshot
 npm run viewer
 npm run stress
@@ -325,6 +397,8 @@ cd world-engine
 npm test
 npm run demo
 npm run play
+npm run shell
+npm run shell:sample
 npm run snapshot
 npm run viewer
 npm run stress
@@ -336,4 +410,7 @@ node world-engine/demo/run-demo.js 1000
 # 指定 snapshot tick 和输出路径
 node world-engine/demo/export-snapshot.js 300
 node world-engine/demo/export-snapshot.js 300 world-engine/output/demo-300.json
+
+# 指定 shell 脚本
+node world-engine/demo/play-shell.js --script world-engine/demo/sample-commands.txt
 ```
