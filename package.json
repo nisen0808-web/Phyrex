@@ -4,6 +4,8 @@
     "stress": "node world-engine/tests/stability-1000-test.js",
     "demo": "node world-engine/demo/run-demo.js",
     "play": "node world-engine/demo/play-demo.js",
+    "shell": "node world-engine/demo/play-shell.js",
+    "shell:sample": "node world-engine/demo/play-shell.js --script world-engine/demo/sample-commands.txt",
     "snapshot": "node world-engine/demo/export-snapshot.js",
     "viewer": "node world-engine/viewer/serve-viewer.js"
   },
