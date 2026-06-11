@@ -7,6 +7,8 @@
     "stress": "node tests/stability-1000-test.js",
     "demo": "node demo/run-demo.js",
     "play": "node demo/play-demo.js",
+    "shell": "node demo/play-shell.js",
+    "shell:sample": "node demo/play-shell.js --script demo/sample-commands.txt",
     "snapshot": "node demo/export-snapshot.js",
     "viewer": "node viewer/serve-viewer.js"
   },
