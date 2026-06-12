@@ -8,6 +8,8 @@ const els = {
   metrics: document.getElementById('metrics'),
   players: document.getElementById('players'),
   commands: document.getElementById('commands'),
+  tutorials: document.getElementById('tutorials'),
+  quests: document.getElementById('quests'),
   civilizations: document.getElementById('civilizations'),
   cities: document.getElementById('cities'),
   organizations: document.getElementById('organizations'),
@@ -29,6 +31,8 @@ function render(snapshot) {
   renderMetrics(snapshot);
   renderPlayers(snapshot.players?.items || []);
   renderCommands(snapshot.commands?.recent || []);
+  renderTutorials(snapshot.tutorials?.items || []);
+  renderQuests(snapshot.quests?.items || []);
   renderCivilizations(snapshot.civilizations || []);
   renderCities(snapshot.cities || []);
   renderOrganizations(snapshot.organizations || []);
@@ -46,6 +50,7 @@ function renderMetrics(snapshot) {
     ['Alive', snapshot.population?.alive ?? 0],
     ['Players', snapshot.players?.total ?? 0],
     ['Commands', snapshot.commands?.total ?? 0],
+    ['Quests', snapshot.quests?.total ?? 0],
     ['Cities', snapshot.cities?.length ?? 0],
     ['Organizations', snapshot.organizations?.length ?? 0],
     ['Civilizations', snapshot.civilizations?.length ?? 0],
@@ -76,6 +81,22 @@ function renderCommands(items) {
     <strong>${escapeHtml(item.type || 'command')} · ${escapeHtml(item.status || 'unknown')}</strong>
     <span>player ${escapeHtml(item.playerId || 'unknown')} · tick ${formatNumber(item.updatedAt ?? item.createdAt ?? 0)}</span>
     <span>${item.result?.ok ? 'ok' : 'not ok'}${item.result?.reason ? ` · ${escapeHtml(item.result.reason)}` : ''}${item.result?.actionType ? ` · action ${escapeHtml(item.result.actionType)}` : ''}</span>
+  `);
+}
+
+function renderTutorials(items) {
+  els.tutorials.innerHTML = renderList(items, item => `
+    <strong>${escapeHtml(item.playerId)}</strong>
+    <span>${escapeHtml(item.status || 'unknown')} · active quest ${escapeHtml(item.activeQuestId || 'none')}</span>
+    <span>completed ${formatNumber(item.completedQuests || 0)} · claimed ${formatNumber(item.claimedQuests || 0)}</span>
+  `);
+}
+
+function renderQuests(items) {
+  els.quests.innerHTML = renderList(items, item => `
+    <strong>${escapeHtml(item.title || item.id)}</strong>
+    <span>${escapeHtml(item.status || 'unknown')} · player ${escapeHtml(item.playerId || 'unknown')} · progress ${formatNumber(item.progress || 0)}%</span>
+    <span>objectives ${formatNumber(item.completedObjectives || 0)}/${formatNumber(item.objectives || 0)} · tags ${(item.tags || []).map(escapeHtml).join(', ') || 'none'}</span>
   `);
 }
 
@@ -114,6 +135,8 @@ function renderEntities(items) {
 function renderSystems(snapshot) {
   const rows = [
     ['Players', `${snapshot.players?.active || 0}/${snapshot.players?.total || 0} active · commands ${snapshot.commands?.total || 0}`],
+    ['Quests', `${snapshot.quests?.active || 0}/${snapshot.quests?.total || 0} active · claimed ${snapshot.quests?.claimed || 0}`],
+    ['Tutorials', `${snapshot.tutorials?.active || 0}/${snapshot.tutorials?.total || 0} active · completed ${snapshot.tutorials?.completed || 0}`],
     ['Infrastructure', `${snapshot.infrastructure?.active || 0}/${snapshot.infrastructure?.total || 0} active`],
     ['Governance', `${snapshot.governance?.active || 0}/${snapshot.governance?.total || 0} active · unrest ${formatNumber(snapshot.governance?.averageUnrest || 0)}`],
     ['Conflicts', `${snapshot.conflicts?.active || 0} active · casualties ${formatNumber(snapshot.conflicts?.casualties || 0)}`],
