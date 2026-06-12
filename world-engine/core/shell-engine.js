@@ -7,6 +7,9 @@ const { executePlayerCommand, getPlayerCommands } = require('./command-engine');
 const { queryWorld } = require('./query-engine');
 const { createWorldSnapshot } = require('./snapshot-engine');
 const { getPlayerView, processPlayersTick } = require('./player-engine');
+const { getPlayerQuests, processQuestsTick, claimCompletedPlayerQuests, claimQuestReward } = require('./quest-engine');
+const { startTutorial, processTutorialTick, getTutorialView, formatTutorialView } = require('./tutorial-engine');
+const { createTurnReport, formatTurnReport } = require('./turn-report-engine');
 
 const SHELL_STATUS = {
   OK: 'ok',
@@ -32,6 +35,10 @@ const HELP_TEXT = [
   '  help                         Show this help',
   '  status                       Show player status',
   '  world                        Show world overview',
+  '  tutorial                     Start/show tutorial progress',
+  '  quests                       Show active/completed quests',
+  '  claim [questId]              Claim one completed quest or all completed quests',
+  '  report [ticks]               Show a turn report',
   '  inspect [target] [id]         Inspect world/player/location/entity/org/city/civ',
   '  move <locationId>            Move active character',
   '  work [resource] [amount]      Work for resource, default currency 10',
@@ -55,6 +62,7 @@ function createShellSession(world, playerId, options = {}) {
     options: mergeOptions(DEFAULT_SHELL_OPTIONS, options),
     history: [],
     createdAt: world.tick,
+    lastReportTick: world.tick,
   };
 }
 
@@ -93,6 +101,37 @@ function dispatchShellCommand(session, parsed) {
   if (parsed.command === 'world') {
     const overview = queryWorld(world, { type: 'world' });
     return ok(formatWorldOverview(overview), overview);
+  }
+
+  if (parsed.command === 'tutorial') {
+    startTutorial(world, playerId);
+    processTutorialTick(world, { claimCompleted: false });
+    const view = getTutorialView(world, playerId);
+    return ok(formatTutorialView(view), view);
+  }
+
+  if (parsed.command === 'quests') {
+    processQuestsTick(world);
+    const quests = getPlayerQuests(world, playerId);
+    return ok(formatQuestList(quests), quests);
+  }
+
+  if (parsed.command === 'claim') {
+    processQuestsTick(world);
+    if (a) {
+      const result = claimQuestReward(world, a);
+      if (!result) return fail(`Missing quest: ${a}`);
+      return ok(`Claim result: ${result.status}`, result);
+    }
+    const claimed = claimCompletedPlayerQuests(world, playerId);
+    return ok(`Claimed quests: ${claimed.length ? claimed.join(', ') : 'none'}`, { claimed });
+  }
+
+  if (parsed.command === 'report') {
+    const ticks = numeric(a, Math.max(1, world.tick - (session.lastReportTick || world.tick - 1)));
+    const report = createTurnReport(world, playerId, { ticks });
+    session.lastReportTick = world.tick;
+    return ok(formatTurnReport(report), report);
   }
 
   if (parsed.command === 'inspect') {
@@ -137,8 +176,11 @@ function dispatchShellCommand(session, parsed) {
 
   if (parsed.command === 'wait') {
     const ticks = Math.max(1, numeric(a, session.options.defaultWaitTicks));
+    const beforeTick = world.tick;
     advanceShellTicks(session, ticks);
-    return ok(`Advanced ${ticks} tick(s). World tick=${world.tick}`, getSimulationSummary(world));
+    const report = createTurnReport(world, playerId, { sinceTick: beforeTick });
+    session.lastReportTick = world.tick;
+    return ok(`Advanced ${ticks} tick(s). World tick=${world.tick}\n${formatTurnReport(report)}`, getSimulationSummary(world));
   }
 
   if (parsed.command === 'leaderboard') {
@@ -165,6 +207,8 @@ function dispatchShellCommand(session, parsed) {
 function advanceShellTicks(session, ticks) {
   runSimulationTicks(session.world, ticks, session.options.simulation || {});
   processPlayersTick(session.world);
+  processTutorialTick(session.world, { autoStart: true, claimCompleted: false });
+  processQuestsTick(session.world);
 }
 
 function inspectTarget(world, playerId, targetType, targetId) {
@@ -257,6 +301,17 @@ function formatCommands(commands) {
   return commands.map(command => `${command.id} ${command.type} ${command.status}`).join('\n') || 'No commands.';
 }
 
+function formatQuestList(quests = []) {
+  if (!quests.length) return 'No quests. Use tutorial to start tutorial quests.';
+  return quests.map(quest => {
+    const objectives = (quest.objectives || []).map(objective => {
+      const mark = objective.done ? 'x' : ' ';
+      return `  [${mark}] ${objective.title || objective.type} ${objective.progress || 0}/${objective.target || 1}`;
+    }).join('\n');
+    return `${quest.id}\n${quest.title} [${quest.status}]\n${objectives}`;
+  }).join('\n\n');
+}
+
 function formatJson(value) {
   return JSON.stringify(value, null, 2);
 }
@@ -310,4 +365,5 @@ module.exports = {
   formatCommandResult,
   formatLeaderboard,
   formatCommands,
+  formatQuestList,
 };
