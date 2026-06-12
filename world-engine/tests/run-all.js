@@ -20,6 +20,7 @@ const tests = [
   'quest-tutorial-report-test.js',
   'map-alias-test.js',
   'query-content-test.js',
+  'journal-encounter-board-test.js',
   'stability-100-test.js',
 ];
 
