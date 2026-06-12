@@ -22,9 +22,17 @@ function main() {
 
   assert.ok(html.includes('snapshot-url'), 'viewer html should include snapshot url input');
   assert.ok(html.includes('metrics'), 'viewer html should include metrics mount');
+  assert.ok(html.includes('players'), 'viewer html should include players mount');
+  assert.ok(html.includes('commands'), 'viewer html should include commands mount');
+  assert.ok(html.includes('tutorials'), 'viewer html should include tutorials mount');
+  assert.ok(html.includes('quests'), 'viewer html should include quests mount');
   assert.ok(html.includes('raw'), 'viewer html should include raw snapshot mount');
   assert.ok(app.includes('loadSnapshot'), 'viewer app should load snapshots');
   assert.ok(app.includes('renderMetrics'), 'viewer app should render metrics');
+  assert.ok(app.includes('renderPlayers'), 'viewer app should render players');
+  assert.ok(app.includes('renderCommands'), 'viewer app should render commands');
+  assert.ok(app.includes('renderTutorials'), 'viewer app should render tutorials');
+  assert.ok(app.includes('renderQuests'), 'viewer app should render quests');
   assert.ok(app.includes('escapeHtml'), 'viewer app should escape HTML');
   assert.ok(css.includes('.card'), 'viewer css should style cards');
   assert.ok(server.includes('http.createServer'), 'viewer server should create HTTP server');
