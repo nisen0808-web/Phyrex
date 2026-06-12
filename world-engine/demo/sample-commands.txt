@@ -5,7 +5,7 @@ quests
 world
 map
 board
-accept board_qingyun_city_gather_food
+accept board_qingyun_city_gather_wood
 journal
 explore
 journal
