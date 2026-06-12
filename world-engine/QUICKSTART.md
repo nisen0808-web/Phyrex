@@ -33,6 +33,9 @@ viewer-test.js
 player-command-test.js
 shell-engine-test.js
 shell-script-test.js
+quest-tutorial-report-test.js
+map-alias-test.js
+query-content-test.js
 stability-100-test.js
 ```
 
@@ -157,23 +160,52 @@ cd world-engine
 npm run shell
 ```
 
-进入 shell 后可以输入：
+进入 shell 后可以输入英文命令：
 
 ```text
 help
 status
 world
+tutorial
+quests
+map
 inspect location
 move mist_forest
 work currency 20
 wait 1
+report 1
 gather wood 5
 train 3
 join "Qingyun Sect"
 leaderboard overall
 commands
+claim
 snapshot
 quit
+```
+
+也支持中文别名：
+
+```text
+帮助
+状态
+世界
+教程
+任务
+地图
+查看 地点
+前往 mist_forest
+工作 currency 20
+等待 1
+报告 1
+采集 wood 5
+修炼 3
+加入 "Qingyun Sect"
+排行 overall
+命令
+领取
+快照
+退出
 ```
 
 也可以运行脚本化命令：
@@ -192,13 +224,76 @@ Shell 相关文件：
 
 ```text
 world-engine/core/shell-engine.js
+world-engine/core/shell-alias-engine.js
+world-engine/core/map-engine.js
 world-engine/demo/play-shell.js
 world-engine/demo/sample-commands.txt
 world-engine/tests/shell-engine-test.js
 world-engine/tests/shell-script-test.js
+world-engine/tests/map-alias-test.js
 ```
 
-## 6. 导出前端可读快照 JSON
+## 6. 任务 / 教程 / 回合报告
+
+内容层已经有三条基础能力：
+
+```text
+quest-engine.js        任务、目标、奖励、领取
+tutorial-engine.js     新手任务链和下一步提示
+turn-report-engine.js  每次 wait 后生成回合报告
+```
+
+Shell 中对应命令：
+
+```text
+tutorial / 教程
+quests / 任务
+claim / 领取
+report / 报告
+```
+
+`wait` 命令会自动推进世界，并返回本回合摘要。
+
+## 7. 地图 / 地点查询
+
+地图能力由：
+
+```text
+world-engine/core/map-engine.js
+```
+
+提供。
+
+Shell 中使用：
+
+```text
+map
+map mist_forest
+地图
+地图 mist_forest
+```
+
+返回：
+
+```text
+当前地点
+资源
+出口 / 邻接地点
+城市
+组织
+附近实体
+```
+
+Query Engine 也支持：
+
+```js
+queryWorld(world, { type: 'map', playerId: 'player_id' })
+queryWorld(world, { type: 'map', locationId: 'mist_forest' })
+queryWorld(world, { type: 'quests', playerId: 'player_id' })
+queryWorld(world, { type: 'tutorial', playerId: 'player_id' })
+```
+
+## 8. 导出前端可读快照 JSON
 
 在仓库根目录运行：
 
@@ -241,6 +336,8 @@ counters
 population
 players
 commands
+quests
+tutorials
 cities
 organizations
 civilizations
@@ -257,7 +354,7 @@ limits
 recentReports
 ```
 
-## 7. 浏览器查看世界快照
+## 9. 浏览器查看世界快照
 
 先生成 snapshot：
 
@@ -300,7 +397,7 @@ world-engine/viewer/styles.css
 world-engine/viewer/serve-viewer.js
 ```
 
-## 8. 运行 1000 tick 手动压测
+## 10. 运行 1000 tick 手动压测
 
 默认测试不跑 1000 tick，因为部分沙箱或 CI 环境可能超时。
 
@@ -322,7 +419,7 @@ node world-engine/tests/stability-1000-test.js
 npm run stress
 ```
 
-## 9. 测试策略
+## 11. 测试策略
 
 ```text
 npm test
@@ -366,7 +463,7 @@ npm run viewer
 
 用于本地浏览器查看 demo snapshot。
 
-## 10. 当前关键上限
+## 12. 当前关键上限
 
 ```text
 world.memory <= 1000
@@ -375,11 +472,12 @@ processes.byId <= 500
 information.items <= 1000
 memories.byId <= 3000
 commands.byId <= 500
+quests.byId <= 500
 ```
 
 这些限制是为了避免世界长期运行后状态无限膨胀。
 
-## 11. 常见命令
+## 13. 常见命令
 
 ```bash
 # 根目录
