@@ -52,13 +52,29 @@ function main() {
   assert.strictEqual(result.status, SHELL_STATUS.OK, 'status should be ok');
   assert.ok(result.message.includes('Shell Test Hero'), 'status should include character name');
 
+  result = executeShellInput(session, 'tutorial');
+  assert.strictEqual(result.status, SHELL_STATUS.OK, 'tutorial should be ok');
+  assert.ok(result.message.includes('Tutorial'), 'tutorial should render tutorial status');
+
+  result = executeShellInput(session, 'inspect player');
+  assert.strictEqual(result.status, SHELL_STATUS.OK, 'inspect player should be ok');
+
+  result = executeShellInput(session, 'quests');
+  assert.strictEqual(result.status, SHELL_STATUS.OK, 'quests should be ok');
+  assert.ok(result.message.includes('Know Yourself'), 'quests should include tutorial quest');
+
   result = executeShellInput(session, 'work currency 20');
   assert.strictEqual(result.status, SHELL_STATUS.OK, 'work shell command should be ok');
   assert.ok(result.message.includes('accepted'), 'work should create accepted action');
 
   result = executeShellInput(session, 'wait 1');
   assert.strictEqual(result.status, SHELL_STATUS.OK, 'wait should be ok');
+  assert.ok(result.message.includes('Turn Report'), 'wait should include turn report');
   assert.ok(Number(world.entities[entity.id].resources.currency || 0) >= 170, 'work should apply after wait');
+
+  result = executeShellInput(session, 'report 1');
+  assert.strictEqual(result.status, SHELL_STATUS.OK, 'report should be ok');
+  assert.ok(result.message.includes('Turn Report'), 'report should render turn report');
 
   result = executeShellInput(session, 'move mist_forest');
   assert.strictEqual(result.status, SHELL_STATUS.OK, 'move shell command should be ok');
@@ -72,10 +88,19 @@ function main() {
 
   result = executeShellInput(session, 'train 3');
   assert.strictEqual(result.status, SHELL_STATUS.OK, 'train should be ok');
+  executeShellInput(session, 'wait 1');
 
   result = executeShellInput(session, 'join "Qingyun Sect"');
   assert.strictEqual(result.status, SHELL_STATUS.OK, 'join should be ok');
   assert.ok(world.entities[entity.id].organizationIds.includes(sectId), 'join should add organization membership');
+
+  result = executeShellInput(session, 'quests');
+  assert.strictEqual(result.status, SHELL_STATUS.OK, 'quests should be ok after progress');
+  assert.ok(result.message.includes('claimed') || result.message.includes('completed') || result.message.includes('active'), 'quests should show statuses');
+
+  result = executeShellInput(session, 'claim');
+  assert.strictEqual(result.status, SHELL_STATUS.OK, 'claim should be ok');
+  assert.ok(result.message.includes('Claimed quests'), 'claim should report claimed quests');
 
   result = executeShellInput(session, 'leaderboard overall 3');
   assert.strictEqual(result.status, SHELL_STATUS.OK, 'leaderboard should be ok');
