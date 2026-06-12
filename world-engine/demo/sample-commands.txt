@@ -3,19 +3,21 @@ status
 tutorial
 quests
 world
+map
 inspect location
 work currency 20
 wait 1
 report 1
 move mist_forest
 wait 1
-quests
+地图
+任务
 gather wood 5
 wait 1
-train 3
+修炼 3
 wait 2
-report 3
-leaderboard overall
+报告 3
+排行 overall
 commands
 claim
 quests
