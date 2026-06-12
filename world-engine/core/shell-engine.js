@@ -12,6 +12,9 @@ const { startTutorial, processTutorialTick, getTutorialView, formatTutorialView 
 const { createTurnReport, formatTurnReport } = require('./turn-report-engine');
 const { createPlayerMap, createLocationMap, formatLocationMap } = require('./map-engine');
 const { normalizeShellCommand, normalizeShellTarget } = require('./shell-alias-engine');
+const { getPlayerJournal, formatJournalEntries, recordPlayerJournal, JOURNAL_TYPES } = require('./player-journal-engine');
+const { exploreLocation, formatEncounter } = require('./encounter-engine');
+const { getPlayerQuestBoard, acceptBoardQuest, formatQuestBoard } = require('./quest-board-engine');
 
 const SHELL_STATUS = {
   OK: 'ok',
@@ -41,6 +44,10 @@ const HELP_TEXT = [
   '  quests / 任务                Show active/completed quests',
   '  claim / 领取 [questId]       Claim one completed quest or all completed quests',
   '  report / 报告 [ticks]        Show a turn report',
+  '  journal / 日志 [limit]       Show player journal',
+  '  explore / 探索               Explore current location and trigger encounter',
+  '  board / 委托                 Show local quest board',
+  '  accept / 接取 <boardItemId>  Accept a board commission',
   '  map / 地图 [locationId]      Show local map and exits',
   '  inspect / 查看 [target] [id] Inspect world/player/location/entity/org/city/civ',
   '  move / 前往 <locationId>     Move active character',
@@ -124,9 +131,11 @@ function dispatchShellCommand(session, parsed) {
     if (a) {
       const result = claimQuestReward(world, a);
       if (!result) return fail(`Missing quest: ${a}`);
+      recordPlayerJournal(world, playerId, { type: JOURNAL_TYPES.REWARD, title: `Claimed quest reward`, summary: `Claim result for ${a}: ${result.status}`, tags: ['quest', 'reward'], payload: { questId: a } });
       return ok(`Claim result: ${result.status}`, result);
     }
     const claimed = claimCompletedPlayerQuests(world, playerId);
+    if (claimed.length) recordPlayerJournal(world, playerId, { type: JOURNAL_TYPES.REWARD, title: 'Claimed quest rewards', summary: `Claimed ${claimed.length} completed quest reward(s).`, tags: ['quest', 'reward'], payload: { claimed } });
     return ok(`Claimed quests: ${claimed.length ? claimed.join(', ') : 'none'}`, { claimed });
   }
 
@@ -135,6 +144,28 @@ function dispatchShellCommand(session, parsed) {
     const report = createTurnReport(world, playerId, { ticks });
     session.lastReportTick = world.tick;
     return ok(formatTurnReport(report), report);
+  }
+
+  if (parsed.command === 'journal') {
+    const entries = getPlayerJournal(world, playerId, { limit: numeric(a, 12) });
+    return ok(formatJournalEntries(entries), entries);
+  }
+
+  if (parsed.command === 'explore') {
+    const encounter = exploreLocation(world, playerId);
+    processQuestsTick(world);
+    return ok(formatEncounter(encounter), encounter);
+  }
+
+  if (parsed.command === 'board') {
+    const board = getPlayerQuestBoard(world, playerId);
+    return ok(formatQuestBoard(board), board);
+  }
+
+  if (parsed.command === 'accept') {
+    if (!a) return fail('Usage: accept <boardItemId>');
+    const result = acceptBoardQuest(world, playerId, a);
+    return ok(`Accepted commission: ${result.item.title}\nQuest: ${result.quest.title} [${result.quest.status}]`, result);
   }
 
   if (parsed.command === 'map') {
