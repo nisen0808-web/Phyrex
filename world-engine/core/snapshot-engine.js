@@ -6,6 +6,7 @@ const DEFAULT_SNAPSHOT_OPTIONS = {
   topCities: 10,
   topCivilizations: 5,
   topPlayers: 10,
+  topQuests: 20,
   recentCommands: 20,
   recentReports: 20,
 };
@@ -19,6 +20,8 @@ function createWorldSnapshot(world, options = {}) {
     population: summarizePopulation(world),
     players: summarizePlayers(world, config.topPlayers),
     commands: summarizeCommands(world, config.recentCommands),
+    quests: summarizeQuests(world, config.topQuests),
+    tutorials: summarizeTutorials(world),
     cities: summarizeCities(world, config.topCities),
     organizations: summarizeOrganizations(world, config.topOrganizations),
     civilizations: summarizeCivilizations(world, config.topCivilizations),
@@ -110,6 +113,57 @@ function summarizeCommands(world, limit) {
         actionId: command.result.actionId || null,
         actionType: command.result.actionType || null,
       } : null,
+    })),
+  };
+}
+
+function summarizeQuests(world, limit) {
+  const quests = Object.values(world.quests?.byId || {});
+  return {
+    total: quests.length,
+    active: quests.filter(quest => quest.status === 'active').length,
+    completed: quests.filter(quest => quest.status === 'completed').length,
+    claimed: quests.filter(quest => quest.status === 'claimed').length,
+    failed: quests.filter(quest => quest.status === 'failed').length,
+    byStatus: countBy(quests.map(quest => quest.status)),
+    byTag: countBy(quests.flatMap(quest => quest.tags || [])),
+    items: quests
+      .sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))
+      .slice(0, limit)
+      .map(quest => ({
+        id: quest.id,
+        playerId: quest.playerId,
+        entityId: quest.entityId || null,
+        title: quest.title,
+        status: quest.status,
+        tags: [...(quest.tags || [])],
+        progress: questProgress(quest),
+        objectives: (quest.objectives || []).length,
+        completedObjectives: (quest.objectives || []).filter(objective => objective.done || Number(objective.progress || 0) >= Number(objective.target || 1)).length,
+        createdAt: quest.createdAt,
+        updatedAt: quest.updatedAt,
+        completedAt: quest.completedAt,
+        claimedAt: quest.claimedAt,
+      })),
+  };
+}
+
+function summarizeTutorials(world) {
+  const tutorials = Object.values(world.tutorials?.byPlayer || {});
+  return {
+    total: tutorials.length,
+    active: tutorials.filter(tutorial => tutorial.status === 'active').length,
+    completed: tutorials.filter(tutorial => tutorial.status === 'completed').length,
+    byStatus: countBy(tutorials.map(tutorial => tutorial.status)),
+    items: tutorials.map(tutorial => ({
+      playerId: tutorial.playerId,
+      status: tutorial.status,
+      activeQuestId: tutorial.activeQuestId,
+      completedQuests: (tutorial.completedQuestIds || []).length,
+      claimedQuests: (tutorial.claimedQuestIds || []).length,
+      startedAt: tutorial.startedAt,
+      completedAt: tutorial.completedAt,
+      lastUpdatedAt: tutorial.lastUpdatedAt,
     })),
   };
 }
@@ -289,11 +343,18 @@ function summarizeLimits(world) {
     information: { current: Object.keys(world.information?.items || {}).length, limit: 1000 },
     memories: { current: Object.keys(world.memories?.byId || {}).length, limit: 3000 },
     commands: { current: Object.keys(world.commands?.byId || {}).length, limit: 500 },
+    quests: { current: Object.keys(world.quests?.byId || {}).length, limit: 500 },
   };
 }
 
 function summarizeRecentReports(world, limit) {
   return (world.simulation?.reports || []).slice(-limit);
+}
+
+function questProgress(quest) {
+  if (!quest.objectives?.length) return 0;
+  const progress = quest.objectives.reduce((sum, objective) => sum + Math.min(1, Number(objective.progress || 0) / Math.max(1, Number(objective.target || 1))), 0);
+  return Math.round((progress / quest.objectives.length) * 100);
 }
 
 function scoreCity(city) {
@@ -330,6 +391,8 @@ module.exports = {
   summarizePopulation,
   summarizePlayers,
   summarizeCommands,
+  summarizeQuests,
+  summarizeTutorials,
   summarizeCities,
   summarizeOrganizations,
   summarizeCivilizations,
