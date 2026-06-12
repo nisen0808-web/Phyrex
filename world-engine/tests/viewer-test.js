@@ -26,6 +26,9 @@ function main() {
   assert.ok(html.includes('commands'), 'viewer html should include commands mount');
   assert.ok(html.includes('tutorials'), 'viewer html should include tutorials mount');
   assert.ok(html.includes('quests'), 'viewer html should include quests mount');
+  assert.ok(html.includes('journals'), 'viewer html should include journals mount');
+  assert.ok(html.includes('encounters'), 'viewer html should include encounters mount');
+  assert.ok(html.includes('questBoards'), 'viewer html should include quest board mount');
   assert.ok(html.includes('raw'), 'viewer html should include raw snapshot mount');
   assert.ok(app.includes('loadSnapshot'), 'viewer app should load snapshots');
   assert.ok(app.includes('renderMetrics'), 'viewer app should render metrics');
@@ -33,6 +36,9 @@ function main() {
   assert.ok(app.includes('renderCommands'), 'viewer app should render commands');
   assert.ok(app.includes('renderTutorials'), 'viewer app should render tutorials');
   assert.ok(app.includes('renderQuests'), 'viewer app should render quests');
+  assert.ok(app.includes('renderJournals'), 'viewer app should render journals');
+  assert.ok(app.includes('renderEncounters'), 'viewer app should render encounters');
+  assert.ok(app.includes('renderQuestBoards'), 'viewer app should render quest boards');
   assert.ok(app.includes('escapeHtml'), 'viewer app should escape HTML');
   assert.ok(css.includes('.card'), 'viewer css should style cards');
   assert.ok(server.includes('http.createServer'), 'viewer server should create HTTP server');
