@@ -19,6 +19,7 @@ const tests = [
   'shell-script-test.js',
   'quest-tutorial-report-test.js',
   'map-alias-test.js',
+  'query-content-test.js',
   'stability-100-test.js',
 ];
 
