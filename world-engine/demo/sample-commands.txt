@@ -1,16 +1,23 @@
 # Sample scripted play session for world-engine/demo/play-shell.js
 status
+tutorial
+quests
 world
 inspect location
 work currency 20
 wait 1
+report 1
 move mist_forest
 wait 1
+quests
 gather wood 5
 wait 1
 train 3
 wait 2
+report 3
 leaderboard overall
 commands
+claim
+quests
 snapshot world-engine/output/sample-shell-snapshot.json
 quit
