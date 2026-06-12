@@ -11,13 +11,11 @@ cd Phyrex
 
 ## 2. 运行完整快速测试
 
-在仓库根目录运行：
-
 ```bash
 npm test
 ```
 
-这会执行：
+默认测试包括：
 
 ```text
 smoke-test.js
@@ -36,6 +34,7 @@ shell-script-test.js
 quest-tutorial-report-test.js
 map-alias-test.js
 query-content-test.js
+journal-encounter-board-test.js
 stability-100-test.js
 ```
 
@@ -48,26 +47,17 @@ npm test
 
 ## 3. 运行世界 demo
 
-在仓库根目录运行默认 100 tick demo：
-
 ```bash
 npm run demo
 ```
 
-也可以指定 tick 数，例如 300 tick：
+指定 tick 数：
 
 ```bash
 node world-engine/demo/run-demo.js 300
 ```
 
-在 `world-engine` 目录运行：
-
-```bash
-cd world-engine
-npm run demo
-```
-
-Demo 会创建一个小型修仙主题世界，包括：
+Demo 会创建一个小型修仙主题世界：
 
 ```text
 Qingyun City
@@ -77,41 +67,20 @@ Qingyun Sect
 Black Iron Guild
 Mist Forest Clan
 36 个角色
-组织关系
-契约
-城市
-文明
-科技
-基础设施
-治理
-冲突
-信息
-记忆
-过程
-涌现事件
+组织、城市、文明、科技、基础设施、治理、冲突、信息、记忆、过程、涌现事件
 ```
 
-## 4. 运行最小可玩 demo
-
-在仓库根目录运行：
+## 4. 运行固定试玩 demo
 
 ```bash
 npm run play
 ```
 
-在 `world-engine` 目录运行：
-
-```bash
-cd world-engine
-npm run play
-```
-
-`play-demo.js` 会执行一条固定试玩链路：
+固定试玩会执行：
 
 ```text
 创建玩家账号
 创建玩家角色
-查看玩家状态
 inspect 当前地点
 work 赚钱
 move 到 Mist Forest
@@ -123,44 +92,13 @@ train 修炼
 查看世界概览
 ```
 
-这条链路验证：
-
-```text
-Player
-→ Character
-→ Command
-→ Action / Goal / Organization
-→ Tick
-→ Result
-→ Query
-```
-
-核心文件：
-
-```text
-world-engine/core/player-engine.js
-world-engine/core/command-engine.js
-world-engine/core/query-engine.js
-world-engine/demo/play-demo.js
-world-engine/tests/player-command-test.js
-```
-
 ## 5. 运行交互式 Shell
 
-在仓库根目录运行：
-
 ```bash
 npm run shell
 ```
 
-在 `world-engine` 目录运行：
-
-```bash
-cd world-engine
-npm run shell
-```
-
-进入 shell 后可以输入英文命令：
+英文命令：
 
 ```text
 help
@@ -169,6 +107,10 @@ world
 tutorial
 quests
 map
+board
+accept <boardItemId>
+explore
+journal
 inspect location
 move mist_forest
 work currency 20
@@ -184,7 +126,7 @@ snapshot
 quit
 ```
 
-也支持中文别名：
+中文命令：
 
 ```text
 帮助
@@ -193,6 +135,10 @@ quit
 教程
 任务
 地图
+委托
+接取 <boardItemId>
+探索
+日志
 查看 地点
 前往 mist_forest
 工作 currency 20
@@ -208,94 +154,89 @@ quit
 退出
 ```
 
-也可以运行脚本化命令：
+脚本化试玩：
 
 ```bash
 npm run shell:sample
 ```
 
-或手动指定脚本：
+或指定脚本：
 
 ```bash
 node world-engine/demo/play-shell.js --script world-engine/demo/sample-commands.txt
 ```
 
-Shell 相关文件：
+## 6. 内容层能力
+
+当前可玩内容层包括：
 
 ```text
-world-engine/core/shell-engine.js
-world-engine/core/shell-alias-engine.js
-world-engine/core/map-engine.js
-world-engine/demo/play-shell.js
-world-engine/demo/sample-commands.txt
-world-engine/tests/shell-engine-test.js
-world-engine/tests/shell-script-test.js
-world-engine/tests/map-alias-test.js
+quest-engine.js              任务、目标、奖励、领取
+tutorial-engine.js           新手任务链和下一步提示
+turn-report-engine.js        每次 wait 后生成回合报告
+map-engine.js                当前地点、出口、资源、附近实体、组织、城市
+shell-alias-engine.js        英文/中文命令别名
+player-journal-engine.js     玩家日志 / 个人史
+encounter-engine.js          探索遭遇 / 地点事件
+quest-board-engine.js        地点委托板 / 接取委托
 ```
 
-## 6. 任务 / 教程 / 回合报告
-
-内容层已经有三条基础能力：
-
-```text
-quest-engine.js        任务、目标、奖励、领取
-tutorial-engine.js     新手任务链和下一步提示
-turn-report-engine.js  每次 wait 后生成回合报告
-```
-
-Shell 中对应命令：
+核心 shell 命令：
 
 ```text
 tutorial / 教程
 quests / 任务
 claim / 领取
 report / 报告
+map / 地图
+board / 委托
+accept / 接取
+explore / 探索
+journal / 日志
 ```
 
-`wait` 命令会自动推进世界，并返回本回合摘要。
+## 7. 地图、探索、委托闭环
 
-## 7. 地图 / 地点查询
-
-地图能力由：
+典型玩法：
 
 ```text
-world-engine/core/map-engine.js
-```
-
-提供。
-
-Shell 中使用：
-
-```text
-map
-map mist_forest
 地图
-地图 mist_forest
+委托
+接取 board_mist_forest_gather_wood
+探索
+日志
+采集 wood 5
+等待 1
+任务
+领取
+报告
 ```
 
-返回：
+这条链路会：
 
 ```text
-当前地点
-资源
-出口 / 邻接地点
-城市
-组织
-附近实体
+查看当前位置
+查看本地委托
+接取委托并生成 quest
+探索地点并触发 encounter
+写入 player journal
+推进 world tick
+完成目标后领取奖励
 ```
 
-Query Engine 也支持：
+## 8. Query Engine 常用查询
 
 ```js
 queryWorld(world, { type: 'map', playerId: 'player_id' })
 queryWorld(world, { type: 'map', locationId: 'mist_forest' })
 queryWorld(world, { type: 'quests', playerId: 'player_id' })
 queryWorld(world, { type: 'tutorial', playerId: 'player_id' })
+queryWorld(world, { type: 'journal', playerId: 'player_id' })
+queryWorld(world, { type: 'encounters', playerId: 'player_id' })
+queryWorld(world, { type: 'board', playerId: 'player_id' })
 ```
 
-## 8. 导出前端可读快照 JSON
-
-在仓库根目录运行：
+## 9. 导出前端可读快照 JSON
 
 ```bash
 npm run snapshot
@@ -307,28 +248,13 @@ npm run snapshot
 world-engine/output/demo-snapshot.json
 ```
 
-也可以指定 tick 数：
-
-```bash
-node world-engine/demo/export-snapshot.js 300
-```
-
-也可以指定输出路径：
+指定 tick 和路径：
 
 ```bash
 node world-engine/demo/export-snapshot.js 300 world-engine/output/demo-300.json
 ```
 
-在 `world-engine` 目录运行：
-
-```bash
-cd world-engine
-npm run snapshot
-```
-
-Snapshot 是给 UI / 前端读取的整理后数据，不需要前端直接读取完整 world state。
-
-主要字段：
+Snapshot 主要字段：
 
 ```text
 world
@@ -338,6 +264,9 @@ players
 commands
 quests
 tutorials
+journals
+encounters
+questBoards
 cities
 organizations
 civilizations
@@ -354,7 +283,7 @@ limits
 recentReports
 ```
 
-## 9. 浏览器查看世界快照
+## 10. 浏览器查看世界快照
 
 先生成 snapshot：
 
@@ -362,7 +291,7 @@ recentReports
 npm run snapshot
 ```
 
-再启动本地 viewer：
+再启动 viewer：
 
 ```bash
 npm run viewer
@@ -374,94 +303,36 @@ npm run viewer
 http://localhost:8787/viewer/index.html
 ```
 
-viewer 默认读取：
+Viewer 会显示：
 
 ```text
-world-engine/output/demo-snapshot.json
+players
+commands
+tutorials
+quests
+journals
+encounters
+questBoards
+cities
+organizations
+civilizations
+systems
+limits
+recentReports
+raw snapshot
 ```
 
-如果在 `world-engine` 目录内运行：
-
-```bash
-cd world-engine
-npm run snapshot
-npm run viewer
-```
-
-viewer 是零依赖静态页面，文件位于：
-
-```text
-world-engine/viewer/index.html
-world-engine/viewer/app.js
-world-engine/viewer/styles.css
-world-engine/viewer/serve-viewer.js
-```
-
-## 10. 运行 1000 tick 手动压测
-
-默认测试不跑 1000 tick，因为部分沙箱或 CI 环境可能超时。
-
-需要长压测时，在仓库根目录运行：
+## 11. 运行 1000 tick 手动压测
 
 ```bash
 npm run stress
 ```
 
-或者：
+或：
 
 ```bash
 node world-engine/tests/stability-1000-test.js
 ```
-
-在 `world-engine` 目录运行：
-
-```bash
-npm run stress
-```
-
-## 11. 测试策略
-
-```text
-npm test
-```
-
-用于日常开发，覆盖功能测试和 100 tick 快速稳定性测试。
-
-```text
-npm run play
-```
-
-用于验证固定的最小可玩链路。
-
-```text
-npm run shell
-```
-
-用于人工交互式试玩。
-
-```text
-npm run shell:sample
-```
-
-用于脚本化 shell 测试。
-
-```text
-npm run stress
-```
-
-用于手动长周期压测，覆盖 1000 tick 稳定性。
-
-```text
-npm run snapshot
-```
-
-用于生成前端可读取的 demo snapshot JSON。
-
-```text
-npm run viewer
-```
-
-用于本地浏览器查看 demo snapshot。
 
 ## 12. 当前关键上限
 
@@ -473,9 +344,10 @@ information.items <= 1000
 memories.byId <= 3000
 commands.byId <= 500
 quests.byId <= 500
+journals <= 300 per player
+encounters <= 300 per player
+questBoards <= 500 snapshot limit
 ```
-
-这些限制是为了避免世界长期运行后状态无限膨胀。
 
 ## 13. 常见命令
 
@@ -500,14 +372,6 @@ npm run shell:sample
 npm run snapshot
 npm run viewer
 npm run stress
-
-# 指定 demo tick
-node world-engine/demo/run-demo.js 300
-node world-engine/demo/run-demo.js 1000
-
-# 指定 snapshot tick 和输出路径
-node world-engine/demo/export-snapshot.js 300
-node world-engine/demo/export-snapshot.js 300 world-engine/output/demo-300.json
 
 # 指定 shell 脚本
 node world-engine/demo/play-shell.js --script world-engine/demo/sample-commands.txt
