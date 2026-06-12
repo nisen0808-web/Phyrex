@@ -10,6 +10,9 @@ const els = {
   commands: document.getElementById('commands'),
   tutorials: document.getElementById('tutorials'),
   quests: document.getElementById('quests'),
+  journals: document.getElementById('journals'),
+  encounters: document.getElementById('encounters'),
+  questBoards: document.getElementById('questBoards'),
   civilizations: document.getElementById('civilizations'),
   cities: document.getElementById('cities'),
   organizations: document.getElementById('organizations'),
@@ -33,6 +36,9 @@ function render(snapshot) {
   renderCommands(snapshot.commands?.recent || []);
   renderTutorials(snapshot.tutorials?.items || []);
   renderQuests(snapshot.quests?.items || []);
+  renderJournals(snapshot.journals?.recent || []);
+  renderEncounters(snapshot.encounters?.recent || []);
+  renderQuestBoards(snapshot.questBoards?.items || []);
   renderCivilizations(snapshot.civilizations || []);
   renderCities(snapshot.cities || []);
   renderOrganizations(snapshot.organizations || []);
@@ -51,6 +57,9 @@ function renderMetrics(snapshot) {
     ['Players', snapshot.players?.total ?? 0],
     ['Commands', snapshot.commands?.total ?? 0],
     ['Quests', snapshot.quests?.total ?? 0],
+    ['Journal', snapshot.journals?.total ?? 0],
+    ['Encounters', snapshot.encounters?.total ?? 0],
+    ['Board Items', snapshot.questBoards?.total ?? 0],
     ['Cities', snapshot.cities?.length ?? 0],
     ['Organizations', snapshot.organizations?.length ?? 0],
     ['Civilizations', snapshot.civilizations?.length ?? 0],
@@ -100,6 +109,30 @@ function renderQuests(items) {
   `);
 }
 
+function renderJournals(items) {
+  els.journals.innerHTML = renderList(items, item => `
+    <strong>${escapeHtml(item.title || item.type)}</strong>
+    <span>tick ${formatNumber(item.tick || 0)} · ${escapeHtml(item.type || 'journal')} · ${escapeHtml(item.locationId || 'unknown')}</span>
+    <span>${escapeHtml(item.summary || '')}</span>
+  `);
+}
+
+function renderEncounters(items) {
+  els.encounters.innerHTML = renderList(items, item => `
+    <strong>${escapeHtml(item.title || item.type)}</strong>
+    <span>${escapeHtml(item.type || 'encounter')} · ${escapeHtml(item.status || 'unknown')} · ${escapeHtml(item.locationId || 'unknown')}</span>
+    <span>${escapeHtml(item.summary || '')}</span>
+  `);
+}
+
+function renderQuestBoards(items) {
+  els.questBoards.innerHTML = renderList(items, item => `
+    <strong>${escapeHtml(item.title || item.id)}</strong>
+    <span>${escapeHtml(item.status || 'unknown')} · ${escapeHtml(item.type || 'board')} · ${escapeHtml(item.locationId || 'unknown')}</span>
+    <span>${escapeHtml(item.summary || '')}</span>
+  `);
+}
+
 function renderCivilizations(items) {
   els.civilizations.innerHTML = renderList(items, item => `
     <strong>${escapeHtml(item.name)}</strong>
@@ -137,6 +170,9 @@ function renderSystems(snapshot) {
     ['Players', `${snapshot.players?.active || 0}/${snapshot.players?.total || 0} active · commands ${snapshot.commands?.total || 0}`],
     ['Quests', `${snapshot.quests?.active || 0}/${snapshot.quests?.total || 0} active · claimed ${snapshot.quests?.claimed || 0}`],
     ['Tutorials', `${snapshot.tutorials?.active || 0}/${snapshot.tutorials?.total || 0} active · completed ${snapshot.tutorials?.completed || 0}`],
+    ['Journal', `${snapshot.journals?.total || 0} entries · ${snapshot.journals?.players || 0} players`],
+    ['Encounters', `${snapshot.encounters?.total || 0} total`],
+    ['Quest Boards', `${snapshot.questBoards?.open || 0}/${snapshot.questBoards?.total || 0} open`],
     ['Infrastructure', `${snapshot.infrastructure?.active || 0}/${snapshot.infrastructure?.total || 0} active`],
     ['Governance', `${snapshot.governance?.active || 0}/${snapshot.governance?.total || 0} active · unrest ${formatNumber(snapshot.governance?.averageUnrest || 0)}`],
     ['Conflicts', `${snapshot.conflicts?.active || 0} active · casualties ${formatNumber(snapshot.conflicts?.casualties || 0)}`],
