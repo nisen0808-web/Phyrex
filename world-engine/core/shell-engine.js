@@ -10,6 +10,8 @@ const { getPlayerView, processPlayersTick } = require('./player-engine');
 const { getPlayerQuests, processQuestsTick, claimCompletedPlayerQuests, claimQuestReward } = require('./quest-engine');
 const { startTutorial, processTutorialTick, getTutorialView, formatTutorialView } = require('./tutorial-engine');
 const { createTurnReport, formatTurnReport } = require('./turn-report-engine');
+const { createPlayerMap, createLocationMap, formatLocationMap } = require('./map-engine');
+const { normalizeShellCommand, normalizeShellTarget } = require('./shell-alias-engine');
 
 const SHELL_STATUS = {
   OK: 'ok',
@@ -32,25 +34,26 @@ const DEFAULT_SHELL_OPTIONS = {
 
 const HELP_TEXT = [
   'Commands:',
-  '  help                         Show this help',
-  '  status                       Show player status',
-  '  world                        Show world overview',
-  '  tutorial                     Start/show tutorial progress',
-  '  quests                       Show active/completed quests',
-  '  claim [questId]              Claim one completed quest or all completed quests',
-  '  report [ticks]               Show a turn report',
-  '  inspect [target] [id]         Inspect world/player/location/entity/org/city/civ',
-  '  move <locationId>            Move active character',
-  '  work [resource] [amount]      Work for resource, default currency 10',
-  '  gather [resource] [amount]    Gather from current location, default food 3',
-  '  train [amount]               Train power',
-  '  rest                         Recover health and energy',
-  '  join <organizationId|name>    Join an organization',
-  '  wait [ticks]                 Advance world ticks',
-  '  leaderboard [power|wealth|overall|happiness|reputation]',
-  '  commands                     Show recent player commands',
-  '  snapshot [file]              Export snapshot JSON',
-  '  quit / exit                  Leave shell',
+  '  help / 帮助                  Show this help',
+  '  status / 状态                Show player status',
+  '  world / 世界                 Show world overview',
+  '  tutorial / 教程              Start/show tutorial progress',
+  '  quests / 任务                Show active/completed quests',
+  '  claim / 领取 [questId]       Claim one completed quest or all completed quests',
+  '  report / 报告 [ticks]        Show a turn report',
+  '  map / 地图 [locationId]      Show local map and exits',
+  '  inspect / 查看 [target] [id] Inspect world/player/location/entity/org/city/civ',
+  '  move / 前往 <locationId>     Move active character',
+  '  work / 工作 [resource] [n]   Work for resource, default currency 10',
+  '  gather / 采集 [resource] [n] Gather from current location, default food 3',
+  '  train / 修炼 [amount]        Train power',
+  '  rest / 休息                  Recover health and energy',
+  '  join / 加入 <orgId|name>     Join an organization',
+  '  wait / 等待 [ticks]          Advance world ticks',
+  '  leaderboard / 排行 [type]    power|wealth|overall|happiness|reputation',
+  '  commands / 命令              Show recent player commands',
+  '  snapshot / 快照 [file]       Export snapshot JSON',
+  '  quit / exit / 退出           Leave shell',
 ].join('\n');
 
 function createShellSession(world, playerId, options = {}) {
@@ -70,7 +73,7 @@ function parseShellInput(line = '') {
   const raw = String(line || '').trim();
   if (!raw) return { raw, command: '', args: [] };
   const args = tokenize(raw);
-  const command = String(args.shift() || '').toLowerCase();
+  const command = normalizeShellCommand(String(args.shift() || ''));
   return { raw, command, args };
 }
 
@@ -91,10 +94,10 @@ function dispatchShellCommand(session, parsed) {
   const { world, playerId } = session;
   const [a, b, c] = parsed.args;
 
-  if (['help', '?'].includes(parsed.command)) return ok(HELP_TEXT, { type: 'help' });
-  if (['quit', 'exit'].includes(parsed.command)) return { status: SHELL_STATUS.EXIT, message: 'Bye.', data: null };
+  if (parsed.command === 'help') return ok(HELP_TEXT, { type: 'help' });
+  if (parsed.command === 'quit') return { status: SHELL_STATUS.EXIT, message: 'Bye.', data: null };
 
-  if (['status', 'me', 'player'].includes(parsed.command)) {
+  if (parsed.command === 'status') {
     return ok(formatPlayerStatus(world, playerId), queryWorld(world, { type: 'player', playerId }));
   }
 
@@ -132,6 +135,12 @@ function dispatchShellCommand(session, parsed) {
     const report = createTurnReport(world, playerId, { ticks });
     session.lastReportTick = world.tick;
     return ok(formatTurnReport(report), report);
+  }
+
+  if (parsed.command === 'map') {
+    const locationId = resolveLocationId(world, a) || getPlayerView(world, playerId)?.activeEntity?.locationId || null;
+    const map = locationId ? createLocationMap(world, locationId) : createPlayerMap(world, playerId);
+    return ok(formatLocationMap(map), map);
   }
 
   if (parsed.command === 'inspect') {
@@ -225,13 +234,7 @@ function inspectTarget(world, playerId, targetType, targetId) {
 }
 
 function normalizeInspectType(value) {
-  const key = String(value || 'player').toLowerCase();
-  if (['me', 'player', 'self'].includes(key)) return 'player';
-  if (['loc', 'location', 'place'].includes(key)) return 'location';
-  if (['entity', 'character', 'npc'].includes(key)) return 'entity';
-  if (['org', 'organization', 'sect', 'guild'].includes(key)) return 'organization';
-  if (['civ', 'civilization'].includes(key)) return 'civilization';
-  return key;
+  return normalizeShellTarget(value || 'player');
 }
 
 function defaultInspectTarget(world, playerId, targetType) {
