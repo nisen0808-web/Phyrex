@@ -7,6 +7,9 @@ const DEFAULT_SNAPSHOT_OPTIONS = {
   topCivilizations: 5,
   topPlayers: 10,
   topQuests: 20,
+  topJournalEntries: 20,
+  topEncounters: 20,
+  topBoardItems: 20,
   recentCommands: 20,
   recentReports: 20,
 };
@@ -22,6 +25,9 @@ function createWorldSnapshot(world, options = {}) {
     commands: summarizeCommands(world, config.recentCommands),
     quests: summarizeQuests(world, config.topQuests),
     tutorials: summarizeTutorials(world),
+    journals: summarizeJournals(world, config.topJournalEntries),
+    encounters: summarizeEncounters(world, config.topEncounters),
+    questBoards: summarizeQuestBoards(world, config.topBoardItems),
     cities: summarizeCities(world, config.topCities),
     organizations: summarizeOrganizations(world, config.topOrganizations),
     civilizations: summarizeCivilizations(world, config.topCivilizations),
@@ -165,6 +171,81 @@ function summarizeTutorials(world) {
       completedAt: tutorial.completedAt,
       lastUpdatedAt: tutorial.lastUpdatedAt,
     })),
+  };
+}
+
+function summarizeJournals(world, limit) {
+  const entries = Object.values(world.journals?.byPlayer || {}).flat();
+  return {
+    total: entries.length,
+    players: Object.keys(world.journals?.byPlayer || {}).length,
+    byType: countBy(entries.map(entry => entry.type)),
+    recent: entries
+      .sort((a, b) => Number(b.tick || 0) - Number(a.tick || 0))
+      .slice(0, limit)
+      .map(entry => ({
+        id: entry.id,
+        tick: entry.tick,
+        playerId: entry.playerId,
+        entityId: entry.entityId,
+        locationId: entry.locationId,
+        type: entry.type,
+        title: entry.title,
+        summary: entry.summary,
+        importance: entry.importance,
+        tags: [...(entry.tags || [])],
+      })),
+  };
+}
+
+function summarizeEncounters(world, limit) {
+  const encounters = Object.values(world.encounters?.byId || {});
+  return {
+    total: encounters.length,
+    byType: countBy(encounters.map(item => item.type)),
+    recent: encounters
+      .sort((a, b) => Number(b.resolvedAt || b.createdAt || 0) - Number(a.resolvedAt || a.createdAt || 0))
+      .slice(0, limit)
+      .map(item => ({
+        id: item.id,
+        playerId: item.playerId,
+        entityId: item.entityId,
+        locationId: item.locationId,
+        type: item.type,
+        status: item.status,
+        title: item.title,
+        summary: item.summary,
+        rewards: { ...(item.rewards || {}) },
+        createdAt: item.createdAt,
+        resolvedAt: item.resolvedAt,
+      })),
+  };
+}
+
+function summarizeQuestBoards(world, limit) {
+  const items = Object.values(world.questBoards?.byId || {});
+  return {
+    total: items.length,
+    open: items.filter(item => item.status === 'open').length,
+    accepted: items.filter(item => item.status === 'accepted').length,
+    closed: items.filter(item => item.status === 'closed').length,
+    byType: countBy(items.map(item => item.type)),
+    items: items
+      .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+      .slice(0, limit)
+      .map(item => ({
+        id: item.id,
+        locationId: item.locationId,
+        type: item.type,
+        status: item.status,
+        title: item.title,
+        summary: item.summary,
+        acceptedBy: item.acceptedBy,
+        createdAt: item.createdAt,
+        acceptedAt: item.acceptedAt,
+        rewards: { ...(item.rewards || {}) },
+        tags: [...(item.tags || [])],
+      })),
   };
 }
 
@@ -344,6 +425,9 @@ function summarizeLimits(world) {
     memories: { current: Object.keys(world.memories?.byId || {}).length, limit: 3000 },
     commands: { current: Object.keys(world.commands?.byId || {}).length, limit: 500 },
     quests: { current: Object.keys(world.quests?.byId || {}).length, limit: 500 },
+    journals: { current: Object.values(world.journals?.byPlayer || {}).reduce((sum, entries) => sum + entries.length, 0), limit: 300 },
+    encounters: { current: Object.keys(world.encounters?.byId || {}).length, limit: 300 },
+    questBoards: { current: Object.keys(world.questBoards?.byId || {}).length, limit: 500 },
   };
 }
 
@@ -357,13 +441,8 @@ function questProgress(quest) {
   return Math.round((progress / quest.objectives.length) * 100);
 }
 
-function scoreCity(city) {
-  return city.population * 5 + city.wealth * 0.01 + city.security + city.culture;
-}
-
-function scoreOrganization(org) {
-  return org.members * 10 + org.wealth * 0.01 + org.authority + org.reputation + org.cohesion;
-}
+function scoreCity(city) { return city.population * 5 + city.wealth * 0.01 + city.security + city.culture; }
+function scoreOrganization(org) { return org.members * 10 + org.wealth * 0.01 + org.authority + org.reputation + org.cohesion; }
 
 function countBy(values) {
   const out = {};
@@ -393,6 +472,9 @@ module.exports = {
   summarizeCommands,
   summarizeQuests,
   summarizeTutorials,
+  summarizeJournals,
+  summarizeEncounters,
+  summarizeQuestBoards,
   summarizeCities,
   summarizeOrganizations,
   summarizeCivilizations,
