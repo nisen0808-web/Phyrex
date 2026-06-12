@@ -4,6 +4,11 @@ tutorial
 quests
 world
 map
+board
+accept board_qingyun_city_gather_food
+journal
+explore
+journal
 inspect location
 work currency 20
 wait 1
@@ -11,6 +16,10 @@ report 1
 move mist_forest
 wait 1
 地图
+委托
+接取 board_mist_forest_gather_wood
+探索
+日志
 任务
 gather wood 5
 wait 1
@@ -21,5 +30,6 @@ wait 2
 commands
 claim
 quests
+journal
 snapshot world-engine/output/sample-shell-snapshot.json
 quit
