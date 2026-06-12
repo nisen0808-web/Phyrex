@@ -167,7 +167,7 @@ function createBoardTemplates(world, locationId) {
       title: `Explore ${location.name || locationId}`,
       summary: `Explore the area and report what you find.`,
       quest: {
-        objectives: [{ type: 'command', commandType: 'explore', target: 1, title: 'Use explore once' }],
+        objectives: [{ type: 'have_resource', resource: 'exploration', amount: 1, target: 1, title: 'Gain 1 exploration' }],
       },
       rewards: { resources: { currency: 20, knowledge: 1 } },
       tags: ['board', 'explore'],
