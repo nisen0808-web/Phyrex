@@ -18,6 +18,7 @@ const tests = [
   'shell-engine-test.js',
   'shell-script-test.js',
   'quest-tutorial-report-test.js',
+  'map-alias-test.js',
   'stability-100-test.js',
 ];
 
@@ -39,7 +40,7 @@ for (const test of tests) {
 }
 
 const failed = results.filter(result => !result.passed);
-console.log(`world-engine test runner completed ${results.length} tests: ${results.length - failed.length} passed, ${failed.length} failed`);
+console.log(`world-engine test runner completed ${tests.length} tests: ${tests.length - failed.length} passed, ${failed.length} failed`);
 
 if (failed.length) {
   process.exitCode = 1;
