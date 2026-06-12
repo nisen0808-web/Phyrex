@@ -10,6 +10,9 @@ const { getMemories } = require('./memory-engine');
 const { createPlayerMap, createLocationMap, listWorldLocations } = require('./map-engine');
 const { getPlayerQuests, getQuestStats } = require('./quest-engine');
 const { getTutorialView } = require('./tutorial-engine');
+const { getPlayerJournal, getJournalStats } = require('./player-journal-engine');
+const { getPlayerEncounters, getEncounterStats } = require('./encounter-engine');
+const { getPlayerQuestBoard, getQuestBoardStats } = require('./quest-board-engine');
 
 const QUERY_TYPES = {
   WORLD: 'world',
@@ -24,6 +27,9 @@ const QUERY_TYPES = {
   QUESTS: 'quests',
   TUTORIAL: 'tutorial',
   MAP: 'map',
+  JOURNAL: 'journal',
+  ENCOUNTERS: 'encounters',
+  BOARD: 'board',
   SNAPSHOT: 'snapshot',
 };
 
@@ -42,6 +48,9 @@ function queryWorld(world, input = {}) {
   if (type === QUERY_TYPES.QUESTS) return getQuestQuery(world, required(input, 'playerId'), input.options || {});
   if (type === QUERY_TYPES.TUTORIAL) return getTutorialQuery(world, required(input, 'playerId'));
   if (type === QUERY_TYPES.MAP) return getMapQuery(world, input);
+  if (type === QUERY_TYPES.JOURNAL) return getJournalQuery(world, required(input, 'playerId'), input.options || {});
+  if (type === QUERY_TYPES.ENCOUNTERS) return getEncounterQuery(world, required(input, 'playerId'), input.options || {});
+  if (type === QUERY_TYPES.BOARD) return getBoardQuery(world, required(input, 'playerId'), input.options || {});
   throw new Error(`Unknown query type ${type}`);
 }
 
@@ -64,6 +73,9 @@ function getWorldOverview(world) {
       commands: Object.keys(world.commands?.byId || {}).length,
       quests: Object.keys(world.quests?.byId || {}).length,
       tutorials: Object.keys(world.tutorials?.byPlayer || {}).length,
+      journals: Object.values(world.journals?.byPlayer || {}).reduce((sum, entries) => sum + entries.length, 0),
+      encounters: Object.keys(world.encounters?.byId || {}).length,
+      boardItems: Object.keys(world.questBoards?.byId || {}).length,
     },
     limits: {
       worldMemory: (world.memory || []).length,
@@ -73,9 +85,14 @@ function getWorldOverview(world) {
       memories: Object.keys(world.memories?.byId || {}).length,
       commands: Object.keys(world.commands?.byId || {}).length,
       quests: Object.keys(world.quests?.byId || {}).length,
+      encounters: Object.keys(world.encounters?.byId || {}).length,
+      boardItems: Object.keys(world.questBoards?.byId || {}).length,
     },
     commandStats: getCommandStats(world),
     questStats: getQuestStats(world),
+    journalStats: getJournalStats(world),
+    encounterStats: getEncounterStats(world),
+    boardStats: getQuestBoardStats(world),
   };
 }
 
@@ -87,6 +104,9 @@ function getPlayerQuery(world, playerId) {
     commands: getPlayerCommands(world, playerId, 20),
     quests: getPlayerQuests(world, playerId).slice(0, 20),
     tutorial: getTutorialView(world, playerId),
+    journal: getPlayerJournal(world, playerId, { limit: 10 }),
+    encounters: getPlayerEncounters(world, playerId, 10),
+    board: getPlayerQuestBoard(world, playerId),
   };
 }
 
@@ -141,6 +161,7 @@ function getLocationQuery(world, locationId, options = {}) {
     cities: Object.values(world.cities?.byId || {}).filter(city => city.locationId === locationId).map(summarizeCity),
     organizations: Object.values(world.organizations?.byId || {}).filter(org => org.homeLocationId === locationId).map(summarizeOrganization),
     map: createLocationMap(world, locationId),
+    board: { items: getPlayerlessLocationBoard(world, locationId) },
     meta: { ...(location.meta || {}) },
   };
 }
@@ -183,6 +204,29 @@ function getMapQuery(world, input = {}) {
   if (input.playerId) return createPlayerMap(world, input.playerId, input.options || {});
   if (input.locationId) return createLocationMap(world, input.locationId, input.options || {});
   return { locations: listWorldLocations(world) };
+}
+
+function getJournalQuery(world, playerId, options = {}) {
+  return {
+    playerId,
+    entries: getPlayerJournal(world, playerId, { limit: options.limit || 50 }),
+    stats: getJournalStats(world),
+  };
+}
+
+function getEncounterQuery(world, playerId, options = {}) {
+  return {
+    playerId,
+    encounters: getPlayerEncounters(world, playerId, options.limit || 50),
+    stats: getEncounterStats(world),
+  };
+}
+
+function getBoardQuery(world, playerId, options = {}) {
+  return {
+    ...getPlayerQuestBoard(world, playerId, options),
+    stats: getQuestBoardStats(world),
+  };
 }
 
 function getLeaderboard(world, options = {}) {
@@ -247,6 +291,12 @@ function summarizeCity(city) {
   };
 }
 
+function getPlayerlessLocationBoard(world, locationId) {
+  const state = world.questBoards;
+  if (!state) return [];
+  return (state.byLocation?.[locationId] || []).map(id => state.byId?.[id]).filter(Boolean);
+}
+
 function required(input, key) {
   if (input[key] === undefined || input[key] === null) throw new Error(`Query requires ${key}`);
   return input[key];
@@ -266,5 +316,8 @@ module.exports = {
   getQuestQuery,
   getTutorialQuery,
   getMapQuery,
+  getJournalQuery,
+  getEncounterQuery,
+  getBoardQuery,
   getLeaderboard,
 };
