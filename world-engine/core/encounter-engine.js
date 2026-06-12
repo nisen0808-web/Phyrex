@@ -89,6 +89,9 @@ function resolveEncounter(world, encounterId, options = {}) {
   const location = world.locations?.[encounter.locationId];
   const config = { ...DEFAULT_ENCOUNTER_OPTIONS, ...(options || {}) };
 
+  changeEntityResource(world, entity.id, 'exploration', 1);
+  encounter.rewards.resources.exploration = Number(encounter.rewards.resources.exploration || 0) + 1;
+
   if (encounter.type === ENCOUNTER_TYPES.RESOURCE_FIND) {
     const resource = pickLocationResource(location) || 'food';
     const amount = Math.max(1, Number(config.resourceAmount || 3) + deterministicNumber(encounter.id, 3));
