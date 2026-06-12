@@ -7,6 +7,9 @@ const { getOrganizationChronicle } = require('./organization-engine');
 const { getCivilizationChronicle } = require('./civilization-engine');
 const { getKnownInformation } = require('./information-engine');
 const { getMemories } = require('./memory-engine');
+const { createPlayerMap, createLocationMap, listWorldLocations } = require('./map-engine');
+const { getPlayerQuests, getQuestStats } = require('./quest-engine');
+const { getTutorialView } = require('./tutorial-engine');
 
 const QUERY_TYPES = {
   WORLD: 'world',
@@ -18,6 +21,9 @@ const QUERY_TYPES = {
   CIVILIZATION: 'civilization',
   LEADERBOARD: 'leaderboard',
   COMMANDS: 'commands',
+  QUESTS: 'quests',
+  TUTORIAL: 'tutorial',
+  MAP: 'map',
   SNAPSHOT: 'snapshot',
 };
 
@@ -33,6 +39,9 @@ function queryWorld(world, input = {}) {
   if (type === QUERY_TYPES.CIVILIZATION) return getCivilizationQuery(world, required(input, 'civilizationId'));
   if (type === QUERY_TYPES.LEADERBOARD) return getLeaderboard(world, input.options || {});
   if (type === QUERY_TYPES.COMMANDS) return getCommandQuery(world, required(input, 'playerId'), input.options || {});
+  if (type === QUERY_TYPES.QUESTS) return getQuestQuery(world, required(input, 'playerId'), input.options || {});
+  if (type === QUERY_TYPES.TUTORIAL) return getTutorialQuery(world, required(input, 'playerId'));
+  if (type === QUERY_TYPES.MAP) return getMapQuery(world, input);
   throw new Error(`Unknown query type ${type}`);
 }
 
@@ -53,6 +62,8 @@ function getWorldOverview(world) {
       civilizations: Object.keys(world.civilizations?.byId || {}).length,
       players: Object.keys(world.players?.byId || {}).length,
       commands: Object.keys(world.commands?.byId || {}).length,
+      quests: Object.keys(world.quests?.byId || {}).length,
+      tutorials: Object.keys(world.tutorials?.byPlayer || {}).length,
     },
     limits: {
       worldMemory: (world.memory || []).length,
@@ -60,8 +71,11 @@ function getWorldOverview(world) {
       processes: Object.keys(world.processes?.byId || {}).length,
       information: Object.keys(world.information?.items || {}).length,
       memories: Object.keys(world.memories?.byId || {}).length,
+      commands: Object.keys(world.commands?.byId || {}).length,
+      quests: Object.keys(world.quests?.byId || {}).length,
     },
     commandStats: getCommandStats(world),
+    questStats: getQuestStats(world),
   };
 }
 
@@ -71,6 +85,8 @@ function getPlayerQuery(world, playerId) {
   return {
     ...view,
     commands: getPlayerCommands(world, playerId, 20),
+    quests: getPlayerQuests(world, playerId).slice(0, 20),
+    tutorial: getTutorialView(world, playerId),
   };
 }
 
@@ -124,6 +140,7 @@ function getLocationQuery(world, locationId, options = {}) {
     aliveEntities: entities.map(entity => ({ id: entity.id, name: entity.name, species: entity.species || 'unknown', power: entity.stats?.power || 0 })),
     cities: Object.values(world.cities?.byId || {}).filter(city => city.locationId === locationId).map(summarizeCity),
     organizations: Object.values(world.organizations?.byId || {}).filter(org => org.homeLocationId === locationId).map(summarizeOrganization),
+    map: createLocationMap(world, locationId),
     meta: { ...(location.meta || {}) },
   };
 }
@@ -148,6 +165,24 @@ function getCommandQuery(world, playerId, options = {}) {
     commands: getPlayerCommands(world, playerId, options.limit || 50),
     stats: getCommandStats(world),
   };
+}
+
+function getQuestQuery(world, playerId, options = {}) {
+  return {
+    playerId,
+    quests: getPlayerQuests(world, playerId, options.filters || {}).slice(0, options.limit || 50),
+    stats: getQuestStats(world),
+  };
+}
+
+function getTutorialQuery(world, playerId) {
+  return getTutorialView(world, playerId);
+}
+
+function getMapQuery(world, input = {}) {
+  if (input.playerId) return createPlayerMap(world, input.playerId, input.options || {});
+  if (input.locationId) return createLocationMap(world, input.locationId, input.options || {});
+  return { locations: listWorldLocations(world) };
 }
 
 function getLeaderboard(world, options = {}) {
@@ -228,5 +263,8 @@ module.exports = {
   getOrganizationQuery,
   getCivilizationQuery,
   getCommandQuery,
+  getQuestQuery,
+  getTutorialQuery,
+  getMapQuery,
   getLeaderboard,
 };
