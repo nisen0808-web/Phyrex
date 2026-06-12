@@ -18,6 +18,9 @@ function main() {
     topCities: 5,
     topCivilizations: 3,
     topQuests: 5,
+    topJournalEntries: 5,
+    topEncounters: 5,
+    topBoardItems: 5,
     recentReports: 5,
   });
 
@@ -28,6 +31,9 @@ function main() {
   assert.ok(snapshot.commands && typeof snapshot.commands.total === 'number', 'snapshot should include commands section');
   assert.ok(snapshot.quests && typeof snapshot.quests.total === 'number', 'snapshot should include quests section');
   assert.ok(snapshot.tutorials && typeof snapshot.tutorials.total === 'number', 'snapshot should include tutorials section');
+  assert.ok(snapshot.journals && typeof snapshot.journals.total === 'number', 'snapshot should include journals section');
+  assert.ok(snapshot.encounters && typeof snapshot.encounters.total === 'number', 'snapshot should include encounters section');
+  assert.ok(snapshot.questBoards && typeof snapshot.questBoards.total === 'number', 'snapshot should include questBoards section');
   assert.ok(Array.isArray(snapshot.cities), 'snapshot cities should be an array');
   assert.ok(Array.isArray(snapshot.organizations), 'snapshot organizations should be an array');
   assert.ok(Array.isArray(snapshot.civilizations), 'snapshot civilizations should be an array');
@@ -39,6 +45,9 @@ function main() {
   assert.ok(snapshot.information.total <= snapshot.limits.information.limit, 'information should respect limit');
   assert.ok(snapshot.memories.total <= snapshot.limits.memories.limit, 'memories should respect limit');
   assert.ok(snapshot.quests.total <= snapshot.limits.quests.limit, 'quests should respect limit');
+  assert.ok(snapshot.journals.total <= snapshot.limits.journals.limit, 'journals should respect limit');
+  assert.ok(snapshot.encounters.total <= snapshot.limits.encounters.limit, 'encounters should respect limit');
+  assert.ok(snapshot.questBoards.total <= snapshot.limits.questBoards.limit, 'quest boards should respect limit');
   assert.ok(snapshot.limits.worldMemory.current <= snapshot.limits.worldMemory.limit, 'world memory should respect limit');
   assert.ok(snapshot.limits.reports.current <= snapshot.limits.reports.limit, 'reports should respect limit');
 
