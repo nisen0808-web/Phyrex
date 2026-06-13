@@ -13,7 +13,7 @@ const { getTutorialView } = require('./tutorial-engine');
 const { getPlayerJournal, getJournalStats } = require('./player-journal-engine');
 const { getPlayerEncounters, getEncounterStats } = require('./encounter-engine');
 const { getPlayerQuestBoard, getQuestBoardStats } = require('./quest-board-engine');
-const { getPlayerInventory } = require('./inventory-engine');
+const { getPlayerInventory, getEntityInventory } = require('./inventory-engine');
 const { getItemStats } = require('./item-engine');
 const { getPlayerShop, getShopStats } = require('./shop-engine');
 
@@ -64,11 +64,7 @@ function queryWorld(world, input = {}) {
 function getWorldOverview(world) {
   const alive = Object.values(world.entities || {}).filter(entity => entity.status === 'alive');
   return {
-    world: {
-      id: world.id,
-      tick: world.tick,
-      calendar: world.calendar ? { ...world.calendar } : null,
-    },
+    world: { id: world.id, tick: world.tick, calendar: world.calendar ? { ...world.calendar } : null },
     totals: {
       entities: Object.keys(world.entities || {}).length,
       alive: alive.length,
@@ -140,7 +136,7 @@ function getEntityQuery(world, entityId, options = {}) {
     resources: { ...(entity.resources || {}) },
     traits: { ...(entity.traits || {}) },
     demographics: { ...(entity.demographics || {}) },
-    inventory: getPlayerlessEntityInventory(world, entity.id),
+    inventory: getEntityInventory(world, entity.id),
     organizations: (entity.organizationIds || []).map(id => getOrganizationSummary(world, id)).filter(Boolean),
     goals: (entity.goals || []).map(goal => ({ ...goal })).slice(0, options.maxGoals || 10),
     knownInformation: getKnownInformation(world, 'entity', entity.id).slice(0, options.maxKnownInformation || 10).map(entry => ({
@@ -163,9 +159,7 @@ function getLocationQuery(world, locationId, options = {}) {
   const location = world.locations?.[locationId];
   if (!location) return null;
   const entities = Object.values(world.entities || {}).filter(entity => entity.locationId === locationId && entity.status === 'alive');
-  if (options.compact) {
-    return { id: location.id, name: location.name, type: location.type, alive: entities.length };
-  }
+  if (options.compact) return { id: location.id, name: location.name, type: location.type, alive: entities.length };
   return {
     id: location.id,
     name: location.name,
@@ -184,12 +178,7 @@ function getLocationQuery(world, locationId, options = {}) {
   };
 }
 
-function getCityQuery(world, cityId) {
-  const city = world.cities?.byId?.[cityId];
-  if (!city) return null;
-  return summarizeCity(city);
-}
-
+function getCityQuery(world, cityId) { const city = world.cities?.byId?.[cityId]; return city ? summarizeCity(city) : null; }
 function getOrganizationQuery(world, organizationId) { return getOrganizationChronicle(world, organizationId); }
 function getCivilizationQuery(world, civilizationId) { return getCivilizationChronicle(world, civilizationId); }
 function getCommandQuery(world, playerId, options = {}) { return { playerId, commands: getPlayerCommands(world, playerId, options.limit || 50), stats: getCommandStats(world) }; }
@@ -206,20 +195,17 @@ function getLeaderboard(world, options = {}) {
   const limit = options.limit || 10;
   const by = options.by || 'power';
   const entities = Object.values(world.entities || {}).filter(entity => entity.status === 'alive');
-  return entities
-    .map(entity => ({
-      entityId: entity.id,
-      name: entity.name,
-      species: entity.species || entity.meta?.species || 'unknown',
-      locationId: entity.locationId,
-      score: scoreEntity(entity, by),
-      power: Number(entity.stats?.power || 0),
-      currency: Number(entity.resources?.currency || 0),
-      happiness: Number(entity.meta?.happiness || 0),
-      reputation: Number(entity.meta?.reputation || 0),
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+  return entities.map(entity => ({
+    entityId: entity.id,
+    name: entity.name,
+    species: entity.species || entity.meta?.species || 'unknown',
+    locationId: entity.locationId,
+    score: scoreEntity(entity, by),
+    power: Number(entity.stats?.power || 0),
+    currency: Number(entity.resources?.currency || 0),
+    happiness: Number(entity.meta?.happiness || 0),
+    reputation: Number(entity.meta?.reputation || 0),
+  })).sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
 function scoreEntity(entity, by) {
@@ -230,33 +216,11 @@ function scoreEntity(entity, by) {
   return Number(entity.stats?.power || 0);
 }
 
-function getOrganizationSummary(world, id) {
-  const org = world.organizations?.byId?.[id];
-  return org ? summarizeOrganization(org) : null;
-}
-
-function summarizeOrganization(org) {
-  return { id: org.id, name: org.name, type: org.type, status: org.status, leaderId: org.leaderId, members: (org.members || []).length, reputation: org.reputation, authority: org.authority, cohesion: org.cohesion };
-}
-
-function summarizeCity(city) {
-  return { id: city.id, name: city.name, type: city.type, locationId: city.locationId, population: city.population, wealth: city.wealth, security: city.security, culture: city.culture, infrastructureIds: [...(city.infrastructureIds || [])], organizationIds: [...(city.organizationIds || [])] };
-}
-
-function getPlayerlessLocationBoard(world, locationId) {
-  const state = world.questBoards;
-  if (!state) return [];
-  return (state.byLocation?.[locationId] || []).map(id => state.byId?.[id]).filter(Boolean);
-}
-
-function getPlayerlessEntityInventory(world, entityId) {
-  try { return getPlayerInventory(world, { activeEntityId: entityId }); } catch (_) { return null; }
-}
-
-function required(input, key) {
-  if (input[key] === undefined || input[key] === null) throw new Error(`Query requires ${key}`);
-  return input[key];
-}
+function getOrganizationSummary(world, id) { const org = world.organizations?.byId?.[id]; return org ? summarizeOrganization(org) : null; }
+function summarizeOrganization(org) { return { id: org.id, name: org.name, type: org.type, status: org.status, leaderId: org.leaderId, members: (org.members || []).length, reputation: org.reputation, authority: org.authority, cohesion: org.cohesion }; }
+function summarizeCity(city) { return { id: city.id, name: city.name, type: city.type, locationId: city.locationId, population: city.population, wealth: city.wealth, security: city.security, culture: city.culture, infrastructureIds: [...(city.infrastructureIds || [])], organizationIds: [...(city.organizationIds || [])] }; }
+function getPlayerlessLocationBoard(world, locationId) { const state = world.questBoards; if (!state) return []; return (state.byLocation?.[locationId] || []).map(id => state.byId?.[id]).filter(Boolean); }
+function required(input, key) { if (input[key] === undefined || input[key] === null) throw new Error(`Query requires ${key}`); return input[key]; }
 
 module.exports = {
   QUERY_TYPES,
