@@ -13,6 +13,9 @@ const { getTutorialView } = require('./tutorial-engine');
 const { getPlayerJournal, getJournalStats } = require('./player-journal-engine');
 const { getPlayerEncounters, getEncounterStats } = require('./encounter-engine');
 const { getPlayerQuestBoard, getQuestBoardStats } = require('./quest-board-engine');
+const { getPlayerInventory } = require('./inventory-engine');
+const { getItemStats } = require('./item-engine');
+const { getPlayerShop, getShopStats } = require('./shop-engine');
 
 const QUERY_TYPES = {
   WORLD: 'world',
@@ -30,6 +33,8 @@ const QUERY_TYPES = {
   JOURNAL: 'journal',
   ENCOUNTERS: 'encounters',
   BOARD: 'board',
+  INVENTORY: 'inventory',
+  SHOP: 'shop',
   SNAPSHOT: 'snapshot',
 };
 
@@ -51,6 +56,8 @@ function queryWorld(world, input = {}) {
   if (type === QUERY_TYPES.JOURNAL) return getJournalQuery(world, required(input, 'playerId'), input.options || {});
   if (type === QUERY_TYPES.ENCOUNTERS) return getEncounterQuery(world, required(input, 'playerId'), input.options || {});
   if (type === QUERY_TYPES.BOARD) return getBoardQuery(world, required(input, 'playerId'), input.options || {});
+  if (type === QUERY_TYPES.INVENTORY) return getInventoryQuery(world, required(input, 'playerId'));
+  if (type === QUERY_TYPES.SHOP) return getShopQuery(world, required(input, 'playerId'));
   throw new Error(`Unknown query type ${type}`);
 }
 
@@ -76,6 +83,9 @@ function getWorldOverview(world) {
       journals: Object.values(world.journals?.byPlayer || {}).reduce((sum, entries) => sum + entries.length, 0),
       encounters: Object.keys(world.encounters?.byId || {}).length,
       boardItems: Object.keys(world.questBoards?.byId || {}).length,
+      itemDefinitions: Object.keys(world.items?.definitions || {}).length,
+      itemInstances: Object.keys(world.items?.instances || {}).length,
+      shops: Object.keys(world.shops?.byId || {}).length,
     },
     limits: {
       worldMemory: (world.memory || []).length,
@@ -87,12 +97,16 @@ function getWorldOverview(world) {
       quests: Object.keys(world.quests?.byId || {}).length,
       encounters: Object.keys(world.encounters?.byId || {}).length,
       boardItems: Object.keys(world.questBoards?.byId || {}).length,
+      itemInstances: Object.keys(world.items?.instances || {}).length,
+      shops: Object.keys(world.shops?.byId || {}).length,
     },
     commandStats: getCommandStats(world),
     questStats: getQuestStats(world),
     journalStats: getJournalStats(world),
     encounterStats: getEncounterStats(world),
     boardStats: getQuestBoardStats(world),
+    itemStats: getItemStats(world),
+    shopStats: getShopStats(world),
   };
 }
 
@@ -107,6 +121,8 @@ function getPlayerQuery(world, playerId) {
     journal: getPlayerJournal(world, playerId, { limit: 10 }),
     encounters: getPlayerEncounters(world, playerId, 10),
     board: getPlayerQuestBoard(world, playerId),
+    inventory: getPlayerInventory(world, playerId),
+    shop: getPlayerShop(world, playerId),
   };
 }
 
@@ -124,6 +140,7 @@ function getEntityQuery(world, entityId, options = {}) {
     resources: { ...(entity.resources || {}) },
     traits: { ...(entity.traits || {}) },
     demographics: { ...(entity.demographics || {}) },
+    inventory: getPlayerlessEntityInventory(world, entity.id),
     organizations: (entity.organizationIds || []).map(id => getOrganizationSummary(world, id)).filter(Boolean),
     goals: (entity.goals || []).map(goal => ({ ...goal })).slice(0, options.maxGoals || 10),
     knownInformation: getKnownInformation(world, 'entity', entity.id).slice(0, options.maxKnownInformation || 10).map(entry => ({
@@ -162,6 +179,7 @@ function getLocationQuery(world, locationId, options = {}) {
     organizations: Object.values(world.organizations?.byId || {}).filter(org => org.homeLocationId === locationId).map(summarizeOrganization),
     map: createLocationMap(world, locationId),
     board: { items: getPlayerlessLocationBoard(world, locationId) },
+    shops: Object.values(world.shops?.byId || {}).filter(shop => shop.locationId === locationId).map(shop => ({ id: shop.id, name: shop.name, type: shop.type })),
     meta: { ...(location.meta || {}) },
   };
 }
@@ -172,62 +190,17 @@ function getCityQuery(world, cityId) {
   return summarizeCity(city);
 }
 
-function getOrganizationQuery(world, organizationId) {
-  return getOrganizationChronicle(world, organizationId);
-}
-
-function getCivilizationQuery(world, civilizationId) {
-  return getCivilizationChronicle(world, civilizationId);
-}
-
-function getCommandQuery(world, playerId, options = {}) {
-  return {
-    playerId,
-    commands: getPlayerCommands(world, playerId, options.limit || 50),
-    stats: getCommandStats(world),
-  };
-}
-
-function getQuestQuery(world, playerId, options = {}) {
-  return {
-    playerId,
-    quests: getPlayerQuests(world, playerId, options.filters || {}).slice(0, options.limit || 50),
-    stats: getQuestStats(world),
-  };
-}
-
-function getTutorialQuery(world, playerId) {
-  return getTutorialView(world, playerId);
-}
-
-function getMapQuery(world, input = {}) {
-  if (input.playerId) return createPlayerMap(world, input.playerId, input.options || {});
-  if (input.locationId) return createLocationMap(world, input.locationId, input.options || {});
-  return { locations: listWorldLocations(world) };
-}
-
-function getJournalQuery(world, playerId, options = {}) {
-  return {
-    playerId,
-    entries: getPlayerJournal(world, playerId, { limit: options.limit || 50 }),
-    stats: getJournalStats(world),
-  };
-}
-
-function getEncounterQuery(world, playerId, options = {}) {
-  return {
-    playerId,
-    encounters: getPlayerEncounters(world, playerId, options.limit || 50),
-    stats: getEncounterStats(world),
-  };
-}
-
-function getBoardQuery(world, playerId, options = {}) {
-  return {
-    ...getPlayerQuestBoard(world, playerId, options),
-    stats: getQuestBoardStats(world),
-  };
-}
+function getOrganizationQuery(world, organizationId) { return getOrganizationChronicle(world, organizationId); }
+function getCivilizationQuery(world, civilizationId) { return getCivilizationChronicle(world, civilizationId); }
+function getCommandQuery(world, playerId, options = {}) { return { playerId, commands: getPlayerCommands(world, playerId, options.limit || 50), stats: getCommandStats(world) }; }
+function getQuestQuery(world, playerId, options = {}) { return { playerId, quests: getPlayerQuests(world, playerId, options.filters || {}).slice(0, options.limit || 50), stats: getQuestStats(world) }; }
+function getTutorialQuery(world, playerId) { return getTutorialView(world, playerId); }
+function getMapQuery(world, input = {}) { if (input.playerId) return createPlayerMap(world, input.playerId, input.options || {}); if (input.locationId) return createLocationMap(world, input.locationId, input.options || {}); return { locations: listWorldLocations(world) }; }
+function getJournalQuery(world, playerId, options = {}) { return { playerId, entries: getPlayerJournal(world, playerId, { limit: options.limit || 50 }), stats: getJournalStats(world) }; }
+function getEncounterQuery(world, playerId, options = {}) { return { playerId, encounters: getPlayerEncounters(world, playerId, options.limit || 50), stats: getEncounterStats(world) }; }
+function getBoardQuery(world, playerId, options = {}) { return { ...getPlayerQuestBoard(world, playerId, options), stats: getQuestBoardStats(world) }; }
+function getInventoryQuery(world, playerId) { return getPlayerInventory(world, playerId); }
+function getShopQuery(world, playerId) { return { ...getPlayerShop(world, playerId), stats: getShopStats(world) }; }
 
 function getLeaderboard(world, options = {}) {
   const limit = options.limit || 10;
@@ -263,38 +236,21 @@ function getOrganizationSummary(world, id) {
 }
 
 function summarizeOrganization(org) {
-  return {
-    id: org.id,
-    name: org.name,
-    type: org.type,
-    status: org.status,
-    leaderId: org.leaderId,
-    members: (org.members || []).length,
-    reputation: org.reputation,
-    authority: org.authority,
-    cohesion: org.cohesion,
-  };
+  return { id: org.id, name: org.name, type: org.type, status: org.status, leaderId: org.leaderId, members: (org.members || []).length, reputation: org.reputation, authority: org.authority, cohesion: org.cohesion };
 }
 
 function summarizeCity(city) {
-  return {
-    id: city.id,
-    name: city.name,
-    type: city.type,
-    locationId: city.locationId,
-    population: city.population,
-    wealth: city.wealth,
-    security: city.security,
-    culture: city.culture,
-    infrastructureIds: [...(city.infrastructureIds || [])],
-    organizationIds: [...(city.organizationIds || [])],
-  };
+  return { id: city.id, name: city.name, type: city.type, locationId: city.locationId, population: city.population, wealth: city.wealth, security: city.security, culture: city.culture, infrastructureIds: [...(city.infrastructureIds || [])], organizationIds: [...(city.organizationIds || [])] };
 }
 
 function getPlayerlessLocationBoard(world, locationId) {
   const state = world.questBoards;
   if (!state) return [];
   return (state.byLocation?.[locationId] || []).map(id => state.byId?.[id]).filter(Boolean);
+}
+
+function getPlayerlessEntityInventory(world, entityId) {
+  try { return getPlayerInventory(world, { activeEntityId: entityId }); } catch (_) { return null; }
 }
 
 function required(input, key) {
@@ -319,5 +275,7 @@ module.exports = {
   getJournalQuery,
   getEncounterQuery,
   getBoardQuery,
+  getInventoryQuery,
+  getShopQuery,
   getLeaderboard,
 };
