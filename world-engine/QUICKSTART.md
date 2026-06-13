@@ -35,14 +35,8 @@ quest-tutorial-report-test.js
 map-alias-test.js
 query-content-test.js
 journal-encounter-board-test.js
+item-inventory-shop-test.js
 stability-100-test.js
-```
-
-也可以进入 `world-engine` 目录运行：
-
-```bash
-cd world-engine
-npm test
 ```
 
 ## 3. 运行世界 demo
@@ -111,6 +105,13 @@ board
 accept <boardItemId>
 explore
 journal
+inventory
+shop
+buy <shopId> <itemDefinitionId> [quantity]
+equip <itemId|itemDefinitionId>
+use <itemId|itemDefinitionId>
+sell <itemId|itemDefinitionId> [quantity]
+unequip <slot|itemId|itemDefinitionId>
 inspect location
 move mist_forest
 work currency 20
@@ -139,6 +140,13 @@ quit
 接取 <boardItemId>
 探索
 日志
+背包
+商店
+购买 <shopId> <itemDefinitionId> [quantity]
+装备 <itemId|itemDefinitionId>
+使用 <itemId|itemDefinitionId>
+出售 <itemId|itemDefinitionId> [quantity]
+卸下 <slot|itemId|itemDefinitionId>
 查看 地点
 前往 mist_forest
 工作 currency 20
@@ -179,6 +187,9 @@ shell-alias-engine.js        英文/中文命令别名
 player-journal-engine.js     玩家日志 / 个人史
 encounter-engine.js          探索遭遇 / 地点事件
 quest-board-engine.js        地点委托板 / 接取委托
+item-engine.js               物品定义 / 物品实例
+inventory-engine.js          背包 / 装备 / 使用物品
+shop-engine.js               地点商店 / 购买 / 出售
 ```
 
 核心 shell 命令：
@@ -193,14 +204,27 @@ board / 委托
 accept / 接取
 explore / 探索
 journal / 日志
+inventory / 背包
+shop / 商店
+buy / 购买
+equip / 装备
+use / 使用
+sell / 出售
+unequip / 卸下
 ```
 
-## 7. 地图、探索、委托闭环
+## 7. 地图、探索、委托、背包闭环
 
 典型玩法：
 
 ```text
 地图
+商店
+购买 shop_qingyun_city_general wooden_sword 1
+购买 shop_qingyun_city_general healing_pill 2
+背包
+装备 wooden_sword
+使用 healing_pill
 委托
 接取 board_mist_forest_gather_wood
 探索
@@ -216,6 +240,10 @@ journal / 日志
 
 ```text
 查看当前位置
+查看本地商店
+购买物品
+装备武器
+使用丹药
 查看本地委托
 接取委托并生成 quest
 探索地点并触发 encounter
@@ -234,6 +262,8 @@ queryWorld(world, { type: 'tutorial', playerId: 'player_id' })
 queryWorld(world, { type: 'journal', playerId: 'player_id' })
 queryWorld(world, { type: 'encounters', playerId: 'player_id' })
 queryWorld(world, { type: 'board', playerId: 'player_id' })
+queryWorld(world, { type: 'inventory', playerId: 'player_id' })
+queryWorld(world, { type: 'shop', playerId: 'player_id' })
 ```
 
 ## 9. 导出前端可读快照 JSON
@@ -267,6 +297,8 @@ tutorials
 journals
 encounters
 questBoards
+items
+shops
 cities
 organizations
 civilizations
@@ -285,15 +317,8 @@ recentReports
 
 ## 10. 浏览器查看世界快照
 
-先生成 snapshot：
-
 ```bash
 npm run snapshot
-```
-
-再启动 viewer：
-
-```bash
 npm run viewer
 ```
 
@@ -313,6 +338,8 @@ quests
 journals
 encounters
 questBoards
+items
+shops
 cities
 organizations
 civilizations
@@ -347,12 +374,13 @@ quests.byId <= 500
 journals <= 300 per player
 encounters <= 300 per player
 questBoards <= 500 snapshot limit
+itemInstances <= 1000
+shops <= 500 snapshot limit
 ```
 
 ## 13. 常见命令
 
 ```bash
-# 根目录
 npm test
 npm run demo
 npm run play
@@ -362,7 +390,6 @@ npm run snapshot
 npm run viewer
 npm run stress
 
-# world-engine 目录
 cd world-engine
 npm test
 npm run demo
@@ -372,7 +399,4 @@ npm run shell:sample
 npm run snapshot
 npm run viewer
 npm run stress
-
-# 指定 shell 脚本
-node world-engine/demo/play-shell.js --script world-engine/demo/sample-commands.txt
 ```
