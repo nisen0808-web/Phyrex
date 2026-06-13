@@ -4,6 +4,14 @@ tutorial
 quests
 world
 map
+shop
+buy shop_qingyun_city_general wooden_sword 1
+buy shop_qingyun_city_general healing_pill 2
+inventory
+equip wooden_sword
+use healing_pill
+sell healing_pill 1
+inventory
 board
 accept board_qingyun_city_gather_wood
 journal
@@ -16,6 +24,9 @@ report 1
 move mist_forest
 wait 1
 地图
+商店
+购买 shop_mist_forest_general spirit_stone 1
+背包
 委托
 接取 board_mist_forest_gather_wood
 探索
@@ -31,5 +42,6 @@ commands
 claim
 quests
 journal
+inventory
 snapshot world-engine/output/sample-shell-snapshot.json
 quit
