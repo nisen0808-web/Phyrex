@@ -11,9 +11,7 @@ function main() {
   const stylePath = path.join(root, 'viewer', 'styles.css');
   const serverPath = path.join(root, 'viewer', 'serve-viewer.js');
 
-  for (const file of [indexPath, appPath, stylePath, serverPath]) {
-    assert.ok(fs.existsSync(file), `${file} should exist`);
-  }
+  for (const file of [indexPath, appPath, stylePath, serverPath]) assert.ok(fs.existsSync(file), `${file} should exist`);
 
   const html = fs.readFileSync(indexPath, 'utf8');
   const app = fs.readFileSync(appPath, 'utf8');
@@ -29,6 +27,8 @@ function main() {
   assert.ok(html.includes('journals'), 'viewer html should include journals mount');
   assert.ok(html.includes('encounters'), 'viewer html should include encounters mount');
   assert.ok(html.includes('questBoards'), 'viewer html should include quest board mount');
+  assert.ok(html.includes('items'), 'viewer html should include items mount');
+  assert.ok(html.includes('shops'), 'viewer html should include shops mount');
   assert.ok(html.includes('raw'), 'viewer html should include raw snapshot mount');
   assert.ok(app.includes('loadSnapshot'), 'viewer app should load snapshots');
   assert.ok(app.includes('renderMetrics'), 'viewer app should render metrics');
@@ -39,6 +39,8 @@ function main() {
   assert.ok(app.includes('renderJournals'), 'viewer app should render journals');
   assert.ok(app.includes('renderEncounters'), 'viewer app should render encounters');
   assert.ok(app.includes('renderQuestBoards'), 'viewer app should render quest boards');
+  assert.ok(app.includes('renderItems'), 'viewer app should render items');
+  assert.ok(app.includes('renderShops'), 'viewer app should render shops');
   assert.ok(app.includes('escapeHtml'), 'viewer app should escape HTML');
   assert.ok(css.includes('.card'), 'viewer css should style cards');
   assert.ok(server.includes('http.createServer'), 'viewer server should create HTTP server');
