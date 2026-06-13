@@ -18,11 +18,7 @@ const { getPlayerQuestBoard, acceptBoardQuest, formatQuestBoard } = require('./q
 const { getPlayerInventory, equipItem, unequipItem, useItem, formatInventory } = require('./inventory-engine');
 const { getPlayerShop, buyItem, sellItem, formatShopList } = require('./shop-engine');
 
-const SHELL_STATUS = {
-  OK: 'ok',
-  EXIT: 'exit',
-  ERROR: 'error',
-};
+const SHELL_STATUS = { OK: 'ok', EXIT: 'exit', ERROR: 'error' };
 
 const DEFAULT_SHELL_OPTIONS = {
   defaultWaitTicks: 1,
@@ -51,12 +47,12 @@ const HELP_TEXT = [
   '  board / 委托                 Show local quest board',
   '  accept / 接取 <boardItemId>  Accept a board commission',
   '  inventory / 背包             Show items and equipment',
-  '  equip / 装备 <itemId>        Equip an inventory item',
-  '  unequip / 卸下 <slot|itemId> Unequip by slot or item id',
-  '  use / 使用 <itemId>          Use a consumable item',
+  '  equip / 装备 <itemId|itemDef> Equip an inventory item',
+  '  unequip / 卸下 <slot|itemId|itemDef>',
+  '  use / 使用 <itemId|itemDef>  Use a consumable item',
   '  shop / 商店                  Show local shops',
   '  buy / 购买 <shopId> <item> [qty]',
-  '  sell / 出售 <itemId> [qty]',
+  '  sell / 出售 <itemId|itemDef> [qty]',
   '  map / 地图 [locationId]      Show local map and exits',
   '  inspect / 查看 [target] [id] Inspect world/player/location/entity/org/city/civ',
   '  move / 前往 <locationId>     Move active character',
@@ -75,14 +71,7 @@ const HELP_TEXT = [
 function createShellSession(world, playerId, options = {}) {
   if (!world) throw new Error('Shell session requires world');
   if (!playerId) throw new Error('Shell session requires playerId');
-  return {
-    world,
-    playerId,
-    options: mergeOptions(DEFAULT_SHELL_OPTIONS, options),
-    history: [],
-    createdAt: world.tick,
-    lastReportTick: world.tick,
-  };
+  return { world, playerId, options: mergeOptions(DEFAULT_SHELL_OPTIONS, options), history: [], createdAt: world.tick, lastReportTick: world.tick };
 }
 
 function parseShellInput(line = '') {
@@ -98,361 +87,78 @@ function executeShellInput(session, line) {
   if (!parsed.command) return ok('');
   session.history.push(parsed.raw);
   if (session.history.length > 200) session.history.shift();
-
-  try {
-    return dispatchShellCommand(session, parsed);
-  } catch (error) {
-    return fail(error.message || 'shell_error');
-  }
+  try { return dispatchShellCommand(session, parsed); } catch (error) { return fail(error.message || 'shell_error'); }
 }
 
 function dispatchShellCommand(session, parsed) {
   const { world, playerId } = session;
   const [a, b, c] = parsed.args;
-
   if (parsed.command === 'help') return ok(HELP_TEXT, { type: 'help' });
   if (parsed.command === 'quit') return { status: SHELL_STATUS.EXIT, message: 'Bye.', data: null };
-
   if (parsed.command === 'status') return ok(formatPlayerStatus(world, playerId), queryWorld(world, { type: 'player', playerId }));
-  if (parsed.command === 'world') {
-    const overview = queryWorld(world, { type: 'world' });
-    return ok(formatWorldOverview(overview), overview);
-  }
-
-  if (parsed.command === 'tutorial') {
-    startTutorial(world, playerId);
-    processTutorialTick(world, { claimCompleted: false });
-    const view = getTutorialView(world, playerId);
-    return ok(formatTutorialView(view), view);
-  }
-
-  if (parsed.command === 'quests') {
-    processQuestsTick(world);
-    const quests = getPlayerQuests(world, playerId);
-    return ok(formatQuestList(quests), quests);
-  }
-
-  if (parsed.command === 'claim') {
-    processQuestsTick(world);
-    if (a) {
-      const result = claimQuestReward(world, a);
-      if (!result) return fail(`Missing quest: ${a}`);
-      recordPlayerJournal(world, playerId, { type: JOURNAL_TYPES.REWARD, title: 'Claimed quest reward', summary: `Claim result for ${a}: ${result.status}`, tags: ['quest', 'reward'], payload: { questId: a } });
-      return ok(`Claim result: ${result.status}`, result);
-    }
-    const claimed = claimCompletedPlayerQuests(world, playerId);
-    if (claimed.length) recordPlayerJournal(world, playerId, { type: JOURNAL_TYPES.REWARD, title: 'Claimed quest rewards', summary: `Claimed ${claimed.length} completed quest reward(s).`, tags: ['quest', 'reward'], payload: { claimed } });
-    return ok(`Claimed quests: ${claimed.length ? claimed.join(', ') : 'none'}`, { claimed });
-  }
-
-  if (parsed.command === 'report') {
-    const ticks = numeric(a, Math.max(1, world.tick - (session.lastReportTick || world.tick - 1)));
-    const report = createTurnReport(world, playerId, { ticks });
-    session.lastReportTick = world.tick;
-    return ok(formatTurnReport(report), report);
-  }
-
-  if (parsed.command === 'journal') {
-    const entries = getPlayerJournal(world, playerId, { limit: numeric(a, 12) });
-    return ok(formatJournalEntries(entries), entries);
-  }
-
-  if (parsed.command === 'explore') {
-    const encounter = exploreLocation(world, playerId);
-    processQuestsTick(world);
-    return ok(formatEncounter(encounter), encounter);
-  }
-
-  if (parsed.command === 'board') {
-    const board = getPlayerQuestBoard(world, playerId);
-    return ok(formatQuestBoard(board), board);
-  }
-
-  if (parsed.command === 'accept') {
-    if (!a) return fail('Usage: accept <boardItemId>');
-    const result = acceptBoardQuest(world, playerId, a);
-    return ok(`Accepted commission: ${result.item.title}\nQuest: ${result.quest.title} [${result.quest.status}]`, result);
-  }
-
-  if (parsed.command === 'inventory') {
-    return ok(formatInventory(getPlayerInventory(world, playerId)), getPlayerInventory(world, playerId));
-  }
-
-  if (parsed.command === 'equip') {
-    if (!a) return fail('Usage: equip <itemId>');
-    const entity = requireActiveEntity(world, playerId);
-    const result = equipItem(world, entity.id, a, { playerId });
-    return ok(`Equipped ${result.item.name} to ${result.slot}.`, result);
-  }
-
-  if (parsed.command === 'unequip') {
-    if (!a) return fail('Usage: unequip <slot|itemId>');
-    const entity = requireActiveEntity(world, playerId);
-    const result = unequipItem(world, entity.id, a, { playerId });
-    if (!result) return fail(`Nothing equipped for ${a}`);
-    return ok(`Unequipped ${result.item.name} from ${result.slot}.`, result);
-  }
-
-  if (parsed.command === 'use') {
-    if (!a) return fail('Usage: use <itemId>');
-    const entity = requireActiveEntity(world, playerId);
-    const result = useItem(world, entity.id, a, { playerId });
-    return ok(`Used ${result.definitionId}.`, result);
-  }
-
-  if (parsed.command === 'shop') {
-    const shop = getPlayerShop(world, playerId);
-    return ok(formatShopList(shop), shop);
-  }
-
-  if (parsed.command === 'buy') {
-    if (!a || !b) return fail('Usage: buy <shopId> <itemDefinitionId> [quantity]');
-    const result = buyItem(world, playerId, a, b, numeric(c, 1));
-    return ok(`Bought ${result.quantity} ${result.item.name} for ${result.cost}.`, result);
-  }
-
-  if (parsed.command === 'sell') {
-    if (!a) return fail('Usage: sell <itemId> [quantity]');
-    const result = sellItem(world, playerId, a, numeric(b, 1));
-    return ok(`Sold ${result.quantity} ${result.definitionId} for ${result.revenue}.`, result);
-  }
-
-  if (parsed.command === 'map') {
-    const locationId = resolveLocationId(world, a) || getPlayerView(world, playerId)?.activeEntity?.locationId || null;
-    const map = locationId ? createLocationMap(world, locationId) : createPlayerMap(world, playerId);
-    return ok(formatLocationMap(map), map);
-  }
-
-  if (parsed.command === 'inspect') {
-    const targetType = a || 'player';
-    const targetId = b || defaultInspectTarget(world, playerId, targetType);
-    return inspectTarget(world, playerId, targetType, targetId);
-  }
-
-  if (parsed.command === 'move') {
-    const locationId = resolveLocationId(world, a);
-    if (!locationId) return fail('Usage: move <locationId|locationName>');
-    const result = executePlayerCommand(world, playerId, { type: 'move', locationId });
-    return ok(formatCommandResult(result), result);
-  }
-
-  if (parsed.command === 'work') {
-    const result = executePlayerCommand(world, playerId, { type: 'work', resource: a || 'currency', amount: numeric(b, 10) });
-    return ok(formatCommandResult(result), result);
-  }
-
-  if (parsed.command === 'gather') {
-    const result = executePlayerCommand(world, playerId, { type: 'gather', resource: a || 'food', amount: numeric(b, 3) });
-    return ok(formatCommandResult(result), result);
-  }
-
-  if (parsed.command === 'train') {
-    const result = executePlayerCommand(world, playerId, { type: 'train', amount: numeric(a, 2), power: numeric(b, 50) });
-    return ok(formatCommandResult(result), result);
-  }
-
-  if (parsed.command === 'rest') {
-    const result = executePlayerCommand(world, playerId, { type: 'rest' });
-    return ok(formatCommandResult(result), result);
-  }
-
-  if (parsed.command === 'join') {
-    const organizationId = resolveOrganizationId(world, parsed.args.join(' '));
-    if (!organizationId) return fail('Usage: join <organizationId|organization name>');
-    const result = executePlayerCommand(world, playerId, { type: 'join_organization', organizationId, role: c || 'member', createContract: false });
-    return ok(formatCommandResult(result), result);
-  }
-
-  if (parsed.command === 'wait') {
-    const ticks = Math.max(1, numeric(a, session.options.defaultWaitTicks));
-    const beforeTick = world.tick;
-    advanceShellTicks(session, ticks);
-    const report = createTurnReport(world, playerId, { sinceTick: beforeTick });
-    session.lastReportTick = world.tick;
-    return ok(`Advanced ${ticks} tick(s). World tick=${world.tick}\n${formatTurnReport(report)}`, getSimulationSummary(world));
-  }
-
-  if (parsed.command === 'leaderboard') {
-    const board = queryWorld(world, { type: 'leaderboard', options: { by: a || 'overall', limit: numeric(b, 10) } });
-    return ok(formatLeaderboard(board), board);
-  }
-
-  if (parsed.command === 'commands') {
-    const commands = getPlayerCommands(world, playerId, numeric(a, 20));
-    return ok(formatCommands(commands), commands);
-  }
-
-  if (parsed.command === 'snapshot') {
-    const file = a || session.options.snapshotPath;
-    const snapshot = createWorldSnapshot(world);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(snapshot, null, 2), 'utf8');
-    return ok(`Snapshot written: ${file}`, { file, snapshot: { tick: snapshot.world.tick, population: snapshot.population.alive } });
-  }
-
+  if (parsed.command === 'world') { const overview = queryWorld(world, { type: 'world' }); return ok(formatWorldOverview(overview), overview); }
+  if (parsed.command === 'tutorial') { startTutorial(world, playerId); processTutorialTick(world, { claimCompleted: false }); const view = getTutorialView(world, playerId); return ok(formatTutorialView(view), view); }
+  if (parsed.command === 'quests') { processQuestsTick(world); const quests = getPlayerQuests(world, playerId); return ok(formatQuestList(quests), quests); }
+  if (parsed.command === 'claim') return handleClaim(world, playerId, a);
+  if (parsed.command === 'report') { const ticks = numeric(a, Math.max(1, world.tick - (session.lastReportTick || world.tick - 1))); const report = createTurnReport(world, playerId, { ticks }); session.lastReportTick = world.tick; return ok(formatTurnReport(report), report); }
+  if (parsed.command === 'journal') { const entries = getPlayerJournal(world, playerId, { limit: numeric(a, 12) }); return ok(formatJournalEntries(entries), entries); }
+  if (parsed.command === 'explore') { const encounter = exploreLocation(world, playerId); processQuestsTick(world); return ok(formatEncounter(encounter), encounter); }
+  if (parsed.command === 'board') { const board = getPlayerQuestBoard(world, playerId); return ok(formatQuestBoard(board), board); }
+  if (parsed.command === 'accept') { if (!a) return fail('Usage: accept <boardItemId>'); const result = acceptBoardQuest(world, playerId, a); return ok(`Accepted commission: ${result.item.title}\nQuest: ${result.quest.title} [${result.quest.status}]`, result); }
+  if (parsed.command === 'inventory') return ok(formatInventory(getPlayerInventory(world, playerId)), getPlayerInventory(world, playerId));
+  if (parsed.command === 'equip') { if (!a) return fail('Usage: equip <itemId|itemDefinitionId>'); const entity = requireActiveEntity(world, playerId); const itemId = resolveInventoryItemId(world, playerId, a); if (!itemId) return fail(`Missing inventory item: ${a}`); const result = equipItem(world, entity.id, itemId, { playerId }); return ok(`Equipped ${result.item.name} to ${result.slot}.`, result); }
+  if (parsed.command === 'unequip') { if (!a) return fail('Usage: unequip <slot|itemId|itemDefinitionId>'); const entity = requireActiveEntity(world, playerId); const itemIdOrSlot = resolveInventoryItemId(world, playerId, a) || a; const result = unequipItem(world, entity.id, itemIdOrSlot, { playerId }); if (!result) return fail(`Nothing equipped for ${a}`); return ok(`Unequipped ${result.item.name} from ${result.slot}.`, result); }
+  if (parsed.command === 'use') { if (!a) return fail('Usage: use <itemId|itemDefinitionId>'); const entity = requireActiveEntity(world, playerId); const itemId = resolveInventoryItemId(world, playerId, a); if (!itemId) return fail(`Missing inventory item: ${a}`); const result = useItem(world, entity.id, itemId, { playerId }); return ok(`Used ${result.definitionId}.`, result); }
+  if (parsed.command === 'shop') { const shop = getPlayerShop(world, playerId); return ok(formatShopList(shop), shop); }
+  if (parsed.command === 'buy') { if (!a || !b) return fail('Usage: buy <shopId> <itemDefinitionId> [quantity]'); const result = buyItem(world, playerId, a, b, numeric(c, 1)); return ok(`Bought ${result.quantity} ${result.item.name} for ${result.cost}.`, result); }
+  if (parsed.command === 'sell') { if (!a) return fail('Usage: sell <itemId|itemDefinitionId> [quantity]'); const itemId = resolveInventoryItemId(world, playerId, a); if (!itemId) return fail(`Missing inventory item: ${a}`); const result = sellItem(world, playerId, itemId, numeric(b, 1)); return ok(`Sold ${result.quantity} ${result.definitionId} for ${result.revenue}.`, result); }
+  if (parsed.command === 'map') { const locationId = resolveLocationId(world, a) || getPlayerView(world, playerId)?.activeEntity?.locationId || null; const map = locationId ? createLocationMap(world, locationId) : createPlayerMap(world, playerId); return ok(formatLocationMap(map), map); }
+  if (parsed.command === 'inspect') { const targetType = a || 'player'; const targetId = b || defaultInspectTarget(world, playerId, targetType); return inspectTarget(world, playerId, targetType, targetId); }
+  if (parsed.command === 'move') { const locationId = resolveLocationId(world, a); if (!locationId) return fail('Usage: move <locationId|locationName>'); const result = executePlayerCommand(world, playerId, { type: 'move', locationId }); return ok(formatCommandResult(result), result); }
+  if (parsed.command === 'work') { const result = executePlayerCommand(world, playerId, { type: 'work', resource: a || 'currency', amount: numeric(b, 10) }); return ok(formatCommandResult(result), result); }
+  if (parsed.command === 'gather') { const result = executePlayerCommand(world, playerId, { type: 'gather', resource: a || 'food', amount: numeric(b, 3) }); return ok(formatCommandResult(result), result); }
+  if (parsed.command === 'train') { const result = executePlayerCommand(world, playerId, { type: 'train', amount: numeric(a, 2), power: numeric(b, 50) }); return ok(formatCommandResult(result), result); }
+  if (parsed.command === 'rest') { const result = executePlayerCommand(world, playerId, { type: 'rest' }); return ok(formatCommandResult(result), result); }
+  if (parsed.command === 'join') { const organizationId = resolveOrganizationId(world, parsed.args.join(' ')); if (!organizationId) return fail('Usage: join <organizationId|organization name>'); const result = executePlayerCommand(world, playerId, { type: 'join_organization', organizationId, role: c || 'member', createContract: false }); return ok(formatCommandResult(result), result); }
+  if (parsed.command === 'wait') { const ticks = Math.max(1, numeric(a, session.options.defaultWaitTicks)); const beforeTick = world.tick; advanceShellTicks(session, ticks); const report = createTurnReport(world, playerId, { sinceTick: beforeTick }); session.lastReportTick = world.tick; return ok(`Advanced ${ticks} tick(s). World tick=${world.tick}\n${formatTurnReport(report)}`, getSimulationSummary(world)); }
+  if (parsed.command === 'leaderboard') { const board = queryWorld(world, { type: 'leaderboard', options: { by: a || 'overall', limit: numeric(b, 10) } }); return ok(formatLeaderboard(board), board); }
+  if (parsed.command === 'commands') { const commands = getPlayerCommands(world, playerId, numeric(a, 20)); return ok(formatCommands(commands), commands); }
+  if (parsed.command === 'snapshot') { const file = a || session.options.snapshotPath; const snapshot = createWorldSnapshot(world); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(snapshot, null, 2), 'utf8'); return ok(`Snapshot written: ${file}`, { file, snapshot: { tick: snapshot.world.tick, population: snapshot.population.alive } }); }
   return fail(`Unknown command: ${parsed.command}. Type help.`);
 }
 
-function advanceShellTicks(session, ticks) {
-  runSimulationTicks(session.world, ticks, session.options.simulation || {});
-  processPlayersTick(session.world);
-  processTutorialTick(session.world, { autoStart: true, claimCompleted: false });
-  processQuestsTick(session.world);
-}
-
-function inspectTarget(world, playerId, targetType, targetId) {
-  const normalized = normalizeInspectType(targetType);
-  if (normalized === 'player') return ok(formatPlayerStatus(world, playerId), queryWorld(world, { type: 'player', playerId }));
-  if (normalized === 'world') return ok(formatWorldOverview(queryWorld(world, { type: 'world' })), queryWorld(world, { type: 'world' }));
-  if (!targetId) return fail(`Missing target id for inspect ${normalized}`);
-  if (normalized === 'location') return ok(formatJson(queryWorld(world, { type: 'location', locationId: targetId })), queryWorld(world, { type: 'location', locationId: targetId }));
-  if (normalized === 'entity') return ok(formatJson(queryWorld(world, { type: 'entity', entityId: targetId })), queryWorld(world, { type: 'entity', entityId: targetId }));
-  if (normalized === 'city') return ok(formatJson(queryWorld(world, { type: 'city', cityId: targetId })), queryWorld(world, { type: 'city', cityId: targetId }));
-  if (normalized === 'organization') return ok(formatJson(queryWorld(world, { type: 'organization', organizationId: targetId })), queryWorld(world, { type: 'organization', organizationId: targetId }));
-  if (normalized === 'civilization') return ok(formatJson(queryWorld(world, { type: 'civilization', civilizationId: targetId })), queryWorld(world, { type: 'civilization', civilizationId: targetId }));
-  return fail(`Unknown inspect target: ${targetType}`);
-}
-
-function normalizeInspectType(value) {
-  return normalizeShellTarget(value || 'player');
-}
-
-function defaultInspectTarget(world, playerId, targetType) {
-  const view = getPlayerView(world, playerId);
-  const entity = view?.activeEntity;
-  const normalized = normalizeInspectType(targetType);
-  if (normalized === 'entity') return entity?.id || null;
-  if (normalized === 'location') return entity?.locationId || view?.observerLocation?.id || null;
-  if (normalized === 'city') return Object.keys(world.cities?.byId || {})[0] || null;
-  if (normalized === 'organization') return Object.keys(world.organizations?.byId || {})[0] || null;
-  if (normalized === 'civilization') return Object.keys(world.civilizations?.byId || {})[0] || null;
-  return null;
-}
-
-function resolveLocationId(world, value) {
-  if (!value) return null;
-  if (world.locations[value]) return value;
-  const text = String(value).toLowerCase();
-  return Object.values(world.locations || {}).find(location => String(location.name || '').toLowerCase() === text)?.id || null;
-}
-
-function resolveOrganizationId(world, value) {
-  if (!value) return null;
-  const text = String(value).toLowerCase();
-  if (world.organizations?.byId?.[value]) return value;
-  return Object.values(world.organizations?.byId || {}).find(org => String(org.name || '').toLowerCase() === text || String(org.id || '').toLowerCase() === text)?.id || null;
-}
-
-function requireActiveEntity(world, playerId) {
-  const entity = getActivePlayerCharacter(world, playerId);
-  if (!entity) throw new Error(`Missing active character for ${playerId}`);
-  return entity;
-}
-
-function formatPlayerStatus(world, playerId) {
-  const view = getPlayerView(world, playerId);
-  if (!view) return `Missing player: ${playerId}`;
-  const e = view.activeEntity;
-  if (!e) return `Player ${playerId}: no active character`;
-  return [
-    `Player: ${view.player.name} (${view.player.status}/${view.player.controlMode})`,
-    `Character: ${e.name} [${e.id}] status=${e.status} species=${e.species}`,
-    `Location: ${e.locationId}`,
-    `Health: ${e.stats.health}/${e.stats.maxHealth} Energy: ${e.stats.energy}/${e.stats.maxEnergy} Power: ${e.stats.power}`,
-    `Resources: ${Object.entries(e.resources || {}).map(([k, v]) => `${k}=${v}`).join(', ') || 'none'}`,
-    `Organizations: ${(e.organizations || []).join(', ') || 'none'}`,
-  ].join('\n');
-}
-
-function formatWorldOverview(overview) {
-  return [
-    `World: ${overview.world.id} tick=${overview.world.tick}`,
-    `Alive: ${overview.totals.alive}/${overview.totals.entities}`,
-    `Locations: ${overview.totals.locations} Cities: ${overview.totals.cities} Organizations: ${overview.totals.organizations} Civilizations: ${overview.totals.civilizations}`,
-    `Players: ${overview.totals.players} Commands: ${overview.totals.commands}`,
-    `Limits: memory=${overview.limits.worldMemory}, reports=${overview.limits.reports}, processes=${overview.limits.processes}, information=${overview.limits.information}, memories=${overview.limits.memories}`,
-  ].join('\n');
-}
-
-function formatCommandResult(result) {
-  const command = result.command;
-  const data = result.result;
-  if (!data.ok) return `Command ${command.type} rejected: ${data.reason}`;
-  if (command.status === 'accepted') return `Command ${command.type} accepted: action=${data.actionType || 'n/a'} id=${data.actionId || 'n/a'}`;
-  return `Command ${command.type} completed`;
-}
-
-function formatLeaderboard(board) {
-  return board.map((item, index) => `${index + 1}. ${item.name} [${item.entityId}] score=${item.score} power=${item.power} wealth=${item.currency}`).join('\n') || 'No entities.';
-}
-
-function formatCommands(commands) {
-  return commands.map(command => `${command.id} ${command.type} ${command.status}`).join('\n') || 'No commands.';
-}
-
-function formatQuestList(quests = []) {
-  if (!quests.length) return 'No quests. Use tutorial to start tutorial quests.';
-  return quests.map(quest => {
-    const objectives = (quest.objectives || []).map(objective => {
-      const mark = objective.done ? 'x' : ' ';
-      return `  [${mark}] ${objective.title || objective.type} ${objective.progress || 0}/${objective.target || 1}`;
-    }).join('\n');
-    return `${quest.id}\n${quest.title} [${quest.status}]\n${objectives}`;
-  }).join('\n\n');
-}
-
-function formatJson(value) {
-  return JSON.stringify(value, null, 2);
-}
-
-function ok(message, data = null) {
-  return { status: SHELL_STATUS.OK, message, data };
-}
-
-function fail(message) {
-  return { status: SHELL_STATUS.ERROR, message, data: null };
-}
-
-function numeric(value, fallback) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function tokenize(input) {
-  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  const out = [];
-  let match;
-  while ((match = re.exec(input))) out.push(match[1] ?? match[2] ?? match[3]);
-  return out;
-}
-
-function mergeOptions(base, patch) {
-  const out = { ...base };
-  for (const [key, value] of Object.entries(patch || {})) {
-    if (value && typeof value === 'object' && !Array.isArray(value) && base[key] && typeof base[key] === 'object') {
-      out[key] = mergeOptions(base[key], value);
-    } else {
-      out[key] = value;
-    }
+function handleClaim(world, playerId, questId) {
+  processQuestsTick(world);
+  if (questId) {
+    const result = claimQuestReward(world, questId);
+    if (!result) return fail(`Missing quest: ${questId}`);
+    recordPlayerJournal(world, playerId, { type: JOURNAL_TYPES.REWARD, title: 'Claimed quest reward', summary: `Claim result for ${questId}: ${result.status}`, tags: ['quest', 'reward'], payload: { questId } });
+    return ok(`Claim result: ${result.status}`, result);
   }
-  return out;
+  const claimed = claimCompletedPlayerQuests(world, playerId);
+  if (claimed.length) recordPlayerJournal(world, playerId, { type: JOURNAL_TYPES.REWARD, title: 'Claimed quest rewards', summary: `Claimed ${claimed.length} completed quest reward(s).`, tags: ['quest', 'reward'], payload: { claimed } });
+  return ok(`Claimed quests: ${claimed.length ? claimed.join(', ') : 'none'}`, { claimed });
 }
 
-module.exports = {
-  SHELL_STATUS,
-  DEFAULT_SHELL_OPTIONS,
-  HELP_TEXT,
-  createShellSession,
-  parseShellInput,
-  executeShellInput,
-  dispatchShellCommand,
-  advanceShellTicks,
-  resolveLocationId,
-  resolveOrganizationId,
-  formatPlayerStatus,
-  formatWorldOverview,
-  formatCommandResult,
-  formatLeaderboard,
-  formatCommands,
-  formatQuestList,
-};
+function advanceShellTicks(session, ticks) { runSimulationTicks(session.world, ticks, session.options.simulation || {}); processPlayersTick(session.world); processTutorialTick(session.world, { autoStart: true, claimCompleted: false }); processQuestsTick(session.world); }
+function inspectTarget(world, playerId, targetType, targetId) { const normalized = normalizeInspectType(targetType); if (normalized === 'player') return ok(formatPlayerStatus(world, playerId), queryWorld(world, { type: 'player', playerId })); if (normalized === 'world') return ok(formatWorldOverview(queryWorld(world, { type: 'world' })), queryWorld(world, { type: 'world' })); if (!targetId) return fail(`Missing target id for inspect ${normalized}`); if (normalized === 'location') return ok(formatJson(queryWorld(world, { type: 'location', locationId: targetId })), queryWorld(world, { type: 'location', locationId: targetId })); if (normalized === 'entity') return ok(formatJson(queryWorld(world, { type: 'entity', entityId: targetId })), queryWorld(world, { type: 'entity', entityId: targetId })); if (normalized === 'city') return ok(formatJson(queryWorld(world, { type: 'city', cityId: targetId })), queryWorld(world, { type: 'city', cityId: targetId })); if (normalized === 'organization') return ok(formatJson(queryWorld(world, { type: 'organization', organizationId: targetId })), queryWorld(world, { type: 'organization', organizationId: targetId })); if (normalized === 'civilization') return ok(formatJson(queryWorld(world, { type: 'civilization', civilizationId: targetId })), queryWorld(world, { type: 'civilization', civilizationId: targetId })); return fail(`Unknown inspect target: ${targetType}`); }
+function normalizeInspectType(value) { return normalizeShellTarget(value || 'player'); }
+function defaultInspectTarget(world, playerId, targetType) { const view = getPlayerView(world, playerId); const entity = view?.activeEntity; const normalized = normalizeInspectType(targetType); if (normalized === 'entity') return entity?.id || null; if (normalized === 'location') return entity?.locationId || view?.observerLocation?.id || null; if (normalized === 'city') return Object.keys(world.cities?.byId || {})[0] || null; if (normalized === 'organization') return Object.keys(world.organizations?.byId || {})[0] || null; if (normalized === 'civilization') return Object.keys(world.civilizations?.byId || {})[0] || null; return null; }
+function resolveLocationId(world, value) { if (!value) return null; if (world.locations[value]) return value; const text = String(value).toLowerCase(); return Object.values(world.locations || {}).find(location => String(location.name || '').toLowerCase() === text)?.id || null; }
+function resolveOrganizationId(world, value) { if (!value) return null; const text = String(value).toLowerCase(); if (world.organizations?.byId?.[value]) return value; return Object.values(world.organizations?.byId || {}).find(org => String(org.name || '').toLowerCase() === text || String(org.id || '').toLowerCase() === text)?.id || null; }
+function requireActiveEntity(world, playerId) { const entity = getActivePlayerCharacter(world, playerId); if (!entity) throw new Error(`Missing active character for ${playerId}`); return entity; }
+function resolveInventoryItemId(world, playerId, value) { const inventory = getPlayerInventory(world, playerId); if (!inventory?.items) return null; const text = String(value || '').toLowerCase(); const exact = inventory.items.find(item => String(item.id).toLowerCase() === text); if (exact) return exact.id; const byDefinition = inventory.items.find(item => String(item.definitionId).toLowerCase() === text); if (byDefinition) return byDefinition.id; const byName = inventory.items.find(item => String(item.name).toLowerCase() === text); return byName?.id || null; }
+function formatPlayerStatus(world, playerId) { const view = getPlayerView(world, playerId); if (!view) return `Missing player: ${playerId}`; const e = view.activeEntity; if (!e) return `Player ${playerId}: no active character`; return [`Player: ${view.player.name} (${view.player.status}/${view.player.controlMode})`, `Character: ${e.name} [${e.id}] status=${e.status} species=${e.species}`, `Location: ${e.locationId}`, `Health: ${e.stats.health}/${e.stats.maxHealth} Energy: ${e.stats.energy}/${e.stats.maxEnergy} Power: ${e.stats.power}`, `Resources: ${Object.entries(e.resources || {}).map(([k, v]) => `${k}=${v}`).join(', ') || 'none'}`, `Organizations: ${(e.organizations || []).join(', ') || 'none'}`].join('\n'); }
+function formatWorldOverview(overview) { return [`World: ${overview.world.id} tick=${overview.world.tick}`, `Alive: ${overview.totals.alive}/${overview.totals.entities}`, `Locations: ${overview.totals.locations} Cities: ${overview.totals.cities} Organizations: ${overview.totals.organizations} Civilizations: ${overview.totals.civilizations}`, `Players: ${overview.totals.players} Commands: ${overview.totals.commands}`, `Limits: memory=${overview.limits.worldMemory}, reports=${overview.limits.reports}, processes=${overview.limits.processes}, information=${overview.limits.information}, memories=${overview.limits.memories}`].join('\n'); }
+function formatCommandResult(result) { const command = result.command; const data = result.result; if (!data.ok) return `Command ${command.type} rejected: ${data.reason}`; if (command.status === 'accepted') return `Command ${command.type} accepted: action=${data.actionType || 'n/a'} id=${data.actionId || 'n/a'}`; return `Command ${command.type} completed`; }
+function formatLeaderboard(board) { return board.map((item, index) => `${index + 1}. ${item.name} [${item.entityId}] score=${item.score} power=${item.power} wealth=${item.currency}`).join('\n') || 'No entities.'; }
+function formatCommands(commands) { return commands.map(command => `${command.id} ${command.type} ${command.status}`).join('\n') || 'No commands.'; }
+function formatQuestList(quests = []) { if (!quests.length) return 'No quests. Use tutorial to start tutorial quests.'; return quests.map(quest => { const objectives = (quest.objectives || []).map(objective => { const mark = objective.done ? 'x' : ' '; return `  [${mark}] ${objective.title || objective.type} ${objective.progress || 0}/${objective.target || 1}`; }).join('\n'); return `${quest.id}\n${quest.title} [${quest.status}]\n${objectives}`; }).join('\n\n'); }
+function formatJson(value) { return JSON.stringify(value, null, 2); }
+function ok(message, data = null) { return { status: SHELL_STATUS.OK, message, data }; }
+function fail(message) { return { status: SHELL_STATUS.ERROR, message, data: null }; }
+function numeric(value, fallback) { const n = Number(value); return Number.isFinite(n) ? n : fallback; }
+function tokenize(input) { const re = /"([^"]*)"|'([^']*)'|(\S+)/g; const out = []; let match; while ((match = re.exec(input))) out.push(match[1] ?? match[2] ?? match[3]); return out; }
+function mergeOptions(base, patch) { const out = { ...base }; for (const [key, value] of Object.entries(patch || {})) { if (value && typeof value === 'object' && !Array.isArray(value) && base[key] && typeof base[key] === 'object') out[key] = mergeOptions(base[key], value); else out[key] = value; } return out; }
+
+module.exports = { SHELL_STATUS, DEFAULT_SHELL_OPTIONS, HELP_TEXT, createShellSession, parseShellInput, executeShellInput, dispatchShellCommand, advanceShellTicks, resolveLocationId, resolveOrganizationId, formatPlayerStatus, formatWorldOverview, formatCommandResult, formatLeaderboard, formatCommands, formatQuestList };
