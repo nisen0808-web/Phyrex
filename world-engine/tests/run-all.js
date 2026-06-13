@@ -21,6 +21,7 @@ const tests = [
   'map-alias-test.js',
   'query-content-test.js',
   'journal-encounter-board-test.js',
+  'item-inventory-shop-test.js',
   'stability-100-test.js',
 ];
 
