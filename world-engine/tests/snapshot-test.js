@@ -21,6 +21,8 @@ function main() {
     topJournalEntries: 5,
     topEncounters: 5,
     topBoardItems: 5,
+    topItems: 5,
+    topShops: 5,
     recentReports: 5,
   });
 
@@ -34,6 +36,8 @@ function main() {
   assert.ok(snapshot.journals && typeof snapshot.journals.total === 'number', 'snapshot should include journals section');
   assert.ok(snapshot.encounters && typeof snapshot.encounters.total === 'number', 'snapshot should include encounters section');
   assert.ok(snapshot.questBoards && typeof snapshot.questBoards.total === 'number', 'snapshot should include questBoards section');
+  assert.ok(snapshot.items && typeof snapshot.items.definitions === 'number', 'snapshot should include items section');
+  assert.ok(snapshot.shops && typeof snapshot.shops.total === 'number', 'snapshot should include shops section');
   assert.ok(Array.isArray(snapshot.cities), 'snapshot cities should be an array');
   assert.ok(Array.isArray(snapshot.organizations), 'snapshot organizations should be an array');
   assert.ok(Array.isArray(snapshot.civilizations), 'snapshot civilizations should be an array');
@@ -48,6 +52,8 @@ function main() {
   assert.ok(snapshot.journals.total <= snapshot.limits.journals.limit, 'journals should respect limit');
   assert.ok(snapshot.encounters.total <= snapshot.limits.encounters.limit, 'encounters should respect limit');
   assert.ok(snapshot.questBoards.total <= snapshot.limits.questBoards.limit, 'quest boards should respect limit');
+  assert.ok(snapshot.items.instances <= snapshot.limits.itemInstances.limit, 'items should respect limit');
+  assert.ok(snapshot.shops.total <= snapshot.limits.shops.limit, 'shops should respect limit');
   assert.ok(snapshot.limits.worldMemory.current <= snapshot.limits.worldMemory.limit, 'world memory should respect limit');
   assert.ok(snapshot.limits.reports.current <= snapshot.limits.reports.limit, 'reports should respect limit');
 
