@@ -10,6 +10,8 @@ const DEFAULT_SNAPSHOT_OPTIONS = {
   topJournalEntries: 20,
   topEncounters: 20,
   topBoardItems: 20,
+  topItems: 30,
+  topShops: 20,
   recentCommands: 20,
   recentReports: 20,
 };
@@ -28,6 +30,8 @@ function createWorldSnapshot(world, options = {}) {
     journals: summarizeJournals(world, config.topJournalEntries),
     encounters: summarizeEncounters(world, config.topEncounters),
     questBoards: summarizeQuestBoards(world, config.topBoardItems),
+    items: summarizeItems(world, config.topItems),
+    shops: summarizeShops(world, config.topShops),
     cities: summarizeCities(world, config.topCities),
     organizations: summarizeOrganizations(world, config.topOrganizations),
     civilizations: summarizeCivilizations(world, config.topCivilizations),
@@ -45,32 +49,14 @@ function createWorldSnapshot(world, options = {}) {
   };
 }
 
-function summarizeWorld(world) {
-  return {
-    id: world.id,
-    tick: world.tick,
-    calendar: world.calendar ? { ...world.calendar } : null,
-    version: world.version || 1,
-  };
-}
-
-function summarizeCounters(world) {
-  return world.simulation?.counters ? { ...world.simulation.counters } : {};
-}
+function summarizeWorld(world) { return { id: world.id, tick: world.tick, calendar: world.calendar ? { ...world.calendar } : null, version: world.version || 1 }; }
+function summarizeCounters(world) { return world.simulation?.counters ? { ...world.simulation.counters } : {}; }
 
 function summarizePopulation(world) {
   const entities = Object.values(world.entities || {});
   const alive = entities.filter(entity => entity.status === 'alive');
   const dead = entities.filter(entity => entity.status === 'dead');
-  return {
-    total: entities.length,
-    alive: alive.length,
-    dead: dead.length,
-    bySpecies: countBy(alive.map(entity => entity.species || 'unknown')),
-    byLocation: countBy(alive.map(entity => entity.locationId || 'unknown')),
-    averagePower: average(alive.map(entity => entity.stats?.power || 0)),
-    averageHappiness: average(alive.map(entity => entity.meta?.happiness || 0)),
-  };
+  return { total: entities.length, alive: alive.length, dead: dead.length, bySpecies: countBy(alive.map(entity => entity.species || 'unknown')), byLocation: countBy(alive.map(entity => entity.locationId || 'unknown')), averagePower: average(alive.map(entity => entity.stats?.power || 0)), averageHappiness: average(alive.map(entity => entity.meta?.happiness || 0)) };
 }
 
 function summarizePlayers(world, limit) {
@@ -83,18 +69,7 @@ function summarizePlayers(world, limit) {
     byStatus: countBy(players.map(player => player.status)),
     items: players.slice(0, limit).map(player => {
       const entity = player.activeEntityId ? world.entities?.[player.activeEntityId] : null;
-      return {
-        id: player.id,
-        name: player.name,
-        status: player.status,
-        controlMode: player.controlMode,
-        activeEntityId: player.activeEntityId,
-        activeEntityName: entity?.name || null,
-        activeEntityStatus: entity?.status || null,
-        locationId: entity?.locationId || player.observerLocationId || null,
-        controlledEntities: (player.controlledEntityIds || []).length,
-        updatedAt: player.updatedAt,
-      };
+      return { id: player.id, name: player.name, status: player.status, controlMode: player.controlMode, activeEntityId: player.activeEntityId, activeEntityName: entity?.name || null, activeEntityStatus: entity?.status || null, locationId: entity?.locationId || player.observerLocationId || null, controlledEntities: (player.controlledEntityIds || []).length, updatedAt: player.updatedAt };
     }),
   };
 }
@@ -102,390 +77,68 @@ function summarizePlayers(world, limit) {
 function summarizeCommands(world, limit) {
   const state = world.commands || { byId: {}, log: [], stats: {} };
   const recent = (state.log || []).slice(-limit).map(id => state.byId?.[id]).filter(Boolean);
-  return {
-    total: Object.keys(state.byId || {}).length,
-    stats: { ...(state.stats || {}) },
-    recent: recent.map(command => ({
-      id: command.id,
-      playerId: command.playerId,
-      type: command.type,
-      status: command.status,
-      createdAt: command.createdAt,
-      updatedAt: command.updatedAt,
-      result: command.result ? {
-        ok: command.result.ok,
-        completed: command.result.completed,
-        reason: command.result.reason || null,
-        actionId: command.result.actionId || null,
-        actionType: command.result.actionType || null,
-      } : null,
-    })),
-  };
+  return { total: Object.keys(state.byId || {}).length, stats: { ...(state.stats || {}) }, recent: recent.map(command => ({ id: command.id, playerId: command.playerId, type: command.type, status: command.status, createdAt: command.createdAt, updatedAt: command.updatedAt, result: command.result ? { ok: command.result.ok, completed: command.result.completed, reason: command.result.reason || null, actionId: command.result.actionId || null, actionType: command.result.actionType || null } : null })) };
 }
 
 function summarizeQuests(world, limit) {
   const quests = Object.values(world.quests?.byId || {});
-  return {
-    total: quests.length,
-    active: quests.filter(quest => quest.status === 'active').length,
-    completed: quests.filter(quest => quest.status === 'completed').length,
-    claimed: quests.filter(quest => quest.status === 'claimed').length,
-    failed: quests.filter(quest => quest.status === 'failed').length,
-    byStatus: countBy(quests.map(quest => quest.status)),
-    byTag: countBy(quests.flatMap(quest => quest.tags || [])),
-    items: quests
-      .sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))
-      .slice(0, limit)
-      .map(quest => ({
-        id: quest.id,
-        playerId: quest.playerId,
-        entityId: quest.entityId || null,
-        title: quest.title,
-        status: quest.status,
-        tags: [...(quest.tags || [])],
-        progress: questProgress(quest),
-        objectives: (quest.objectives || []).length,
-        completedObjectives: (quest.objectives || []).filter(objective => objective.done || Number(objective.progress || 0) >= Number(objective.target || 1)).length,
-        createdAt: quest.createdAt,
-        updatedAt: quest.updatedAt,
-        completedAt: quest.completedAt,
-        claimedAt: quest.claimedAt,
-      })),
-  };
+  return { total: quests.length, active: quests.filter(q => q.status === 'active').length, completed: quests.filter(q => q.status === 'completed').length, claimed: quests.filter(q => q.status === 'claimed').length, failed: quests.filter(q => q.status === 'failed').length, byStatus: countBy(quests.map(q => q.status)), byTag: countBy(quests.flatMap(q => q.tags || [])), items: quests.sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0)).slice(0, limit).map(q => ({ id: q.id, playerId: q.playerId, entityId: q.entityId || null, title: q.title, status: q.status, tags: [...(q.tags || [])], progress: questProgress(q), objectives: (q.objectives || []).length, completedObjectives: (q.objectives || []).filter(o => o.done || Number(o.progress || 0) >= Number(o.target || 1)).length, createdAt: q.createdAt, updatedAt: q.updatedAt, completedAt: q.completedAt, claimedAt: q.claimedAt })) };
 }
 
 function summarizeTutorials(world) {
   const tutorials = Object.values(world.tutorials?.byPlayer || {});
-  return {
-    total: tutorials.length,
-    active: tutorials.filter(tutorial => tutorial.status === 'active').length,
-    completed: tutorials.filter(tutorial => tutorial.status === 'completed').length,
-    byStatus: countBy(tutorials.map(tutorial => tutorial.status)),
-    items: tutorials.map(tutorial => ({
-      playerId: tutorial.playerId,
-      status: tutorial.status,
-      activeQuestId: tutorial.activeQuestId,
-      completedQuests: (tutorial.completedQuestIds || []).length,
-      claimedQuests: (tutorial.claimedQuestIds || []).length,
-      startedAt: tutorial.startedAt,
-      completedAt: tutorial.completedAt,
-      lastUpdatedAt: tutorial.lastUpdatedAt,
-    })),
-  };
+  return { total: tutorials.length, active: tutorials.filter(t => t.status === 'active').length, completed: tutorials.filter(t => t.status === 'completed').length, byStatus: countBy(tutorials.map(t => t.status)), items: tutorials.map(t => ({ playerId: t.playerId, status: t.status, activeQuestId: t.activeQuestId, completedQuests: (t.completedQuestIds || []).length, claimedQuests: (t.claimedQuestIds || []).length, startedAt: t.startedAt, completedAt: t.completedAt, lastUpdatedAt: t.lastUpdatedAt })) };
 }
 
 function summarizeJournals(world, limit) {
   const entries = Object.values(world.journals?.byPlayer || {}).flat();
-  return {
-    total: entries.length,
-    players: Object.keys(world.journals?.byPlayer || {}).length,
-    byType: countBy(entries.map(entry => entry.type)),
-    recent: entries
-      .sort((a, b) => Number(b.tick || 0) - Number(a.tick || 0))
-      .slice(0, limit)
-      .map(entry => ({
-        id: entry.id,
-        tick: entry.tick,
-        playerId: entry.playerId,
-        entityId: entry.entityId,
-        locationId: entry.locationId,
-        type: entry.type,
-        title: entry.title,
-        summary: entry.summary,
-        importance: entry.importance,
-        tags: [...(entry.tags || [])],
-      })),
-  };
+  return { total: entries.length, players: Object.keys(world.journals?.byPlayer || {}).length, byType: countBy(entries.map(e => e.type)), recent: entries.sort((a, b) => Number(b.tick || 0) - Number(a.tick || 0)).slice(0, limit).map(e => ({ id: e.id, tick: e.tick, playerId: e.playerId, entityId: e.entityId, locationId: e.locationId, type: e.type, title: e.title, summary: e.summary, importance: e.importance, tags: [...(e.tags || [])] })) };
 }
 
 function summarizeEncounters(world, limit) {
   const encounters = Object.values(world.encounters?.byId || {});
-  return {
-    total: encounters.length,
-    byType: countBy(encounters.map(item => item.type)),
-    recent: encounters
-      .sort((a, b) => Number(b.resolvedAt || b.createdAt || 0) - Number(a.resolvedAt || a.createdAt || 0))
-      .slice(0, limit)
-      .map(item => ({
-        id: item.id,
-        playerId: item.playerId,
-        entityId: item.entityId,
-        locationId: item.locationId,
-        type: item.type,
-        status: item.status,
-        title: item.title,
-        summary: item.summary,
-        rewards: { ...(item.rewards || {}) },
-        createdAt: item.createdAt,
-        resolvedAt: item.resolvedAt,
-      })),
-  };
+  return { total: encounters.length, byType: countBy(encounters.map(e => e.type)), recent: encounters.sort((a, b) => Number(b.resolvedAt || b.createdAt || 0) - Number(a.resolvedAt || a.createdAt || 0)).slice(0, limit).map(e => ({ id: e.id, playerId: e.playerId, entityId: e.entityId, locationId: e.locationId, type: e.type, status: e.status, title: e.title, summary: e.summary, rewards: { ...(e.rewards || {}) }, createdAt: e.createdAt, resolvedAt: e.resolvedAt })) };
 }
 
 function summarizeQuestBoards(world, limit) {
   const items = Object.values(world.questBoards?.byId || {});
-  return {
-    total: items.length,
-    open: items.filter(item => item.status === 'open').length,
-    accepted: items.filter(item => item.status === 'accepted').length,
-    closed: items.filter(item => item.status === 'closed').length,
-    byType: countBy(items.map(item => item.type)),
-    items: items
-      .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
-      .slice(0, limit)
-      .map(item => ({
-        id: item.id,
-        locationId: item.locationId,
-        type: item.type,
-        status: item.status,
-        title: item.title,
-        summary: item.summary,
-        acceptedBy: item.acceptedBy,
-        createdAt: item.createdAt,
-        acceptedAt: item.acceptedAt,
-        rewards: { ...(item.rewards || {}) },
-        tags: [...(item.tags || [])],
-      })),
-  };
+  return { total: items.length, open: items.filter(i => i.status === 'open').length, accepted: items.filter(i => i.status === 'accepted').length, closed: items.filter(i => i.status === 'closed').length, byType: countBy(items.map(i => i.type)), items: items.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)).slice(0, limit).map(i => ({ id: i.id, locationId: i.locationId, type: i.type, status: i.status, title: i.title, summary: i.summary, acceptedBy: i.acceptedBy, createdAt: i.createdAt, acceptedAt: i.acceptedAt, rewards: { ...(i.rewards || {}) }, tags: [...(i.tags || [])] })) };
 }
 
-function summarizeCities(world, limit) {
-  return Object.values(world.cities?.byId || {})
-    .map(city => ({
-      id: city.id,
-      name: city.name,
-      type: city.type,
-      locationId: city.locationId,
-      population: Number(city.population || 0),
-      wealth: Number(city.wealth || 0),
-      security: Number(city.security || 0),
-      culture: Number(city.culture || 0),
-      infrastructure: (city.infrastructureIds || []).length,
-      organizations: (city.organizationIds || []).length,
-    }))
-    .sort((a, b) => scoreCity(b) - scoreCity(a))
-    .slice(0, limit);
+function summarizeItems(world, limit) {
+  const definitions = Object.values(world.items?.definitions || {});
+  const instances = Object.values(world.items?.instances || {});
+  return { definitions: definitions.length, instances: instances.length, equipped: instances.filter(i => i.equipped).length, byType: countBy(instances.map(i => i.type)), byRarity: countBy(instances.map(i => i.rarity)), recent: instances.sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0)).slice(0, limit).map(i => ({ id: i.id, definitionId: i.definitionId, name: i.name, type: i.type, rarity: i.rarity, ownerType: i.ownerType, ownerId: i.ownerId, quantity: i.quantity, equipped: Boolean(i.equipped), slot: i.slot || null })) };
 }
 
-function summarizeOrganizations(world, limit) {
-  return Object.values(world.organizations?.byId || {})
-    .map(org => ({
-      id: org.id,
-      name: org.name,
-      type: org.type,
-      status: org.status,
-      leaderId: org.leaderId,
-      homeLocationId: org.homeLocationId,
-      members: (org.members || []).length,
-      wealth: Number(org.assets?.currency || 0),
-      authority: Number(org.authority || 0),
-      reputation: Number(org.reputation || 0),
-      cohesion: Number(org.cohesion || 0),
-      rivals: Object.keys(org.rivals || {}).length,
-    }))
-    .sort((a, b) => scoreOrganization(b) - scoreOrganization(a))
-    .slice(0, limit);
+function summarizeShops(world, limit) {
+  const shops = Object.values(world.shops?.byId || {});
+  return { total: shops.length, byType: countBy(shops.map(s => s.type)), items: shops.slice(0, limit).map(s => ({ id: s.id, name: s.name, type: s.type, locationId: s.locationId, currency: s.currency, stock: Object.values(s.stock || {}).map(item => ({ ...item })) })) };
 }
 
-function summarizeCivilizations(world, limit) {
-  return Object.values(world.civilizations?.byId || {})
-    .map(civ => ({
-      id: civ.id,
-      name: civ.name,
-      status: civ.status,
-      level: civ.level,
-      score: Number(civ.score || 0),
-      dominantSpecies: civ.dominantSpecies,
-      metrics: { ...(civ.metrics || {}) },
-      values: [...(civ.values || [])],
-      cities: (civ.cityIds || []).length,
-      organizations: (civ.organizationIds || []).length,
-      religions: (civ.religionIds || []).length,
-      cultures: (civ.cultureIds || []).length,
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
-}
-
-function summarizeTechnology(world) {
-  const civStates = Object.values(world.technologies?.byCivilization || {});
-  return {
-    definitions: Object.keys(world.technologies?.definitions || {}).length,
-    civilizations: civStates.length,
-    unlocked: civStates.reduce((sum, state) => sum + Object.values(state.techs || {}).filter(tech => tech.status === 'unlocked').length, 0),
-    researching: civStates.reduce((sum, state) => sum + Object.values(state.techs || {}).filter(tech => tech.status === 'researching').length, 0),
-  };
-}
-
-function summarizeInfrastructure(world) {
-  const items = Object.values(world.infrastructure?.byId || {});
-  return {
-    total: items.length,
-    active: items.filter(item => item.status === 'active').length,
-    building: items.filter(item => item.status === 'building').length,
-    damaged: items.filter(item => item.status === 'damaged').length,
-    ruined: items.filter(item => item.status === 'ruined').length,
-    byType: countBy(items.map(item => item.type)),
-    byStatus: countBy(items.map(item => item.status)),
-  };
-}
-
-function summarizeGovernance(world) {
-  const governments = Object.values(world.governance?.governments || {});
-  return {
-    total: governments.length,
-    active: governments.filter(gov => gov.status === 'active').length,
-    unstable: governments.filter(gov => gov.status === 'unstable').length,
-    collapsed: governments.filter(gov => gov.status === 'collapsed').length,
-    averageLegitimacy: average(governments.map(gov => gov.legitimacy || 0)),
-    averageUnrest: average(governments.map(gov => gov.unrest || 0)),
-    treasury: sum(governments.map(gov => gov.treasury || 0)),
-  };
-}
-
-function summarizeConflicts(world) {
-  const conflicts = Object.values(world.conflicts?.byId || {});
-  return {
-    total: conflicts.length,
-    active: conflicts.filter(conflict => conflict.status === 'active').length,
-    tension: conflicts.filter(conflict => conflict.status === 'tension').length,
-    resolved: conflicts.filter(conflict => conflict.status === 'resolved').length,
-    casualties: sum(conflicts.map(conflict => conflict.casualties || 0)),
-    byType: countBy(conflicts.map(conflict => conflict.type)),
-  };
-}
-
-function summarizeProcesses(world) {
-  const processes = Object.values(world.processes?.byId || {});
-  return {
-    total: processes.length,
-    active: processes.filter(process => process.status === 'active').length,
-    resolved: processes.filter(process => process.status === 'resolved').length,
-    stalled: processes.filter(process => process.status === 'stalled').length,
-    byType: countBy(processes.map(process => process.type)),
-  };
-}
-
-function summarizeEmergence(world) {
-  const items = Object.values(world.emergence?.byId || {});
-  return {
-    total: items.length,
-    active: items.filter(item => item.status === 'active').length,
-    resolved: items.filter(item => item.status === 'resolved').length,
-    byType: countBy(items.map(item => item.type)),
-  };
-}
-
-function summarizeInformation(world) {
-  const items = Object.values(world.information?.items || {});
-  return {
-    total: items.length,
-    byType: countBy(items.map(item => item.type)),
-    byStatus: countBy(items.map(item => item.status)),
-    knownOwners: Object.keys(world.information?.knownBy || {}).length,
-  };
-}
-
-function summarizeMemories(world) {
-  const memories = Object.values(world.memories?.byId || {});
-  return {
-    total: memories.length,
-    owners: Object.keys(world.memories?.byOwner || {}).length,
-    byType: countBy(memories.map(memory => memory.type)),
-    byScope: countBy(memories.map(memory => memory.scope)),
-  };
-}
-
-function summarizeNarrative(world, limit) {
-  const scores = Object.values(world.narrativeScores?.byEntity || {});
-  const fallback = Object.values(world.entities || {}).map(entity => ({
-    entityId: entity.id,
-    totalScore: Number(entity.stats?.power || 0) + Number(entity.meta?.reputation || 0),
-  }));
-  const source = scores.length ? scores : fallback;
-  return {
-    topEntities: source
-      .sort((a, b) => Number(b.totalScore || 0) - Number(a.totalScore || 0))
-      .slice(0, limit)
-      .map(score => ({
-        entityId: score.entityId,
-        name: world.entities?.[score.entityId]?.name || score.entityId,
-        score: Number(score.totalScore || 0),
-        status: world.entities?.[score.entityId]?.status || 'unknown',
-      })),
-  };
-}
+function summarizeCities(world, limit) { return Object.values(world.cities?.byId || {}).map(c => ({ id: c.id, name: c.name, type: c.type, locationId: c.locationId, population: Number(c.population || 0), wealth: Number(c.wealth || 0), security: Number(c.security || 0), culture: Number(c.culture || 0), infrastructure: (c.infrastructureIds || []).length, organizations: (c.organizationIds || []).length })).sort((a, b) => scoreCity(b) - scoreCity(a)).slice(0, limit); }
+function summarizeOrganizations(world, limit) { return Object.values(world.organizations?.byId || {}).map(o => ({ id: o.id, name: o.name, type: o.type, status: o.status, leaderId: o.leaderId, homeLocationId: o.homeLocationId, members: (o.members || []).length, wealth: Number(o.assets?.currency || 0), authority: Number(o.authority || 0), reputation: Number(o.reputation || 0), cohesion: Number(o.cohesion || 0), rivals: Object.keys(o.rivals || {}).length })).sort((a, b) => scoreOrganization(b) - scoreOrganization(a)).slice(0, limit); }
+function summarizeCivilizations(world, limit) { return Object.values(world.civilizations?.byId || {}).map(c => ({ id: c.id, name: c.name, status: c.status, level: c.level, score: Number(c.score || 0), dominantSpecies: c.dominantSpecies, metrics: { ...(c.metrics || {}) }, values: [...(c.values || [])], cities: (c.cityIds || []).length, organizations: (c.organizationIds || []).length, religions: (c.religionIds || []).length, cultures: (c.cultureIds || []).length })).sort((a, b) => b.score - a.score).slice(0, limit); }
+function summarizeTechnology(world) { const civStates = Object.values(world.technologies?.byCivilization || {}); return { definitions: Object.keys(world.technologies?.definitions || {}).length, civilizations: civStates.length, unlocked: civStates.reduce((sum, state) => sum + Object.values(state.techs || {}).filter(t => t.status === 'unlocked').length, 0), researching: civStates.reduce((sum, state) => sum + Object.values(state.techs || {}).filter(t => t.status === 'researching').length, 0) }; }
+function summarizeInfrastructure(world) { const items = Object.values(world.infrastructure?.byId || {}); return { total: items.length, active: items.filter(i => i.status === 'active').length, building: items.filter(i => i.status === 'building').length, damaged: items.filter(i => i.status === 'damaged').length, ruined: items.filter(i => i.status === 'ruined').length, byType: countBy(items.map(i => i.type)), byStatus: countBy(items.map(i => i.status)) }; }
+function summarizeGovernance(world) { const governments = Object.values(world.governance?.governments || {}); return { total: governments.length, active: governments.filter(g => g.status === 'active').length, unstable: governments.filter(g => g.status === 'unstable').length, collapsed: governments.filter(g => g.status === 'collapsed').length, averageLegitimacy: average(governments.map(g => g.legitimacy || 0)), averageUnrest: average(governments.map(g => g.unrest || 0)), treasury: sum(governments.map(g => g.treasury || 0)) }; }
+function summarizeConflicts(world) { const conflicts = Object.values(world.conflicts?.byId || {}); return { total: conflicts.length, active: conflicts.filter(c => c.status === 'active').length, tension: conflicts.filter(c => c.status === 'tension').length, resolved: conflicts.filter(c => c.status === 'resolved').length, casualties: sum(conflicts.map(c => c.casualties || 0)), byType: countBy(conflicts.map(c => c.type)) }; }
+function summarizeProcesses(world) { const processes = Object.values(world.processes?.byId || {}); return { total: processes.length, active: processes.filter(p => p.status === 'active').length, resolved: processes.filter(p => p.status === 'resolved').length, stalled: processes.filter(p => p.status === 'stalled').length, byType: countBy(processes.map(p => p.type)) }; }
+function summarizeEmergence(world) { const items = Object.values(world.emergence?.byId || {}); return { total: items.length, active: items.filter(i => i.status === 'active').length, resolved: items.filter(i => i.status === 'resolved').length, byType: countBy(items.map(i => i.type)) }; }
+function summarizeInformation(world) { const items = Object.values(world.information?.items || {}); return { total: items.length, byType: countBy(items.map(i => i.type)), byStatus: countBy(items.map(i => i.status)), knownOwners: Object.keys(world.information?.knownBy || {}).length }; }
+function summarizeMemories(world) { const memories = Object.values(world.memories?.byId || {}); return { total: memories.length, owners: Object.keys(world.memories?.byOwner || {}).length, byType: countBy(memories.map(m => m.type)), byScope: countBy(memories.map(m => m.scope)) }; }
+function summarizeNarrative(world, limit) { const scores = Object.values(world.narrativeScores?.byEntity || {}); const fallback = Object.values(world.entities || {}).map(e => ({ entityId: e.id, totalScore: Number(e.stats?.power || 0) + Number(e.meta?.reputation || 0) })); const source = scores.length ? scores : fallback; return { topEntities: source.sort((a, b) => Number(b.totalScore || 0) - Number(a.totalScore || 0)).slice(0, limit).map(score => ({ entityId: score.entityId, name: world.entities?.[score.entityId]?.name || score.entityId, score: Number(score.totalScore || 0), status: world.entities?.[score.entityId]?.status || 'unknown' })) }; }
 
 function summarizeLimits(world) {
-  return {
-    worldMemory: { current: (world.memory || []).length, limit: 1000 },
-    reports: { current: (world.simulation?.reports || []).length, limit: 200 },
-    processes: { current: Object.keys(world.processes?.byId || {}).length, limit: 500 },
-    information: { current: Object.keys(world.information?.items || {}).length, limit: 1000 },
-    memories: { current: Object.keys(world.memories?.byId || {}).length, limit: 3000 },
-    commands: { current: Object.keys(world.commands?.byId || {}).length, limit: 500 },
-    quests: { current: Object.keys(world.quests?.byId || {}).length, limit: 500 },
-    journals: { current: Object.values(world.journals?.byPlayer || {}).reduce((sum, entries) => sum + entries.length, 0), limit: 300 },
-    encounters: { current: Object.keys(world.encounters?.byId || {}).length, limit: 300 },
-    questBoards: { current: Object.keys(world.questBoards?.byId || {}).length, limit: 500 },
-  };
+  return { worldMemory: { current: (world.memory || []).length, limit: 1000 }, reports: { current: (world.simulation?.reports || []).length, limit: 200 }, processes: { current: Object.keys(world.processes?.byId || {}).length, limit: 500 }, information: { current: Object.keys(world.information?.items || {}).length, limit: 1000 }, memories: { current: Object.keys(world.memories?.byId || {}).length, limit: 3000 }, commands: { current: Object.keys(world.commands?.byId || {}).length, limit: 500 }, quests: { current: Object.keys(world.quests?.byId || {}).length, limit: 500 }, journals: { current: Object.values(world.journals?.byPlayer || {}).reduce((sum, entries) => sum + entries.length, 0), limit: 300 }, encounters: { current: Object.keys(world.encounters?.byId || {}).length, limit: 300 }, questBoards: { current: Object.keys(world.questBoards?.byId || {}).length, limit: 500 }, itemInstances: { current: Object.keys(world.items?.instances || {}).length, limit: 1000 }, shops: { current: Object.keys(world.shops?.byId || {}).length, limit: 500 } };
 }
 
-function summarizeRecentReports(world, limit) {
-  return (world.simulation?.reports || []).slice(-limit);
-}
-
-function questProgress(quest) {
-  if (!quest.objectives?.length) return 0;
-  const progress = quest.objectives.reduce((sum, objective) => sum + Math.min(1, Number(objective.progress || 0) / Math.max(1, Number(objective.target || 1))), 0);
-  return Math.round((progress / quest.objectives.length) * 100);
-}
-
+function summarizeRecentReports(world, limit) { return (world.simulation?.reports || []).slice(-limit); }
+function questProgress(quest) { if (!quest.objectives?.length) return 0; const progress = quest.objectives.reduce((sum, objective) => sum + Math.min(1, Number(objective.progress || 0) / Math.max(1, Number(objective.target || 1))), 0); return Math.round((progress / quest.objectives.length) * 100); }
 function scoreCity(city) { return city.population * 5 + city.wealth * 0.01 + city.security + city.culture; }
 function scoreOrganization(org) { return org.members * 10 + org.wealth * 0.01 + org.authority + org.reputation + org.cohesion; }
+function countBy(values) { const out = {}; for (const value of values || []) { const key = value === undefined || value === null ? 'unknown' : String(value); out[key] = (out[key] || 0) + 1; } return out; }
+function average(values) { const filtered = (values || []).map(Number).filter(Number.isFinite); if (!filtered.length) return 0; return sum(filtered) / filtered.length; }
+function sum(values) { return (values || []).map(Number).filter(Number.isFinite).reduce((a, b) => a + b, 0); }
 
-function countBy(values) {
-  const out = {};
-  for (const value of values || []) {
-    const key = value === undefined || value === null ? 'unknown' : String(value);
-    out[key] = (out[key] || 0) + 1;
-  }
-  return out;
-}
-
-function average(values) {
-  const filtered = (values || []).map(Number).filter(Number.isFinite);
-  if (!filtered.length) return 0;
-  return sum(filtered) / filtered.length;
-}
-
-function sum(values) {
-  return (values || []).map(Number).filter(Number.isFinite).reduce((a, b) => a + b, 0);
-}
-
-module.exports = {
-  DEFAULT_SNAPSHOT_OPTIONS,
-  createWorldSnapshot,
-  summarizeWorld,
-  summarizePopulation,
-  summarizePlayers,
-  summarizeCommands,
-  summarizeQuests,
-  summarizeTutorials,
-  summarizeJournals,
-  summarizeEncounters,
-  summarizeQuestBoards,
-  summarizeCities,
-  summarizeOrganizations,
-  summarizeCivilizations,
-  summarizeTechnology,
-  summarizeInfrastructure,
-  summarizeGovernance,
-  summarizeConflicts,
-  summarizeProcesses,
-  summarizeEmergence,
-  summarizeInformation,
-  summarizeMemories,
-  summarizeNarrative,
-  summarizeLimits,
-};
+module.exports = { DEFAULT_SNAPSHOT_OPTIONS, createWorldSnapshot, summarizeWorld, summarizePopulation, summarizePlayers, summarizeCommands, summarizeQuests, summarizeTutorials, summarizeJournals, summarizeEncounters, summarizeQuestBoards, summarizeItems, summarizeShops, summarizeCities, summarizeOrganizations, summarizeCivilizations, summarizeTechnology, summarizeInfrastructure, summarizeGovernance, summarizeConflicts, summarizeProcesses, summarizeEmergence, summarizeInformation, summarizeMemories, summarizeNarrative, summarizeLimits };
