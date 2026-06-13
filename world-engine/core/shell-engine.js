@@ -6,7 +6,7 @@ const { runSimulationTicks, getSimulationSummary } = require('./simulation-engin
 const { executePlayerCommand, getPlayerCommands } = require('./command-engine');
 const { queryWorld } = require('./query-engine');
 const { createWorldSnapshot } = require('./snapshot-engine');
-const { getPlayerView, processPlayersTick } = require('./player-engine');
+const { getPlayerView, getActivePlayerCharacter, processPlayersTick } = require('./player-engine');
 const { getPlayerQuests, processQuestsTick, claimCompletedPlayerQuests, claimQuestReward } = require('./quest-engine');
 const { startTutorial, processTutorialTick, getTutorialView, formatTutorialView } = require('./tutorial-engine');
 const { createTurnReport, formatTurnReport } = require('./turn-report-engine');
@@ -15,6 +15,8 @@ const { normalizeShellCommand, normalizeShellTarget } = require('./shell-alias-e
 const { getPlayerJournal, formatJournalEntries, recordPlayerJournal, JOURNAL_TYPES } = require('./player-journal-engine');
 const { exploreLocation, formatEncounter } = require('./encounter-engine');
 const { getPlayerQuestBoard, acceptBoardQuest, formatQuestBoard } = require('./quest-board-engine');
+const { getPlayerInventory, equipItem, unequipItem, useItem, formatInventory } = require('./inventory-engine');
+const { getPlayerShop, buyItem, sellItem, formatShopList } = require('./shop-engine');
 
 const SHELL_STATUS = {
   OK: 'ok',
@@ -48,6 +50,13 @@ const HELP_TEXT = [
   '  explore / 探索               Explore current location and trigger encounter',
   '  board / 委托                 Show local quest board',
   '  accept / 接取 <boardItemId>  Accept a board commission',
+  '  inventory / 背包             Show items and equipment',
+  '  equip / 装备 <itemId>        Equip an inventory item',
+  '  unequip / 卸下 <slot|itemId> Unequip by slot or item id',
+  '  use / 使用 <itemId>          Use a consumable item',
+  '  shop / 商店                  Show local shops',
+  '  buy / 购买 <shopId> <item> [qty]',
+  '  sell / 出售 <itemId> [qty]',
   '  map / 地图 [locationId]      Show local map and exits',
   '  inspect / 查看 [target] [id] Inspect world/player/location/entity/org/city/civ',
   '  move / 前往 <locationId>     Move active character',
@@ -104,10 +113,7 @@ function dispatchShellCommand(session, parsed) {
   if (parsed.command === 'help') return ok(HELP_TEXT, { type: 'help' });
   if (parsed.command === 'quit') return { status: SHELL_STATUS.EXIT, message: 'Bye.', data: null };
 
-  if (parsed.command === 'status') {
-    return ok(formatPlayerStatus(world, playerId), queryWorld(world, { type: 'player', playerId }));
-  }
-
+  if (parsed.command === 'status') return ok(formatPlayerStatus(world, playerId), queryWorld(world, { type: 'player', playerId }));
   if (parsed.command === 'world') {
     const overview = queryWorld(world, { type: 'world' });
     return ok(formatWorldOverview(overview), overview);
@@ -131,7 +137,7 @@ function dispatchShellCommand(session, parsed) {
     if (a) {
       const result = claimQuestReward(world, a);
       if (!result) return fail(`Missing quest: ${a}`);
-      recordPlayerJournal(world, playerId, { type: JOURNAL_TYPES.REWARD, title: `Claimed quest reward`, summary: `Claim result for ${a}: ${result.status}`, tags: ['quest', 'reward'], payload: { questId: a } });
+      recordPlayerJournal(world, playerId, { type: JOURNAL_TYPES.REWARD, title: 'Claimed quest reward', summary: `Claim result for ${a}: ${result.status}`, tags: ['quest', 'reward'], payload: { questId: a } });
       return ok(`Claim result: ${result.status}`, result);
     }
     const claimed = claimCompletedPlayerQuests(world, playerId);
@@ -166,6 +172,49 @@ function dispatchShellCommand(session, parsed) {
     if (!a) return fail('Usage: accept <boardItemId>');
     const result = acceptBoardQuest(world, playerId, a);
     return ok(`Accepted commission: ${result.item.title}\nQuest: ${result.quest.title} [${result.quest.status}]`, result);
+  }
+
+  if (parsed.command === 'inventory') {
+    return ok(formatInventory(getPlayerInventory(world, playerId)), getPlayerInventory(world, playerId));
+  }
+
+  if (parsed.command === 'equip') {
+    if (!a) return fail('Usage: equip <itemId>');
+    const entity = requireActiveEntity(world, playerId);
+    const result = equipItem(world, entity.id, a, { playerId });
+    return ok(`Equipped ${result.item.name} to ${result.slot}.`, result);
+  }
+
+  if (parsed.command === 'unequip') {
+    if (!a) return fail('Usage: unequip <slot|itemId>');
+    const entity = requireActiveEntity(world, playerId);
+    const result = unequipItem(world, entity.id, a, { playerId });
+    if (!result) return fail(`Nothing equipped for ${a}`);
+    return ok(`Unequipped ${result.item.name} from ${result.slot}.`, result);
+  }
+
+  if (parsed.command === 'use') {
+    if (!a) return fail('Usage: use <itemId>');
+    const entity = requireActiveEntity(world, playerId);
+    const result = useItem(world, entity.id, a, { playerId });
+    return ok(`Used ${result.definitionId}.`, result);
+  }
+
+  if (parsed.command === 'shop') {
+    const shop = getPlayerShop(world, playerId);
+    return ok(formatShopList(shop), shop);
+  }
+
+  if (parsed.command === 'buy') {
+    if (!a || !b) return fail('Usage: buy <shopId> <itemDefinitionId> [quantity]');
+    const result = buyItem(world, playerId, a, b, numeric(c, 1));
+    return ok(`Bought ${result.quantity} ${result.item.name} for ${result.cost}.`, result);
+  }
+
+  if (parsed.command === 'sell') {
+    if (!a) return fail('Usage: sell <itemId> [quantity]');
+    const result = sellItem(world, playerId, a, numeric(b, 1));
+    return ok(`Sold ${result.quantity} ${result.definitionId} for ${result.revenue}.`, result);
   }
 
   if (parsed.command === 'map') {
@@ -292,6 +341,12 @@ function resolveOrganizationId(world, value) {
   const text = String(value).toLowerCase();
   if (world.organizations?.byId?.[value]) return value;
   return Object.values(world.organizations?.byId || {}).find(org => String(org.name || '').toLowerCase() === text || String(org.id || '').toLowerCase() === text)?.id || null;
+}
+
+function requireActiveEntity(world, playerId) {
+  const entity = getActivePlayerCharacter(world, playerId);
+  if (!entity) throw new Error(`Missing active character for ${playerId}`);
+  return entity;
 }
 
 function formatPlayerStatus(world, playerId) {
