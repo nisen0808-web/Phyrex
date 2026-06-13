@@ -13,6 +13,8 @@ const els = {
   journals: document.getElementById('journals'),
   encounters: document.getElementById('encounters'),
   questBoards: document.getElementById('questBoards'),
+  items: document.getElementById('items'),
+  shops: document.getElementById('shops'),
   civilizations: document.getElementById('civilizations'),
   cities: document.getElementById('cities'),
   organizations: document.getElementById('organizations'),
@@ -39,6 +41,8 @@ function render(snapshot) {
   renderJournals(snapshot.journals?.recent || []);
   renderEncounters(snapshot.encounters?.recent || []);
   renderQuestBoards(snapshot.questBoards?.items || []);
+  renderItems(snapshot.items?.recent || []);
+  renderShops(snapshot.shops?.items || []);
   renderCivilizations(snapshot.civilizations || []);
   renderCities(snapshot.cities || []);
   renderOrganizations(snapshot.organizations || []);
@@ -60,6 +64,8 @@ function renderMetrics(snapshot) {
     ['Journal', snapshot.journals?.total ?? 0],
     ['Encounters', snapshot.encounters?.total ?? 0],
     ['Board Items', snapshot.questBoards?.total ?? 0],
+    ['Items', snapshot.items?.instances ?? 0],
+    ['Shops', snapshot.shops?.total ?? 0],
     ['Cities', snapshot.cities?.length ?? 0],
     ['Organizations', snapshot.organizations?.length ?? 0],
     ['Civilizations', snapshot.civilizations?.length ?? 0],
@@ -67,103 +73,22 @@ function renderMetrics(snapshot) {
     ['Conflicts', snapshot.conflicts?.total ?? 0],
     ['Processes', snapshot.processes?.total ?? 0],
   ];
-
-  els.metrics.innerHTML = metrics.map(([label, value]) => `
-    <article class="metric">
-      <div class="metric-label">${escapeHtml(label)}</div>
-      <div class="metric-value">${escapeHtml(String(formatNumber(value)))}</div>
-    </article>
-  `).join('');
+  els.metrics.innerHTML = metrics.map(([label, value]) => `<article class="metric"><div class="metric-label">${escapeHtml(label)}</div><div class="metric-value">${escapeHtml(String(formatNumber(value)))}</div></article>`).join('');
 }
 
-function renderPlayers(items) {
-  els.players.innerHTML = renderList(items, item => `
-    <strong>${escapeHtml(item.name || item.id)}</strong>
-    <span>${escapeHtml(item.status || 'unknown')} · ${escapeHtml(item.controlMode || 'unknown')}</span>
-    <span>entity ${escapeHtml(item.activeEntityName || item.activeEntityId || 'none')} · location ${escapeHtml(item.locationId || 'unknown')}</span>
-    <span>controlled entities ${formatNumber(item.controlledEntities || 0)}</span>
-  `);
-}
-
-function renderCommands(items) {
-  els.commands.innerHTML = renderList(items.slice().reverse(), item => `
-    <strong>${escapeHtml(item.type || 'command')} · ${escapeHtml(item.status || 'unknown')}</strong>
-    <span>player ${escapeHtml(item.playerId || 'unknown')} · tick ${formatNumber(item.updatedAt ?? item.createdAt ?? 0)}</span>
-    <span>${item.result?.ok ? 'ok' : 'not ok'}${item.result?.reason ? ` · ${escapeHtml(item.result.reason)}` : ''}${item.result?.actionType ? ` · action ${escapeHtml(item.result.actionType)}` : ''}</span>
-  `);
-}
-
-function renderTutorials(items) {
-  els.tutorials.innerHTML = renderList(items, item => `
-    <strong>${escapeHtml(item.playerId)}</strong>
-    <span>${escapeHtml(item.status || 'unknown')} · active quest ${escapeHtml(item.activeQuestId || 'none')}</span>
-    <span>completed ${formatNumber(item.completedQuests || 0)} · claimed ${formatNumber(item.claimedQuests || 0)}</span>
-  `);
-}
-
-function renderQuests(items) {
-  els.quests.innerHTML = renderList(items, item => `
-    <strong>${escapeHtml(item.title || item.id)}</strong>
-    <span>${escapeHtml(item.status || 'unknown')} · player ${escapeHtml(item.playerId || 'unknown')} · progress ${formatNumber(item.progress || 0)}%</span>
-    <span>objectives ${formatNumber(item.completedObjectives || 0)}/${formatNumber(item.objectives || 0)} · tags ${(item.tags || []).map(escapeHtml).join(', ') || 'none'}</span>
-  `);
-}
-
-function renderJournals(items) {
-  els.journals.innerHTML = renderList(items, item => `
-    <strong>${escapeHtml(item.title || item.type)}</strong>
-    <span>tick ${formatNumber(item.tick || 0)} · ${escapeHtml(item.type || 'journal')} · ${escapeHtml(item.locationId || 'unknown')}</span>
-    <span>${escapeHtml(item.summary || '')}</span>
-  `);
-}
-
-function renderEncounters(items) {
-  els.encounters.innerHTML = renderList(items, item => `
-    <strong>${escapeHtml(item.title || item.type)}</strong>
-    <span>${escapeHtml(item.type || 'encounter')} · ${escapeHtml(item.status || 'unknown')} · ${escapeHtml(item.locationId || 'unknown')}</span>
-    <span>${escapeHtml(item.summary || '')}</span>
-  `);
-}
-
-function renderQuestBoards(items) {
-  els.questBoards.innerHTML = renderList(items, item => `
-    <strong>${escapeHtml(item.title || item.id)}</strong>
-    <span>${escapeHtml(item.status || 'unknown')} · ${escapeHtml(item.type || 'board')} · ${escapeHtml(item.locationId || 'unknown')}</span>
-    <span>${escapeHtml(item.summary || '')}</span>
-  `);
-}
-
-function renderCivilizations(items) {
-  els.civilizations.innerHTML = renderList(items, item => `
-    <strong>${escapeHtml(item.name)}</strong>
-    <span>${escapeHtml(item.level)} · score ${formatNumber(item.score)} · ${escapeHtml(item.dominantSpecies || 'unknown')}</span>
-    <div class="badge-row">${(item.values || []).slice(0, 5).map(value => `<span class="badge">${escapeHtml(value)}</span>`).join('')}</div>
-  `);
-}
-
-function renderCities(items) {
-  els.cities.innerHTML = renderList(items, item => `
-    <strong>${escapeHtml(item.name)}</strong>
-    <span>${escapeHtml(item.type || 'city')} · pop ${formatNumber(item.population)} · wealth ${formatNumber(item.wealth)}</span>
-    <span>security ${formatNumber(item.security)} · culture ${formatNumber(item.culture)} · infrastructure ${formatNumber(item.infrastructure)}</span>
-  `);
-}
-
-function renderOrganizations(items) {
-  els.organizations.innerHTML = renderList(items, item => `
-    <strong>${escapeHtml(item.name)}</strong>
-    <span>${escapeHtml(item.type)} · ${escapeHtml(item.status)} · members ${formatNumber(item.members)}</span>
-    <span>wealth ${formatNumber(item.wealth)} · authority ${formatNumber(item.authority)} · reputation ${formatNumber(item.reputation)}</span>
-  `);
-}
-
-function renderEntities(items) {
-  els.entities.innerHTML = renderList(items, item => `
-    <strong>${escapeHtml(item.name || item.entityId)}</strong>
-    <span>${escapeHtml(item.entityId)} · ${escapeHtml(item.status || 'unknown')}</span>
-    <span>score ${formatNumber(item.score)}</span>
-  `);
-}
+function renderPlayers(items) { els.players.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.name || item.id)}</strong><span>${escapeHtml(item.status || 'unknown')} · ${escapeHtml(item.controlMode || 'unknown')}</span><span>entity ${escapeHtml(item.activeEntityName || item.activeEntityId || 'none')} · location ${escapeHtml(item.locationId || 'unknown')}</span><span>controlled entities ${formatNumber(item.controlledEntities || 0)}</span>`); }
+function renderCommands(items) { els.commands.innerHTML = renderList(items.slice().reverse(), item => `<strong>${escapeHtml(item.type || 'command')} · ${escapeHtml(item.status || 'unknown')}</strong><span>player ${escapeHtml(item.playerId || 'unknown')} · tick ${formatNumber(item.updatedAt ?? item.createdAt ?? 0)}</span><span>${item.result?.ok ? 'ok' : 'not ok'}${item.result?.reason ? ` · ${escapeHtml(item.result.reason)}` : ''}${item.result?.actionType ? ` · action ${escapeHtml(item.result.actionType)}` : ''}</span>`); }
+function renderTutorials(items) { els.tutorials.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.playerId)}</strong><span>${escapeHtml(item.status || 'unknown')} · active quest ${escapeHtml(item.activeQuestId || 'none')}</span><span>completed ${formatNumber(item.completedQuests || 0)} · claimed ${formatNumber(item.claimedQuests || 0)}</span>`); }
+function renderQuests(items) { els.quests.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.title || item.id)}</strong><span>${escapeHtml(item.status || 'unknown')} · player ${escapeHtml(item.playerId || 'unknown')} · progress ${formatNumber(item.progress || 0)}%</span><span>objectives ${formatNumber(item.completedObjectives || 0)}/${formatNumber(item.objectives || 0)} · tags ${(item.tags || []).map(escapeHtml).join(', ') || 'none'}</span>`); }
+function renderJournals(items) { els.journals.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.title || item.type)}</strong><span>tick ${formatNumber(item.tick || 0)} · ${escapeHtml(item.type || 'journal')} · ${escapeHtml(item.locationId || 'unknown')}</span><span>${escapeHtml(item.summary || '')}</span>`); }
+function renderEncounters(items) { els.encounters.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.title || item.type)}</strong><span>${escapeHtml(item.type || 'encounter')} · ${escapeHtml(item.status || 'unknown')} · ${escapeHtml(item.locationId || 'unknown')}</span><span>${escapeHtml(item.summary || '')}</span>`); }
+function renderQuestBoards(items) { els.questBoards.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.title || item.id)}</strong><span>${escapeHtml(item.status || 'unknown')} · ${escapeHtml(item.type || 'board')} · ${escapeHtml(item.locationId || 'unknown')}</span><span>${escapeHtml(item.summary || '')}</span>`); }
+function renderItems(items) { els.items.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.name || item.definitionId)}</strong><span>${escapeHtml(item.type || 'item')} · ${escapeHtml(item.rarity || 'common')} · qty ${formatNumber(item.quantity || 0)}</span><span>owner ${escapeHtml(item.ownerType || 'none')}:${escapeHtml(item.ownerId || 'none')}${item.equipped ? ' · equipped' : ''}</span>`); }
+function renderShops(items) { els.shops.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.name || item.id)}</strong><span>${escapeHtml(item.type || 'shop')} · ${escapeHtml(item.locationId || 'world')} · stock ${(item.stock || []).length}</span><span>currency ${formatNumber(item.currency || 0)}</span>`); }
+function renderCivilizations(items) { els.civilizations.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.level)} · score ${formatNumber(item.score)} · ${escapeHtml(item.dominantSpecies || 'unknown')}</span><div class="badge-row">${(item.values || []).slice(0, 5).map(value => `<span class="badge">${escapeHtml(value)}</span>`).join('')}</div>`); }
+function renderCities(items) { els.cities.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.type || 'city')} · pop ${formatNumber(item.population)} · wealth ${formatNumber(item.wealth)}</span><span>security ${formatNumber(item.security)} · culture ${formatNumber(item.culture)} · infrastructure ${formatNumber(item.infrastructure)}</span>`); }
+function renderOrganizations(items) { els.organizations.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.type)} · ${escapeHtml(item.status)} · members ${formatNumber(item.members)}</span><span>wealth ${formatNumber(item.wealth)} · authority ${formatNumber(item.authority)} · reputation ${formatNumber(item.reputation)}</span>`); }
+function renderEntities(items) { els.entities.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.name || item.entityId)}</strong><span>${escapeHtml(item.entityId)} · ${escapeHtml(item.status || 'unknown')}</span><span>score ${formatNumber(item.score)}</span>`); }
 
 function renderSystems(snapshot) {
   const rows = [
@@ -173,6 +98,8 @@ function renderSystems(snapshot) {
     ['Journal', `${snapshot.journals?.total || 0} entries · ${snapshot.journals?.players || 0} players`],
     ['Encounters', `${snapshot.encounters?.total || 0} total`],
     ['Quest Boards', `${snapshot.questBoards?.open || 0}/${snapshot.questBoards?.total || 0} open`],
+    ['Items', `${snapshot.items?.instances || 0} instances · ${snapshot.items?.equipped || 0} equipped`],
+    ['Shops', `${snapshot.shops?.total || 0} shops`],
     ['Infrastructure', `${snapshot.infrastructure?.active || 0}/${snapshot.infrastructure?.total || 0} active`],
     ['Governance', `${snapshot.governance?.active || 0}/${snapshot.governance?.total || 0} active · unrest ${formatNumber(snapshot.governance?.averageUnrest || 0)}`],
     ['Conflicts', `${snapshot.conflicts?.active || 0} active · casualties ${formatNumber(snapshot.conflicts?.casualties || 0)}`],
@@ -180,69 +107,16 @@ function renderSystems(snapshot) {
     ['Information', `${snapshot.information?.total || 0} items · ${snapshot.information?.knownOwners || 0} owners`],
     ['Memories', `${snapshot.memories?.total || 0} memories · ${snapshot.memories?.owners || 0} owners`],
   ];
-
-  els.systems.innerHTML = renderList(rows, ([name, value]) => `
-    <strong>${escapeHtml(name)}</strong>
-    <span>${escapeHtml(value)}</span>
-  `);
+  els.systems.innerHTML = renderList(rows, ([name, value]) => `<strong>${escapeHtml(name)}</strong><span>${escapeHtml(value)}</span>`);
 }
 
-function renderLimits(limits) {
-  const rows = Object.entries(limits).map(([key, value]) => [key, value.current, value.limit]);
-  els.limits.innerHTML = renderList(rows, ([key, current, limit]) => {
-    const ratio = limit ? current / limit : 0;
-    const label = ratio >= 0.9 ? 'near cap' : ratio >= 0.7 ? 'watch' : 'ok';
-    return `
-      <strong>${escapeHtml(key)}</strong>
-      <span>${formatNumber(current)} / ${formatNumber(limit)} · ${label}</span>
-    `;
-  });
-}
-
-function renderReports(reports) {
-  els.reports.innerHTML = renderList(reports.slice().reverse(), report => `
-    <strong>tick ${formatNumber(report.tickAfter ?? report.tickBefore ?? 0)}</strong>
-    <span>births ${report.births || 0} · deaths ${report.deaths || 0} · actions ${report.completedActions || 0} · events ${report.processedEvents || 0}</span>
-    <span>players ${report.playersChanged || 0} · cities ${report.cityProcessed ? 'yes' : 'no'} · economy ${report.economyProcessed ? 'yes' : 'no'} · conflicts ${report.conflictsCreated || 0}</span>
-  `);
-}
-
-function renderList(items, renderer) {
-  if (!items.length) return '<p class="muted">No data.</p>';
-  return `<div class="list">${items.map(item => `<div class="item">${renderer(item)}</div>`).join('')}</div>`;
-}
-
-function setStatus(message) {
-  els.status.textContent = message;
-}
-
-function formatNumber(value) {
-  const num = Number(value || 0);
-  if (!Number.isFinite(num)) return value;
-  return Math.round(num * 100) / 100;
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-async function boot() {
-  try {
-    const snapshot = await loadSnapshot(els.url.value);
-    render(snapshot);
-  } catch (error) {
-    setStatus(error.message);
-  }
-}
-
+function renderLimits(limits) { const rows = Object.entries(limits).map(([key, value]) => [key, value.current, value.limit]); els.limits.innerHTML = renderList(rows, ([key, current, limit]) => { const ratio = limit ? current / limit : 0; const label = ratio >= 0.9 ? 'near cap' : ratio >= 0.7 ? 'watch' : 'ok'; return `<strong>${escapeHtml(key)}</strong><span>${formatNumber(current)} / ${formatNumber(limit)} · ${label}</span>`; }); }
+function renderReports(reports) { els.reports.innerHTML = renderList(reports.slice().reverse(), report => `<strong>tick ${formatNumber(report.tickAfter ?? report.tickBefore ?? 0)}</strong><span>births ${report.births || 0} · deaths ${report.deaths || 0} · actions ${report.completedActions || 0} · events ${report.processedEvents || 0}</span><span>players ${report.playersChanged || 0} · cities ${report.cityProcessed ? 'yes' : 'no'} · economy ${report.economyProcessed ? 'yes' : 'no'} · conflicts ${report.conflictsCreated || 0}</span>`); }
+function renderList(items, renderer) { if (!items.length) return '<p class="muted">No data.</p>'; return `<div class="list">${items.map(item => `<div class="item">${renderer(item)}</div>`).join('')}</div>`; }
+function setStatus(message) { els.status.textContent = message; }
+function formatNumber(value) { const num = Number(value || 0); if (!Number.isFinite(num)) return value; return Math.round(num * 100) / 100; }
+function escapeHtml(value) { return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
+async function boot() { try { const snapshot = await loadSnapshot(els.url.value); render(snapshot); } catch (error) { setStatus(error.message); } }
 els.load.addEventListener('click', () => boot());
-els.url.addEventListener('keydown', event => {
-  if (event.key === 'Enter') boot();
-});
-
+els.url.addEventListener('keydown', event => { if (event.key === 'Enter') boot(); });
 boot();
