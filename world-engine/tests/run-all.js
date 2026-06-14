@@ -22,6 +22,7 @@ const tests = [
   'query-content-test.js',
   'journal-encounter-board-test.js',
   'item-inventory-shop-test.js',
+  'persistence-offline-runtime-test.js',
   'stability-100-test.js',
 ];
 
