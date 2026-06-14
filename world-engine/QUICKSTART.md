@@ -36,6 +36,7 @@ map-alias-test.js
 query-content-test.js
 journal-encounter-board-test.js
 item-inventory-shop-test.js
+persistence-offline-runtime-test.js
 stability-100-test.js
 ```
 
@@ -51,39 +52,10 @@ npm run demo
 node world-engine/demo/run-demo.js 300
 ```
 
-Demo 会创建一个小型修仙主题世界：
-
-```text
-Qingyun City
-Mist Forest
-Black Iron Mine
-Qingyun Sect
-Black Iron Guild
-Mist Forest Clan
-36 个角色
-组织、城市、文明、科技、基础设施、治理、冲突、信息、记忆、过程、涌现事件
-```
-
 ## 4. 运行固定试玩 demo
 
 ```bash
 npm run play
-```
-
-固定试玩会执行：
-
-```text
-创建玩家账号
-创建玩家角色
-inspect 当前地点
-work 赚钱
-move 到 Mist Forest
-gather 木材
-join Qingyun Sect
-train 修炼
-查看排行榜
-查看命令历史
-查看世界概览
 ```
 
 ## 5. 运行交互式 Shell
@@ -168,12 +140,6 @@ quit
 npm run shell:sample
 ```
 
-或指定脚本：
-
-```bash
-node world-engine/demo/play-shell.js --script world-engine/demo/sample-commands.txt
-```
-
 ## 6. 内容层能力
 
 当前可玩内容层包括：
@@ -192,28 +158,44 @@ inventory-engine.js          背包 / 装备 / 使用物品
 shop-engine.js               地点商店 / 购买 / 出售
 ```
 
-核心 shell 命令：
+## 7. 世界服务引擎能力
+
+当前服务层包括：
 
 ```text
-tutorial / 教程
-quests / 任务
-claim / 领取
-report / 报告
-map / 地图
-board / 委托
-accept / 接取
-explore / 探索
-journal / 日志
-inventory / 背包
-shop / 商店
-buy / 购买
-equip / 装备
-use / 使用
-sell / 出售
-unequip / 卸下
+persistence-engine.js        save / load / autosave / list saves
+offline-command-engine.js    离线命令队列 / 长时间动作 / 定时执行
+runtime-engine.js            世界运行器 / tick batch / 自动存档 / runtime snapshot
 ```
 
-## 7. 地图、探索、委托、背包闭环
+运行 runtime demo：
+
+```bash
+npm run runtime
+```
+
+或在 `world-engine` 目录：
+
+```bash
+cd world-engine
+npm run runtime
+```
+
+runtime demo 会执行：
+
+```text
+创建世界
+创建玩家
+安排离线 work / train
+运行 runtime tick
+自动存档
+生成 runtime snapshot
+读档恢复
+查询离线命令状态
+列出存档文件
+```
+
+## 8. 地图、探索、委托、背包闭环
 
 典型玩法：
 
@@ -236,23 +218,7 @@ unequip / 卸下
 报告
 ```
 
-这条链路会：
-
-```text
-查看当前位置
-查看本地商店
-购买物品
-装备武器
-使用丹药
-查看本地委托
-接取委托并生成 quest
-探索地点并触发 encounter
-写入 player journal
-推进 world tick
-完成目标后领取奖励
-```
-
-## 8. Query Engine 常用查询
+## 9. Query Engine 常用查询
 
 ```js
 queryWorld(world, { type: 'map', playerId: 'player_id' })
@@ -264,24 +230,13 @@ queryWorld(world, { type: 'encounters', playerId: 'player_id' })
 queryWorld(world, { type: 'board', playerId: 'player_id' })
 queryWorld(world, { type: 'inventory', playerId: 'player_id' })
 queryWorld(world, { type: 'shop', playerId: 'player_id' })
+queryWorld(world, { type: 'offline', playerId: 'player_id' })
 ```
 
-## 9. 导出前端可读快照 JSON
+## 10. 导出前端可读快照 JSON
 
 ```bash
 npm run snapshot
-```
-
-默认输出：
-
-```text
-world-engine/output/demo-snapshot.json
-```
-
-指定 tick 和路径：
-
-```bash
-node world-engine/demo/export-snapshot.js 300 world-engine/output/demo-300.json
 ```
 
 Snapshot 主要字段：
@@ -292,6 +247,7 @@ counters
 population
 players
 commands
+offlineCommands
 quests
 tutorials
 journals
@@ -315,7 +271,7 @@ limits
 recentReports
 ```
 
-## 10. 浏览器查看世界快照
+## 11. 浏览器查看世界快照
 
 ```bash
 npm run snapshot
@@ -349,19 +305,13 @@ recentReports
 raw snapshot
 ```
 
-## 11. 运行 1000 tick 手动压测
+## 12. 运行 1000 tick 手动压测
 
 ```bash
 npm run stress
 ```
 
-或：
-
-```bash
-node world-engine/tests/stability-1000-test.js
-```
-
-## 12. 当前关键上限
+## 13. 当前关键上限
 
 ```text
 world.memory <= 1000
@@ -371,6 +321,7 @@ information.items <= 1000
 memories.byId <= 3000
 commands.byId <= 500
 quests.byId <= 500
+offlineCommands <= 500 snapshot limit
 journals <= 300 per player
 encounters <= 300 per player
 questBoards <= 500 snapshot limit
@@ -378,7 +329,7 @@ itemInstances <= 1000
 shops <= 500 snapshot limit
 ```
 
-## 13. 常见命令
+## 14. 常见命令
 
 ```bash
 npm test
@@ -387,6 +338,7 @@ npm run play
 npm run shell
 npm run shell:sample
 npm run snapshot
+npm run runtime
 npm run viewer
 npm run stress
 
@@ -397,6 +349,7 @@ npm run play
 npm run shell
 npm run shell:sample
 npm run snapshot
+npm run runtime
 npm run viewer
 npm run stress
 ```
