@@ -7,6 +7,7 @@
     "shell": "node world-engine/demo/play-shell.js",
     "shell:sample": "node world-engine/demo/play-shell.js --script world-engine/demo/sample-commands.txt",
     "snapshot": "node world-engine/demo/export-snapshot.js",
+    "runtime": "node world-engine/demo/runtime-demo.js",
     "viewer": "node world-engine/viewer/serve-viewer.js"
   },
   "devDependencies": {}
