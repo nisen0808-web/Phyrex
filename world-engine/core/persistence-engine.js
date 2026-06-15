@@ -54,6 +54,7 @@ function loadWorld(filePath, options = {}) {
   const raw = JSON.parse(text);
   const envelope = normalizeEnvelope(raw);
   const migrated = migrateSaveEnvelope(envelope, options);
+  repairLoadedWorld(migrated.world);
   return {
     file: absolute,
     schemaVersion: migrated.schemaVersion,
@@ -131,6 +132,22 @@ function normalizeEnvelope(raw) {
   throw new Error('Invalid save file');
 }
 
+function repairLoadedWorld(world) {
+  if (!world || typeof world !== 'object') return world;
+  deleteTransientSetCaches(world);
+  return world;
+}
+
+function deleteTransientSetCaches(value, seen = new Set()) {
+  if (!value || typeof value !== 'object') return;
+  if (seen.has(value)) return;
+  seen.add(value);
+  if (Object.prototype.hasOwnProperty.call(value, '_consumedSet')) delete value._consumedSet;
+  if (Object.prototype.hasOwnProperty.call(value, '_seenSet')) delete value._seenSet;
+  if (Object.prototype.hasOwnProperty.call(value, '_cacheSet')) delete value._cacheSet;
+  for (const child of Object.values(value)) deleteTransientSetCaches(child, seen);
+}
+
 function createBackupFile(filePath, maxBackups) {
   const backup = `${filePath}.bak.${Date.now()}`;
   fs.copyFileSync(filePath, backup);
@@ -157,4 +174,5 @@ module.exports = {
   autosaveWorld,
   listSaves,
   migrateSaveEnvelope,
+  repairLoadedWorld,
 };
