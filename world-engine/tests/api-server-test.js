@@ -2,6 +2,8 @@
 
 const assert = require('assert');
 const http = require('http');
+const net = require('net');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { createWorldApiServer } = require('../core/api-server-engine');
@@ -47,6 +49,13 @@ async function main() {
     assert.strictEqual(offline.ok, true, 'offline command should be queued');
     assert.strictEqual(offline.data.status, 'queued', 'offline command status should be queued');
 
+    const streamData = await readStreamEvent(base, '/stream');
+    assert.ok(streamData.includes('event: hello'), 'SSE stream should send hello event');
+
+    const wsHandshake = await readWebSocketHandshake(base, '/ws/ticks');
+    assert.ok(wsHandshake.includes('101 Switching Protocols'), 'websocket should upgrade with 101');
+    assert.ok(wsHandshake.includes('Sec-WebSocket-Accept'), 'websocket should include accept header');
+
     const tick = await requestJson(base, 'POST', '/tick', { ticks: 3 });
     assert.strictEqual(tick.ok, true, 'tick should be ok');
     assert.strictEqual(tick.data.status, 'idle', 'runtime tick should finish idle');
@@ -70,9 +79,6 @@ async function main() {
     const saves = await requestJson(base, 'GET', `/saves?dir=${encodeURIComponent(path.dirname(savePath))}`);
     assert.strictEqual(saves.ok, true, 'saves should be ok');
     assert.ok(saves.data.saves.length >= 1, 'saves should list save file');
-
-    const streamData = await readStreamEvent(base, '/stream');
-    assert.ok(streamData.includes('event: hello'), 'stream should send hello event');
 
     console.log('api server integration test passed');
   } finally {
@@ -130,17 +136,38 @@ function readStreamEvent(base, pathName) {
         }
       });
     });
-    req.on('error', error => {
-      if (textResolved(error)) return;
-      reject(error);
-    });
-    req.setTimeout(5000, () => {
-      req.destroy(new Error('stream timeout'));
-    });
+    req.on('error', error => reject(error));
+    req.setTimeout(5000, () => req.destroy(new Error('stream timeout')));
   });
 }
 
-function textResolved() { return false; }
+function readWebSocketHandshake(base, pathName) {
+  const url = new URL(pathName, base);
+  const key = crypto.randomBytes(16).toString('base64');
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host: url.hostname, port: Number(url.port) }, () => {
+      socket.write([
+        `GET ${url.pathname} HTTP/1.1`,
+        `Host: ${url.host}`,
+        'Upgrade: websocket',
+        'Connection: Upgrade',
+        `Sec-WebSocket-Key: ${key}`,
+        'Sec-WebSocket-Version: 13',
+        '\r\n',
+      ].join('\r\n'));
+    });
+    let text = '';
+    socket.on('data', chunk => {
+      text += chunk.toString('latin1');
+      if (text.includes('\r\n\r\n')) {
+        socket.destroy();
+        resolve(text);
+      }
+    });
+    socket.on('error', reject);
+    socket.setTimeout(5000, () => socket.destroy(new Error('websocket timeout')));
+  });
+}
 
 main().catch(error => {
   console.error(error);
