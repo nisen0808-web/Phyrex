@@ -25,6 +25,7 @@ function createWorldApiServer(worldInput = null, options = {}) {
   const streams = new Set();
 
   const api = {
+    streams,
     getWorld: () => world,
     setWorld: next => { world = next; return world; },
     broadcast: event => broadcast(streams, event),
@@ -38,9 +39,7 @@ function createWorldApiServer(worldInput = null, options = {}) {
     }
   });
 
-  server.on('clientError', (_err, socket) => {
-    socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
-  });
+  server.on('clientError', (_err, socket) => socket.end('HTTP/1.1 400 Bad Request\r\n\r\n'));
 
   return { server, api, options: opts, streams };
 }
@@ -81,6 +80,7 @@ async function handleApiRequest(req, res, api, options) {
   if (method === 'POST' && pathname === '/players') {
     const body = await readJsonBody(req, options);
     const result = createPlayerWithCharacter(api.getWorld(), body || {});
+    api.broadcast({ type: 'player.created', worldId: api.getWorld().id, tick: api.getWorld().tick, playerId: result.player.id, entityId: result.entity.id });
     return writeJson(res, 201, ok(result));
   }
 
@@ -89,6 +89,7 @@ async function handleApiRequest(req, res, api, options) {
     const playerId = requiredBody(body, 'playerId');
     const command = body.command || body;
     const result = executePlayerCommand(api.getWorld(), playerId, command, body.options || {});
+    api.broadcast({ type: 'command', worldId: api.getWorld().id, tick: api.getWorld().tick, playerId, commandId: result.command.id, status: result.command.status });
     return writeJson(res, result.result.ok ? 200 : 400, ok(result));
   }
 
@@ -96,6 +97,7 @@ async function handleApiRequest(req, res, api, options) {
     const body = await readJsonBody(req, options);
     const playerId = requiredBody(body, 'playerId');
     const command = scheduleOfflineCommand(api.getWorld(), playerId, body.command || body, body.options || {});
+    api.broadcast({ type: 'offline.queued', worldId: api.getWorld().id, tick: api.getWorld().tick, playerId, offlineCommandId: command.id });
     return writeJson(res, 201, ok(command));
   }
 
@@ -120,6 +122,7 @@ async function handleApiRequest(req, res, api, options) {
     const body = await readJsonBody(req, options);
     const filePath = body.filePath || body.path || options.defaultSavePath;
     const save = saveWorld(api.getWorld(), filePath, body.options || {});
+    api.broadcast({ type: 'save', worldId: api.getWorld().id, tick: api.getWorld().tick, file: save.file });
     return writeJson(res, 200, ok(save));
   }
 
@@ -143,29 +146,18 @@ function openTickStream(req, res, api) {
     'Access-Control-Allow-Origin': '*',
   });
   const stream = { res };
-  api.streams?.add?.(stream);
-  if (api.broadcast && !api.streams) {
-    // no-op compatibility branch
-  }
+  api.streams.add(stream);
   res.write(`event: hello\ndata: ${JSON.stringify({ ok: true, worldId: api.getWorld().id, tick: api.getWorld().tick })}\n\n`);
   const keepAlive = setInterval(() => {
     try { res.write(`event: ping\ndata: ${JSON.stringify({ tick: api.getWorld().tick })}\n\n`); } catch (_) {}
   }, 15000);
-  const streams = findStreams(api);
-  streams.add(stream);
   req.on('close', () => {
     clearInterval(keepAlive);
-    streams.delete(stream);
+    api.streams.delete(stream);
   });
 }
 
-function findStreams(api) {
-  if (!api.__streams) api.__streams = new Set();
-  return api.__streams;
-}
-
-function broadcast(streamsOrApi, event) {
-  const streams = streamsOrApi instanceof Set ? streamsOrApi : findStreams(streamsOrApi);
+function broadcast(streams, event) {
   const payload = `event: ${event.type || 'message'}\ndata: ${JSON.stringify(event)}\n\n`;
   for (const stream of [...streams]) {
     try { stream.res.write(payload); } catch (_) { streams.delete(stream); }
@@ -201,10 +193,4 @@ function setCors(res) { res.setHeader('Access-Control-Allow-Origin', '*'); res.s
 function writeJson(res, statusCode, payload) { res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(payload, null, 2)); }
 function end(res, statusCode, text) { res.writeHead(statusCode); res.end(text); }
 
-module.exports = {
-  DEFAULT_API_OPTIONS,
-  createWorldApiServer,
-  buildDefaultApiWorld,
-  handleApiRequest,
-  readJsonBody,
-};
+module.exports = { DEFAULT_API_OPTIONS, createWorldApiServer, buildDefaultApiWorld, handleApiRequest, readJsonBody };
