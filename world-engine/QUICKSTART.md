@@ -37,6 +37,7 @@ query-content-test.js
 journal-encounter-board-test.js
 item-inventory-shop-test.js
 persistence-offline-runtime-test.js
+api-server-test.js
 stability-100-test.js
 ```
 
@@ -62,76 +63,6 @@ npm run play
 
 ```bash
 npm run shell
-```
-
-英文命令：
-
-```text
-help
-status
-world
-tutorial
-quests
-map
-board
-accept <boardItemId>
-explore
-journal
-inventory
-shop
-buy <shopId> <itemDefinitionId> [quantity]
-equip <itemId|itemDefinitionId>
-use <itemId|itemDefinitionId>
-sell <itemId|itemDefinitionId> [quantity]
-unequip <slot|itemId|itemDefinitionId>
-inspect location
-move mist_forest
-work currency 20
-wait 1
-report 1
-gather wood 5
-train 3
-join "Qingyun Sect"
-leaderboard overall
-commands
-claim
-snapshot
-quit
-```
-
-中文命令：
-
-```text
-帮助
-状态
-世界
-教程
-任务
-地图
-委托
-接取 <boardItemId>
-探索
-日志
-背包
-商店
-购买 <shopId> <itemDefinitionId> [quantity]
-装备 <itemId|itemDefinitionId>
-使用 <itemId|itemDefinitionId>
-出售 <itemId|itemDefinitionId> [quantity]
-卸下 <slot|itemId|itemDefinitionId>
-查看 地点
-前往 mist_forest
-工作 currency 20
-等待 1
-报告 1
-采集 wood 5
-修炼 3
-加入 "Qingyun Sect"
-排行 overall
-命令
-领取
-快照
-退出
 ```
 
 脚本化试玩：
@@ -166,6 +97,7 @@ shop-engine.js               地点商店 / 购买 / 出售
 persistence-engine.js        save / load / autosave / list saves
 offline-command-engine.js    离线命令队列 / 长时间动作 / 定时执行
 runtime-engine.js            世界运行器 / tick batch / 自动存档 / runtime snapshot
+api-server-engine.js         HTTP API / 客户端接入 / tick event stream
 ```
 
 运行 runtime demo：
@@ -174,28 +106,92 @@ runtime-engine.js            世界运行器 / tick batch / 自动存档 / runti
 npm run runtime
 ```
 
-或在 `world-engine` 目录：
+## 8. API Server
+
+启动 API 服务：
 
 ```bash
-cd world-engine
-npm run runtime
+npm run api
 ```
 
-runtime demo 会执行：
+指定端口：
+
+```bash
+node world-engine/demo/api-server.js --host 127.0.0.1 --port 8790
+```
+
+核心端点：
 
 ```text
-创建世界
-创建玩家
-安排离线 work / train
-运行 runtime tick
-自动存档
-生成 runtime snapshot
-读档恢复
-查询离线命令状态
-列出存档文件
+GET  /health
+GET  /world
+GET  /snapshot
+GET  /stream
+GET  /players/:playerId
+POST /players
+POST /commands
+POST /offline
+GET  /offline/:playerId
+POST /tick
+POST /runtime/run
+POST /save
+POST /load
+GET  /saves
 ```
 
-## 8. 地图、探索、委托、背包闭环
+创建玩家：
+
+```bash
+curl -X POST http://127.0.0.1:8790/players \
+  -H 'Content-Type: application/json' \
+  -d '{"player":{"id":"api_player","name":"API Player"},"character":{"id":"api_hero","name":"API Hero","species":"human","locationId":"qingyun_city","resources":{"currency":100,"food":10}}}'
+```
+
+提交命令：
+
+```bash
+curl -X POST http://127.0.0.1:8790/commands \
+  -H 'Content-Type: application/json' \
+  -d '{"playerId":"api_player","command":{"type":"work","resource":"currency","amount":10}}'
+```
+
+安排离线命令：
+
+```bash
+curl -X POST http://127.0.0.1:8790/offline \
+  -H 'Content-Type: application/json' \
+  -d '{"playerId":"api_player","command":{"type":"train","amount":1,"durationTicks":2,"runsEveryTicks":1,"repeat":2}}'
+```
+
+推进 tick：
+
+```bash
+curl -X POST http://127.0.0.1:8790/tick \
+  -H 'Content-Type: application/json' \
+  -d '{"ticks":3}'
+```
+
+Tick stream 使用 Server-Sent Events：
+
+```bash
+curl http://127.0.0.1:8790/stream
+```
+
+后续客户端可以用这个流订阅：
+
+```text
+hello
+ping
+tick
+runtime
+save
+load
+command
+offline.queued
+player.created
+```
+
+## 9. 地图、探索、委托、背包闭环
 
 典型玩法：
 
@@ -218,7 +214,7 @@ runtime demo 会执行：
 报告
 ```
 
-## 9. Query Engine 常用查询
+## 10. Query Engine 常用查询
 
 ```js
 queryWorld(world, { type: 'map', playerId: 'player_id' })
@@ -233,7 +229,7 @@ queryWorld(world, { type: 'shop', playerId: 'player_id' })
 queryWorld(world, { type: 'offline', playerId: 'player_id' })
 ```
 
-## 10. 导出前端可读快照 JSON
+## 11. 导出前端可读快照 JSON
 
 ```bash
 npm run snapshot
@@ -271,7 +267,7 @@ limits
 recentReports
 ```
 
-## 11. 浏览器查看世界快照
+## 12. 浏览器查看世界快照
 
 ```bash
 npm run snapshot
@@ -284,34 +280,13 @@ npm run viewer
 http://localhost:8787/viewer/index.html
 ```
 
-Viewer 会显示：
-
-```text
-players
-commands
-tutorials
-quests
-journals
-encounters
-questBoards
-items
-shops
-cities
-organizations
-civilizations
-systems
-limits
-recentReports
-raw snapshot
-```
-
-## 12. 运行 1000 tick 手动压测
+## 13. 运行 1000 tick 手动压测
 
 ```bash
 npm run stress
 ```
 
-## 13. 当前关键上限
+## 14. 当前关键上限
 
 ```text
 world.memory <= 1000
@@ -329,7 +304,7 @@ itemInstances <= 1000
 shops <= 500 snapshot limit
 ```
 
-## 14. 常见命令
+## 15. 常见命令
 
 ```bash
 npm test
@@ -339,6 +314,7 @@ npm run shell
 npm run shell:sample
 npm run snapshot
 npm run runtime
+npm run api
 npm run viewer
 npm run stress
 
@@ -350,6 +326,7 @@ npm run shell
 npm run shell:sample
 npm run snapshot
 npm run runtime
+npm run api
 npm run viewer
 npm run stress
 ```
