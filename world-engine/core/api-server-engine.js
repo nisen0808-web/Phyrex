@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('http');
+const crypto = require('crypto');
 const { URL } = require('url');
 const { buildDemoWorld, runDemoWorld } = require('../demo/run-demo');
 const { createPlayerWithCharacter } = require('./player-engine');
@@ -23,12 +24,14 @@ function createWorldApiServer(worldInput = null, options = {}) {
   const opts = { ...DEFAULT_API_OPTIONS, ...(options || {}) };
   let world = worldInput || buildDefaultApiWorld(opts);
   const streams = new Set();
+  const sockets = new Set();
 
   const api = {
     streams,
+    sockets,
     getWorld: () => world,
     setWorld: next => { world = next; return world; },
-    broadcast: event => broadcast(streams, event),
+    broadcast: event => broadcastAll(streams, sockets, event),
   };
 
   const server = http.createServer(async (req, res) => {
@@ -39,9 +42,10 @@ function createWorldApiServer(worldInput = null, options = {}) {
     }
   });
 
+  server.on('upgrade', (req, socket) => handleWebSocketUpgrade(req, socket, api));
   server.on('clientError', (_err, socket) => socket.end('HTTP/1.1 400 Bad Request\r\n\r\n'));
 
-  return { server, api, options: opts, streams };
+  return { server, api, options: opts, streams, sockets };
 }
 
 function buildDefaultApiWorld(options = {}) {
@@ -62,7 +66,7 @@ async function handleApiRequest(req, res, api, options) {
   const pathname = normalizePath(parsed.pathname);
   const method = req.method || 'GET';
 
-  if (method === 'GET' && pathname === '/health') return writeJson(res, 200, health(api.getWorld()));
+  if (method === 'GET' && pathname === '/health') return writeJson(res, 200, health(api.getWorld(), api));
   if (method === 'GET' && pathname === '/world') return writeJson(res, 200, ok(queryWorld(api.getWorld(), { type: 'world' })));
   if (method === 'GET' && pathname === '/snapshot') return writeJson(res, 200, ok(createWorldSnapshot(api.getWorld())));
   if (method === 'GET' && pathname === '/saves') return writeJson(res, 200, ok({ saves: listSaves(parsed.searchParams.get('dir') || undefined) }));
@@ -147,7 +151,7 @@ function openTickStream(req, res, api) {
   });
   const stream = { res };
   api.streams.add(stream);
-  res.write(`event: hello\ndata: ${JSON.stringify({ ok: true, worldId: api.getWorld().id, tick: api.getWorld().tick })}\n\n`);
+  res.write(`event: hello\ndata: ${JSON.stringify({ ok: true, protocol: 'sse', worldId: api.getWorld().id, tick: api.getWorld().tick })}\n\n`);
   const keepAlive = setInterval(() => {
     try { res.write(`event: ping\ndata: ${JSON.stringify({ tick: api.getWorld().tick })}\n\n`); } catch (_) {}
   }, 15000);
@@ -157,11 +161,70 @@ function openTickStream(req, res, api) {
   });
 }
 
-function broadcast(streams, event) {
+function handleWebSocketUpgrade(req, socket, api) {
+  const parsed = new URL(req.url, 'http://localhost');
+  if (parsed.pathname !== '/ws/ticks') {
+    socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+  const key = req.headers['sec-websocket-key'];
+  if (!key) {
+    socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+  const accept = crypto.createHash('sha1').update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64');
+  socket.write([
+    'HTTP/1.1 101 Switching Protocols',
+    'Upgrade: websocket',
+    'Connection: Upgrade',
+    `Sec-WebSocket-Accept: ${accept}`,
+    '\r\n',
+  ].join('\r\n'));
+  api.sockets.add(socket);
+  socket.on('close', () => api.sockets.delete(socket));
+  socket.on('error', () => api.sockets.delete(socket));
+  sendWebSocketJson(socket, { type: 'hello', protocol: 'websocket', worldId: api.getWorld().id, tick: api.getWorld().tick });
+}
+
+function broadcastAll(streams, sockets, event) {
+  broadcastSse(streams, event);
+  broadcastWebSockets(sockets, event);
+}
+
+function broadcastSse(streams, event) {
   const payload = `event: ${event.type || 'message'}\ndata: ${JSON.stringify(event)}\n\n`;
   for (const stream of [...streams]) {
     try { stream.res.write(payload); } catch (_) { streams.delete(stream); }
   }
+}
+
+function broadcastWebSockets(sockets, event) {
+  for (const socket of [...sockets]) {
+    try { sendWebSocketJson(socket, event); } catch (_) { sockets.delete(socket); socket.destroy(); }
+  }
+}
+
+function sendWebSocketJson(socket, value) {
+  socket.write(encodeWebSocketTextFrame(JSON.stringify(value)));
+}
+
+function encodeWebSocketTextFrame(text) {
+  const payload = Buffer.from(String(text), 'utf8');
+  if (payload.length < 126) return Buffer.concat([Buffer.from([0x81, payload.length]), payload]);
+  if (payload.length < 65536) {
+    const header = Buffer.alloc(4);
+    header[0] = 0x81;
+    header[1] = 126;
+    header.writeUInt16BE(payload.length, 2);
+    return Buffer.concat([header, payload]);
+  }
+  const header = Buffer.alloc(10);
+  header[0] = 0x81;
+  header[1] = 127;
+  header.writeBigUInt64BE(BigInt(payload.length), 2);
+  return Buffer.concat([header, payload]);
 }
 
 async function readJsonBody(req, options = {}) {
@@ -183,8 +246,8 @@ function requiredBody(body, key) {
   return body[key];
 }
 
-function health(world) {
-  return { ok: true, worldId: world.id, tick: world.tick, players: Object.keys(world.players?.byId || {}).length };
+function health(world, api = null) {
+  return { ok: true, worldId: world.id, tick: world.tick, players: Object.keys(world.players?.byId || {}).length, streams: api?.streams?.size || 0, sockets: api?.sockets?.size || 0 };
 }
 
 function ok(data) { return { ok: true, data }; }
@@ -193,4 +256,4 @@ function setCors(res) { res.setHeader('Access-Control-Allow-Origin', '*'); res.s
 function writeJson(res, statusCode, payload) { res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(payload, null, 2)); }
 function end(res, statusCode, text) { res.writeHead(statusCode); res.end(text); }
 
-module.exports = { DEFAULT_API_OPTIONS, createWorldApiServer, buildDefaultApiWorld, handleApiRequest, readJsonBody };
+module.exports = { DEFAULT_API_OPTIONS, createWorldApiServer, buildDefaultApiWorld, handleApiRequest, readJsonBody, encodeWebSocketTextFrame };
