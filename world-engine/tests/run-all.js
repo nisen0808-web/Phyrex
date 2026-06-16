@@ -25,6 +25,7 @@ const tests = [
   'persistence-offline-runtime-test.js',
   'api-server-test.js',
   'account-session-api-test.js',
+  'api-permission-test.js',
   'stability-100-test.js',
 ];
 
