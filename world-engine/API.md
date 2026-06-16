@@ -20,6 +20,12 @@ GET  /world
 GET  /snapshot
 GET  /stream
 WS   /ws/ticks
+POST /accounts
+GET  /accounts/:accountId
+POST /accounts/:accountId/players
+POST /sessions
+GET  /session
+POST /sessions/revoke
 GET  /players/:playerId
 POST /players
 POST /commands
@@ -48,7 +54,59 @@ load
 command
 offline.queued
 player.created
+account.created
+account.player.created
+session.created
 ```
+
+## 账号与 Session
+
+创建账号：
+
+```bash
+curl -X POST http://127.0.0.1:8790/accounts \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"api_account","name":"API Account","roles":["player"]}'
+```
+
+创建 session：
+
+```bash
+curl -X POST http://127.0.0.1:8790/sessions \
+  -H 'Content-Type: application/json' \
+  -d '{"accountId":"api_account","options":{"sessionTtlTicks":1000}}'
+```
+
+验证 session：
+
+```bash
+curl http://127.0.0.1:8790/session \
+  -H 'Authorization: Bearer <TOKEN>'
+```
+
+撤销 session：
+
+```bash
+curl -X POST http://127.0.0.1:8790/sessions/revoke \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"<TOKEN>","reason":"manual"}'
+```
+
+在账号下创建玩家和角色：
+
+```bash
+curl -X POST http://127.0.0.1:8790/accounts/api_account/players \
+  -H 'Content-Type: application/json' \
+  -d '{"player":{"id":"api_player","name":"API Player"},"character":{"id":"api_hero","name":"API Hero","species":"human","locationId":"qingyun_city","resources":{"currency":100,"food":10}}}'
+```
+
+查看账号：
+
+```bash
+curl http://127.0.0.1:8790/accounts/api_account
+```
+
+## 玩家与世界命令
 
 创建玩家示例：
 
