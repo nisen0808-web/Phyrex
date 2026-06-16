@@ -36,6 +36,11 @@ POST /runtime/run
 POST /save
 POST /load
 GET  /saves
+GET  /admin/status
+GET  /admin/runtime
+GET  /admin/connections
+GET  /admin/audit
+GET  /admin/errors
 ```
 
 `GET /stream` 是 Server-Sent Events，用于简单浏览器订阅。
@@ -69,6 +74,14 @@ curl -X POST http://127.0.0.1:8790/accounts \
   -d '{"id":"api_account","name":"API Account","roles":["player"]}'
 ```
 
+创建 GM 账号：
+
+```bash
+curl -X POST http://127.0.0.1:8790/accounts \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"gm_account","name":"GM Account","roles":["gm"]}'
+```
+
 创建 session：
 
 ```bash
@@ -96,6 +109,7 @@ curl -X POST http://127.0.0.1:8790/sessions/revoke \
 
 ```bash
 curl -X POST http://127.0.0.1:8790/accounts/api_account/players \
+  -H 'Authorization: Bearer <TOKEN>' \
   -H 'Content-Type: application/json' \
   -d '{"player":{"id":"api_player","name":"API Player"},"character":{"id":"api_hero","name":"API Hero","species":"human","locationId":"qingyun_city","resources":{"currency":100,"food":10}}}'
 ```
@@ -103,7 +117,73 @@ curl -X POST http://127.0.0.1:8790/accounts/api_account/players \
 查看账号：
 
 ```bash
-curl http://127.0.0.1:8790/accounts/api_account
+curl http://127.0.0.1:8790/accounts/api_account \
+  -H 'Authorization: Bearer <TOKEN>'
+```
+
+## 权限模式
+
+默认 `requireAuth=false`，方便本地开发和测试。
+
+正式客户端可以用：
+
+```js
+createWorldApiServer(world, { requireAuth: true })
+```
+
+开启后：
+
+```text
+player 只能访问和操作自己绑定的 playerId
+gm/admin 可以访问任意 player
+gm/admin 才能 tick / runtime/run / save / load / saves
+gm/admin 才能访问 /admin/*
+```
+
+## 管理接口
+
+管理接口需要 GM/admin：
+
+```bash
+curl http://127.0.0.1:8790/admin/status \
+  -H 'Authorization: Bearer <GM_TOKEN>'
+```
+
+```bash
+curl http://127.0.0.1:8790/admin/audit?limit=100 \
+  -H 'Authorization: Bearer <GM_TOKEN>'
+```
+
+```bash
+curl http://127.0.0.1:8790/admin/errors?limit=50 \
+  -H 'Authorization: Bearer <GM_TOKEN>'
+```
+
+```bash
+curl http://127.0.0.1:8790/admin/connections \
+  -H 'Authorization: Bearer <GM_TOKEN>'
+```
+
+`/admin/status` 返回：
+
+```text
+health
+audit
+accounts
+runtime
+limits
+```
+
+`/admin/audit` 返回最近 API 请求记录，包括：
+
+```text
+method
+path
+statusCode
+durationMs
+accountId
+playerId
+error
 ```
 
 ## 玩家与世界命令
