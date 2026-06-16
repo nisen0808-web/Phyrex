@@ -26,6 +26,7 @@ const tests = [
   'api-server-test.js',
   'account-session-api-test.js',
   'api-permission-test.js',
+  'api-admin-audit-test.js',
   'stability-100-test.js',
 ];
 
