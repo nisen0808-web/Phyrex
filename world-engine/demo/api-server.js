@@ -20,6 +20,7 @@ function endpoints() {
     'GET /world',
     'GET /snapshot',
     'GET /stream',
+    'WS  /ws/ticks',
     'GET /players/:playerId',
     'POST /players',
     'POST /commands',
