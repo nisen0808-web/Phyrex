@@ -24,6 +24,7 @@ const tests = [
   'item-inventory-shop-test.js',
   'persistence-offline-runtime-test.js',
   'api-server-test.js',
+  'account-session-api-test.js',
   'stability-100-test.js',
 ];
 
