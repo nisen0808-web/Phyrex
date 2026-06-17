@@ -43,6 +43,7 @@
       <div class="actions">
         <button id="createPlayerBtn">创建角色</button>
         <button id="loadPlayerBtn">刷新角色</button>
+        <button id="loadPanelsBtn">刷新面板</button>
       </div>
     </section>
 
@@ -56,9 +57,34 @@
       </div>
     </section>
 
+    <section class="panel hero-card">
+      <h2>角色状态</h2>
+      <div id="characterPanel" class="card-list">暂无角色状态</div>
+    </section>
+
+    <section class="panel">
+      <h2>地图 / 当前地点</h2>
+      <div id="mapPanel" class="card-list">暂无地图</div>
+    </section>
+
+    <section class="panel">
+      <h2>任务</h2>
+      <div id="questPanel" class="card-list">暂无任务</div>
+    </section>
+
+    <section class="panel">
+      <h2>背包 / 装备</h2>
+      <div id="inventoryPanel" class="card-list">暂无背包</div>
+    </section>
+
+    <section class="panel">
+      <h2>商店</h2>
+      <div id="shopPanel" class="card-list">暂无商店</div>
+    </section>
+
     <section class="panel wide">
-      <h2>玩家视图</h2>
-      <pre id="playerView">暂无玩家数据</pre>
+      <h2>日志 / 事件</h2>
+      <div id="journalPanel" class="timeline">暂无日志</div>
     </section>
 
     <section class="panel">
@@ -107,7 +133,7 @@
     </section>
 
     <section class="panel wide">
-      <h2>事件流</h2>
+      <h2>实时连接</h2>
       <div class="actions">
         <button id="connectWsBtn">连接 WebSocket</button>
         <button id="clearLogBtn">清空日志</button>
