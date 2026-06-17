@@ -15,6 +15,7 @@ window.addEventListener('DOMContentLoaded', () => {
   on('checkSessionBtn', checkSession);
   on('createPlayerBtn', createPlayer);
   on('loadPlayerBtn', loadPlayer);
+  on('loadPanelsBtn', loadPanels);
   on('refreshWorldBtn', refreshWorld);
   on('tickBtn', tickWorld);
   on('snapshotBtn', refreshSnapshot);
@@ -68,8 +69,26 @@ async function refreshWorld() {
 async function loadPlayer() {
   S.playerId = $('playerId').value.trim() || S.playerId;
   const json = await call('/players/' + encodeURIComponent(S.playerId));
-  $('playerView').textContent = JSON.stringify(json.data, null, 2);
   show(json);
+  renderCharacter(json.data);
+  await loadPanels();
+}
+
+async function loadPanels() {
+  S.playerId = $('playerId').value.trim() || S.playerId;
+  const [map, quests, inventory, shop, journal] = await Promise.all([
+    call('/players/' + encodeURIComponent(S.playerId) + '/map'),
+    call('/players/' + encodeURIComponent(S.playerId) + '/quests'),
+    call('/players/' + encodeURIComponent(S.playerId) + '/inventory'),
+    call('/players/' + encodeURIComponent(S.playerId) + '/shop'),
+    call('/players/' + encodeURIComponent(S.playerId) + '/journal?limit=8'),
+  ]);
+  renderMap(map.data);
+  renderQuests(quests.data);
+  renderInventory(inventory.data);
+  renderShop(shop.data);
+  renderJournal(journal.data);
+  show({ ok: true, data: { map: map.data, quests: quests.data, inventory: inventory.data, shop: shop.data, journal: journal.data } });
 }
 
 async function sendCommand() {
@@ -80,6 +99,7 @@ async function sendCommand() {
   if (type === 'move') cmd.locationId = arg || 'mist_forest'; else cmd.resource = arg || 'currency';
   show(await call('/commands', 'POST', { playerId: S.playerId, command: cmd }));
   await refreshWorld();
+  await loadPlayer().catch(() => {});
 }
 
 async function queueOffline() {
@@ -97,8 +117,53 @@ async function loadOffline() {
   show(json);
 }
 
-async function tickWorld() { show(await call('/tick', 'POST', { ticks: 1 })); await refreshWorld(); await loadOffline().catch(() => {}); }
+async function tickWorld() { show(await call('/tick', 'POST', { ticks: 1 })); await refreshWorld(); await loadOffline().catch(() => {}); await loadPanels().catch(() => {}); }
 async function refreshSnapshot() { show(await call('/snapshot')); }
+
+function renderCharacter(data) {
+  const entity = data?.entity || data?.character || {};
+  const stats = entity.stats || {};
+  const res = entity.resources || {};
+  const loc = entity.location || data?.location || {};
+  $('characterPanel').innerHTML = card(entity.name || S.playerId, [
+    '位置：' + (loc.name || entity.locationId || '-'),
+    bar('生命', stats.health, stats.maxHealth),
+    bar('精力', stats.energy, stats.maxEnergy),
+    badges(['power ' + (stats.power || 0), 'social ' + (stats.social || 0), 'currency ' + (res.currency || 0), 'food ' + (res.food || 0)])
+  ].join(''));
+}
+
+function renderMap(data) {
+  const locations = data?.locations || data?.nodes || [];
+  if (!locations.length) return empty('mapPanel', '暂无地图数据');
+  $('mapPanel').innerHTML = locations.slice(0, 8).map(l => card(l.name || l.id, '地点：' + (l.id || '-') + '<br>类型：' + (l.type || '-'))).join('');
+}
+
+function renderQuests(data) {
+  const quests = data?.quests || [];
+  if (!quests.length) return empty('questPanel', '暂无任务');
+  $('questPanel').innerHTML = quests.slice(0, 8).map(q => card(q.title || q.name || q.questId || q.id, '状态：' + (q.status || '-') + '<br>' + esc(q.description || q.summary || ''))).join('');
+}
+
+function renderInventory(data) {
+  const items = data?.items || data?.inventory || [];
+  const equipment = data?.equipment || {};
+  const equipText = Object.keys(equipment).length ? '<br>' + badges(Object.entries(equipment).map(([k, v]) => k + ':' + (v?.name || v || '-'))) : '';
+  if (!items.length) return $('inventoryPanel').innerHTML = card('装备', equipText || '暂无物品');
+  $('inventoryPanel').innerHTML = items.slice(0, 12).map(i => card(i.name || i.itemId || i.id, '数量：' + (i.quantity || 1) + '<br>类型：' + (i.type || i.itemType || '-'))).join('') + equipText;
+}
+
+function renderShop(data) {
+  const shops = data?.shops || [];
+  if (!shops.length) return empty('shopPanel', '当前地点暂无商店');
+  $('shopPanel').innerHTML = shops.map(s => card(s.name || s.id, '类型：' + (s.type || '-') + '<br>库存：' + ((s.stock || s.items || []).length || 0))).join('');
+}
+
+function renderJournal(data) {
+  const entries = data?.entries || [];
+  if (!entries.length) return empty('journalPanel', '暂无日志');
+  $('journalPanel').innerHTML = entries.map(e => '<div class="timeline-item"><strong>' + esc(e.type || 'entry') + '</strong><small>tick ' + esc(e.tick ?? '-') + '</small><br>' + esc(e.message || e.summary || e.text || '') + '</div>').join('');
+}
 
 function connectWs() {
   if (S.socket) S.socket.close();
@@ -120,6 +185,10 @@ async function call(path, method = 'GET', body = null) {
   return json;
 }
 
+function card(title, body) { return '<div class="mini-card"><strong>' + esc(title) + '</strong>' + body + '</div>'; }
+function badges(list) { return '<div class="badge-row">' + list.map(x => '<span class="badge">' + esc(String(x)) + '</span>').join('') + '</div>'; }
+function bar(label, value, max) { const n = Number(value || 0); const m = Number(max || 100); const pct = Math.max(0, Math.min(100, Math.round(n / m * 100))); return '<div><small>' + esc(label) + ' ' + n + '/' + m + '</small><div class="progress"><i style="width:' + pct + '%"></i></div></div>'; }
+function empty(id, text) { $(id).innerHTML = '<div class="empty">' + esc(text) + '</div>'; }
 function metric(text) { const p = text.split(':'); return '<div class="metric"><strong>' + esc(p[1]) + '</strong><span>' + esc(p[0]) + '</span></div>'; }
 function show(v) { $('rawOutput').textContent = JSON.stringify(v, null, 2); }
 function log(v) { $('eventLog').textContent = '[' + new Date().toLocaleTimeString() + '] ' + v + '\n' + $('eventLog').textContent; }
