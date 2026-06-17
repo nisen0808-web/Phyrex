@@ -1,9 +1,21 @@
 # World Engine API
 
-启动服务：
+启动本地网页版：
 
 ```bash
 npm run api
+```
+
+然后打开：
+
+```text
+http://127.0.0.1:8790/client
+```
+
+Windows 可以直接双击仓库根目录的：
+
+```text
+start-local-web.bat
 ```
 
 指定端口：
@@ -15,6 +27,9 @@ node world-engine/demo/api-server.js --host 127.0.0.1 --port 8790
 核心接口：
 
 ```text
+GET  /client
+GET  /client/app.js
+GET  /client/style.css
 GET  /health
 GET  /world
 GET  /snapshot
@@ -42,6 +57,28 @@ GET  /admin/connections
 GET  /admin/audit
 GET  /admin/errors
 ```
+
+## 本地网页版能力
+
+`/client` 是纯 HTML/CSS/JS，不依赖 React，不需要安装前端依赖。
+
+当前支持：
+
+```text
+创建账号
+创建 Session
+创建玩家和角色
+查看世界状态
+查看玩家视图
+提交 work / train / gather / rest / move 命令
+安排离线 work / train / gather / rest
+推进 tick
+查看离线任务
+连接 WebSocket /ws/ticks
+查看原始 API 响应
+```
+
+## 事件流
 
 `GET /stream` 是 Server-Sent Events，用于简单浏览器订阅。
 
@@ -164,37 +201,7 @@ curl http://127.0.0.1:8790/admin/connections \
   -H 'Authorization: Bearer <GM_TOKEN>'
 ```
 
-`/admin/status` 返回：
-
-```text
-health
-audit
-accounts
-runtime
-limits
-```
-
-`/admin/audit` 返回最近 API 请求记录，包括：
-
-```text
-method
-path
-statusCode
-durationMs
-accountId
-playerId
-error
-```
-
 ## 玩家与世界命令
-
-创建玩家示例：
-
-```bash
-curl -X POST http://127.0.0.1:8790/players \
-  -H 'Content-Type: application/json' \
-  -d '{"player":{"id":"api_player","name":"API Player"},"character":{"id":"api_hero","name":"API Hero","species":"human","locationId":"qingyun_city","resources":{"currency":100,"food":10}}}'
-```
 
 提交命令示例：
 
