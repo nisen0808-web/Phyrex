@@ -42,6 +42,14 @@ POST /sessions
 GET  /session
 POST /sessions/revoke
 GET  /players/:playerId
+GET  /players/:playerId/inventory
+GET  /players/:playerId/quests
+GET  /players/:playerId/journal
+GET  /players/:playerId/map
+GET  /players/:playerId/shop
+GET  /players/:playerId/board
+GET  /players/:playerId/encounters
+GET  /players/:playerId/offline
 POST /players
 POST /commands
 POST /offline
@@ -69,7 +77,12 @@ GET  /admin/errors
 创建 Session
 创建玩家和角色
 查看世界状态
-查看玩家视图
+查看角色状态卡
+查看地图 / 当前地点
+查看任务
+查看背包 / 装备
+查看商店
+查看日志时间线
 提交 work / train / gather / rest / move 命令
 安排离线 work / train / gather / rest
 推进 tick
@@ -77,6 +90,23 @@ GET  /admin/errors
 连接 WebSocket /ws/ticks
 查看原始 API 响应
 ```
+
+## 玩家详情接口
+
+这些接口是给浏览器客户端使用的轻量查询接口。
+
+```bash
+curl http://127.0.0.1:8790/players/api_player/inventory
+curl http://127.0.0.1:8790/players/api_player/quests
+curl http://127.0.0.1:8790/players/api_player/journal?limit=20
+curl http://127.0.0.1:8790/players/api_player/map
+curl http://127.0.0.1:8790/players/api_player/shop
+curl http://127.0.0.1:8790/players/api_player/board
+curl http://127.0.0.1:8790/players/api_player/encounters
+curl http://127.0.0.1:8790/players/api_player/offline
+```
+
+开启 `requireAuth=true` 后，这些接口同样会检查玩家归属。普通 player 只能查看自己的 `playerId`，GM/admin 可以查看任意玩家。
 
 ## 事件流
 
