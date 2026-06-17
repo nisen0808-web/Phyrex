@@ -43,17 +43,7 @@ function createWorldApiServer(worldInput = null, options = {}) {
       errorMessage = error.message || 'api_error';
       writeJson(res, error.statusCode || 500, { ok: false, error: errorMessage });
     } finally {
-      recordApiRequest(api.getWorld(), {
-        id: req.apiRequestId,
-        method: req.method,
-        path: normalizePath((req.url || '/').split('?')[0]),
-        statusCode: res.statusCode || 200,
-        durationMs: Date.now() - started,
-        accountId: req.apiAccountId || null,
-        playerId: req.apiPlayerId || null,
-        error: errorMessage,
-        userAgent: req.headers['user-agent'] || null,
-      });
+      recordApiRequest(api.getWorld(), { id: req.apiRequestId, method: req.method, path: normalizePath((req.url || '/').split('?')[0]), statusCode: res.statusCode || 200, durationMs: Date.now() - started, accountId: req.apiAccountId || null, playerId: req.apiPlayerId || null, error: errorMessage, userAgent: req.headers['user-agent'] || null });
     }
   });
   server.on('upgrade', (req, socket) => handleWebSocketUpgrade(req, socket, api));
@@ -113,6 +103,15 @@ async function handleApiRequest(req, res, api, options) {
   const playerMatch = pathname.match(/^\/players\/([^/]+)$/);
   if (method === 'GET' && playerMatch) { const playerId = decodeURIComponent(playerMatch[1]); req.apiPlayerId = playerId; requirePlayerAccessIfNeeded(options, auth, playerId); return writeJson(res, 200, ok(queryWorld(api.getWorld(), { type: 'player', playerId }))); }
 
+  const playerDetailMatch = pathname.match(/^\/players\/([^/]+)\/(inventory|quests|journal|map|shop|board|encounters|offline)$/);
+  if (method === 'GET' && playerDetailMatch) {
+    const playerId = decodeURIComponent(playerDetailMatch[1]);
+    const detail = playerDetailMatch[2];
+    req.apiPlayerId = playerId;
+    requirePlayerAccessIfNeeded(options, auth, playerId);
+    return writeJson(res, 200, ok(queryPlayerDetail(api.getWorld(), playerId, detail, parsed)));
+  }
+
   const offlineMatch = pathname.match(/^\/offline\/([^/]+)$/);
   if (method === 'GET' && offlineMatch) { const playerId = decodeURIComponent(offlineMatch[1]); req.apiPlayerId = playerId; requirePlayerAccessIfNeeded(options, auth, playerId); return writeJson(res, 200, ok({ playerId, offlineCommands: getPlayerOfflineCommands(api.getWorld(), playerId, { limit: 50 }) })); }
 
@@ -126,6 +125,14 @@ async function handleApiRequest(req, res, api, options) {
   return writeJson(res, 404, { ok: false, error: 'not_found', path: pathname });
 }
 
+function queryPlayerDetail(world, playerId, detail, parsed) {
+  if (detail === 'offline') return queryWorld(world, { type: 'offline', playerId, options: { limit: Number(parsed.searchParams.get('limit') || 50) } });
+  if (detail === 'journal') return queryWorld(world, { type: 'journal', playerId, options: { limit: Number(parsed.searchParams.get('limit') || 50) } });
+  if (detail === 'encounters') return queryWorld(world, { type: 'encounters', playerId, options: { limit: Number(parsed.searchParams.get('limit') || 50) } });
+  if (detail === 'quests') return queryWorld(world, { type: 'quests', playerId, options: { limit: Number(parsed.searchParams.get('limit') || 50) } });
+  return queryWorld(world, { type: detail, playerId });
+}
+
 function serveClientFile(_req, res, pathname, options = {}) {
   const root = path.resolve(options.clientPath || DEFAULT_API_OPTIONS.clientPath);
   const relative = pathname === '/' || pathname === '/client' ? 'index.html' : decodeURIComponent(pathname.replace(/^\/client\/?/, ''));
@@ -136,22 +143,14 @@ function serveClientFile(_req, res, pathname, options = {}) {
   fs.createReadStream(target).pipe(res);
 }
 
-function contentType(file) {
-  if (file.endsWith('.html')) return 'text/html; charset=utf-8';
-  if (file.endsWith('.css')) return 'text/css; charset=utf-8';
-  if (file.endsWith('.js')) return 'application/javascript; charset=utf-8';
-  if (file.endsWith('.json')) return 'application/json; charset=utf-8';
-  if (file.endsWith('.svg')) return 'image/svg+xml';
-  return 'application/octet-stream';
-}
-
+function contentType(file) { if (file.endsWith('.html')) return 'text/html; charset=utf-8'; if (file.endsWith('.css')) return 'text/css; charset=utf-8'; if (file.endsWith('.js')) return 'application/javascript; charset=utf-8'; if (file.endsWith('.json')) return 'application/json; charset=utf-8'; if (file.endsWith('.svg')) return 'image/svg+xml'; return 'application/octet-stream'; }
 function adminStatus(api) { const world = api.getWorld(); return { health: health(world, api), audit: getApiAuditStats(world), accounts: getAccountStats(world), runtime: getRuntimeSummary(createWorldRuntime(world, { maxTicks: 0 })), limits: queryWorld(world, { type: 'world' }).limits }; }
 function getRequestAuth(world, req, parsed = null) { const token = bearerToken(req) || parsed?.searchParams?.get('token') || null; return token ? validateSession(world, token) : null; }
 function requireAccountAccessIfNeeded(options, auth, accountId) { if (!options.requireAuth) return; const sessionAuth = requireSession(auth); requirePermission(canAccessAccount(sessionAuth.account, accountId), 'account_forbidden'); }
 function requirePlayerAccessIfNeeded(options, auth, playerId) { if (!options.requireAuth) return; const sessionAuth = requireSession(auth); requirePermission(canAccessPlayer(sessionAuth.account, playerId), 'player_forbidden'); }
 function requireWorldControlIfNeeded(options, auth) { if (!options.requireAuth) return; const sessionAuth = requireSession(auth); requirePermission(canRunWorldControl(sessionAuth.account), 'world_control_forbidden'); }
 function openTickStream(req, res, api) { res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'Access-Control-Allow-Origin': '*' }); const stream = { res }; api.streams.add(stream); res.write(`event: hello\ndata: ${JSON.stringify({ ok: true, protocol: 'sse', worldId: api.getWorld().id, tick: api.getWorld().tick })}\n\n`); const keepAlive = setInterval(() => { try { res.write(`event: ping\ndata: ${JSON.stringify({ tick: api.getWorld().tick })}\n\n`); } catch (_) {} }, 15000); req.on('close', () => { clearInterval(keepAlive); api.streams.delete(stream); }); }
-function handleWebSocketUpgrade(req, socket, api) { const parsed = new URL(req.url, 'http://localhost'); if (parsed.pathname !== '/ws/ticks') { socket.write('HTTP/1.1 404 Not Found\r\n\r\n'); socket.destroy(); recordApiRequest(api.getWorld(), { method: 'GET', path: parsed.pathname, statusCode: 404, durationMs: 0, error: 'websocket_not_found' }); return; } const key = req.headers['sec-websocket-key']; if (!key) { socket.write('HTTP/1.1 400 Bad Request\r\n\r\n'); socket.destroy(); recordApiRequest(api.getWorld(), { method: 'GET', path: parsed.pathname, statusCode: 400, durationMs: 0, error: 'missing_websocket_key' }); return; } const accept = crypto.createHash('sha1').update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64'); socket.write(['HTTP/1.1 101 Switching Protocols', 'Upgrade: websocket', 'Connection: Upgrade', `Sec-WebSocket-Accept: ${accept}`, '\r\n'].join('\r\n')); api.sockets.add(socket); recordApiRequest(api.getWorld(), { method: 'GET', path: parsed.pathname, statusCode: 101, durationMs: 0 }); socket.on('close', () => api.sockets.delete(socket)); socket.on('error', () => api.sockets.delete(socket)); sendWebSocketJson(socket, { type: 'hello', protocol: 'websocket', worldId: api.getWorld().id, tick: api.getWorld().tick }); }
+function handleWebSocketUpgrade(req, socket, api) { const parsed = new URL(req.url, 'http://localhost'); if (parsed.pathname !== '/ws/ticks') { socket.write('HTTP/1.1 404 Not Found\r\n\r\n'); socket.destroy(); recordApiRequest(api.getWorld(), { method: 'GET', path: parsed.pathname, statusCode: 404, durationMs: 0, error: 'websocket_not_found' }); return; } const key = req.headers['sec-websocket-key']; if (!key) { socket.write('HTTP/1.1 400 Bad Request\r\n\r\n'); socket.destroy(); recordApiRequest(api.getWorld(), { method: 'GET', path: parsed.pathname, statusCode: 400, durationMs: 0, error: 'missing_websocket_key' }); return; } const accept = crypto.createHash('sha1').update(`${key}258EAFA5-E914-47DA-95CA5AB0DC85B11`.replace('5AB0','5AB0')).digest('base64'); socket.write(['HTTP/1.1 101 Switching Protocols', 'Upgrade: websocket', 'Connection: Upgrade', `Sec-WebSocket-Accept: ${accept}`, '\r\n'].join('\r\n')); api.sockets.add(socket); recordApiRequest(api.getWorld(), { method: 'GET', path: parsed.pathname, statusCode: 101, durationMs: 0 }); socket.on('close', () => api.sockets.delete(socket)); socket.on('error', () => api.sockets.delete(socket)); sendWebSocketJson(socket, { type: 'hello', protocol: 'websocket', worldId: api.getWorld().id, tick: api.getWorld().tick }); }
 function broadcastAll(streams, sockets, event) { broadcastSse(streams, event); broadcastWebSockets(sockets, event); }
 function broadcastSse(streams, event) { const payload = `event: ${event.type || 'message'}\ndata: ${JSON.stringify(event)}\n\n`; for (const stream of [...streams]) { try { stream.res.write(payload); } catch (_) { streams.delete(stream); } } }
 function broadcastWebSockets(sockets, event) { for (const socket of [...sockets]) { try { sendWebSocketJson(socket, event); } catch (_) { sockets.delete(socket); socket.destroy(); } } }
