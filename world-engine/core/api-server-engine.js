@@ -2,6 +2,8 @@
 
 const http = require('http');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { URL } = require('url');
 const { buildDemoWorld, runDemoWorld } = require('../demo/run-demo');
 const { createPlayerWithCharacter } = require('./player-engine');
@@ -15,7 +17,15 @@ const { createAccount, createSession, validateSession, revokeSession, getAccount
 const { canAccessAccount, canAccessPlayer, canRunWorldControl, requirePermission, requireSession } = require('./api-permission-engine');
 const { recordApiRequest, getApiAuditLog, getApiErrors, getApiAuditStats } = require('./api-audit-engine');
 
-const DEFAULT_API_OPTIONS = { port: 8790, host: '127.0.0.1', seedTicks: 10, maxBodyBytes: 1024 * 1024, defaultSavePath: 'world-engine/output/api-world-save.json', requireAuth: false };
+const DEFAULT_API_OPTIONS = {
+  port: 8790,
+  host: '127.0.0.1',
+  seedTicks: 10,
+  maxBodyBytes: 1024 * 1024,
+  defaultSavePath: 'world-engine/output/api-world-save.json',
+  requireAuth: false,
+  clientPath: path.join(__dirname, '..', 'client'),
+};
 
 function createWorldApiServer(worldInput = null, options = {}) {
   const opts = { ...DEFAULT_API_OPTIONS, ...(options || {}) };
@@ -51,7 +61,11 @@ function createWorldApiServer(worldInput = null, options = {}) {
   return { server, api, options: opts, streams, sockets };
 }
 
-function buildDefaultApiWorld(options = {}) { const world = buildDemoWorld(); runDemoWorld(world, Number(options.seedTicks || 10), { autoNovel: false, autoNarrative: false, population: { baseBirthChance: 0, baseMortalityChance: 0 } }); return world; }
+function buildDefaultApiWorld(options = {}) {
+  const world = buildDemoWorld();
+  runDemoWorld(world, Number(options.seedTicks || 10), { autoNovel: false, autoNarrative: false, population: { baseBirthChance: 0, baseMortalityChance: 0 } });
+  return world;
+}
 
 async function handleApiRequest(req, res, api, options) {
   setCors(res);
@@ -62,6 +76,7 @@ async function handleApiRequest(req, res, api, options) {
   const auth = getRequestAuth(api.getWorld(), req, parsed);
   req.apiAccountId = auth?.account?.id || null;
 
+  if (method === 'GET' && (pathname === '/' || pathname === '/client' || pathname.startsWith('/client/'))) return serveClientFile(req, res, pathname, options);
   if (method === 'GET' && pathname === '/health') return writeJson(res, 200, health(api.getWorld(), api));
   if (method === 'GET' && pathname === '/world') return writeJson(res, 200, ok(queryWorld(api.getWorld(), { type: 'world' })));
   if (method === 'GET' && pathname === '/snapshot') return writeJson(res, 200, ok(createWorldSnapshot(api.getWorld())));
@@ -109,6 +124,25 @@ async function handleApiRequest(req, res, api, options) {
   if (method === 'POST' && pathname === '/save') { requireWorldControlIfNeeded(options, auth); const body = await readJsonBody(req, options); const filePath = body.filePath || body.path || options.defaultSavePath; const save = saveWorld(api.getWorld(), filePath, body.options || {}); api.broadcast({ type: 'save', worldId: api.getWorld().id, tick: api.getWorld().tick, file: save.file }); return writeJson(res, 200, ok(save)); }
   if (method === 'POST' && pathname === '/load') { requireWorldControlIfNeeded(options, auth); const body = await readJsonBody(req, options); const filePath = body.filePath || body.path || options.defaultSavePath; const loaded = loadWorld(filePath, body.options || {}); api.setWorld(loaded.world); api.broadcast({ type: 'load', worldId: loaded.worldId, tick: loaded.tick }); return writeJson(res, 200, ok({ file: loaded.file, worldId: loaded.worldId, tick: loaded.tick, savedAt: loaded.savedAt })); }
   return writeJson(res, 404, { ok: false, error: 'not_found', path: pathname });
+}
+
+function serveClientFile(_req, res, pathname, options = {}) {
+  const root = path.resolve(options.clientPath || DEFAULT_API_OPTIONS.clientPath);
+  const relative = pathname === '/' || pathname === '/client' ? 'index.html' : decodeURIComponent(pathname.replace(/^\/client\/?/, ''));
+  const target = path.resolve(root, relative || 'index.html');
+  if (!target.startsWith(root)) return end(res, 403, 'Forbidden');
+  if (!fs.existsSync(target) || !fs.statSync(target).isFile()) return end(res, 404, 'Not Found');
+  res.writeHead(200, { 'Content-Type': contentType(target) });
+  fs.createReadStream(target).pipe(res);
+}
+
+function contentType(file) {
+  if (file.endsWith('.html')) return 'text/html; charset=utf-8';
+  if (file.endsWith('.css')) return 'text/css; charset=utf-8';
+  if (file.endsWith('.js')) return 'application/javascript; charset=utf-8';
+  if (file.endsWith('.json')) return 'application/json; charset=utf-8';
+  if (file.endsWith('.svg')) return 'image/svg+xml';
+  return 'application/octet-stream';
 }
 
 function adminStatus(api) { const world = api.getWorld(); return { health: health(world, api), audit: getApiAuditStats(world), accounts: getAccountStats(world), runtime: getRuntimeSummary(createWorldRuntime(world, { maxTicks: 0 })), limits: queryWorld(world, { type: 'world' }).limits }; }
