@@ -64,6 +64,7 @@ p { color: var(--muted); margin-top: 4px; }
   box-shadow: 0 10px 30px rgba(0,0,0,.18);
 }
 .panel.wide { grid-column: 1 / -1; }
+.hero-card { background: linear-gradient(135deg, rgba(88,166,255,.16), rgba(22,27,34,.95)); }
 
 .grid { display: grid; gap: 10px; }
 .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -123,7 +124,7 @@ pre {
   grid-template-columns: repeat(4, minmax(120px, 1fr));
   gap: 10px;
 }
-.metric {
+.metric, .mini-card, .timeline-item {
   padding: 12px;
   background: #0b1018;
   border: 1px solid var(--border);
@@ -131,6 +132,35 @@ pre {
 }
 .metric strong { display: block; font-size: 20px; }
 .metric span { color: var(--muted); font-size: 12px; }
+
+.card-list {
+  display: grid;
+  gap: 10px;
+  color: var(--muted);
+}
+.mini-card strong, .timeline-item strong { color: var(--text); display: block; margin-bottom: 5px; }
+.mini-card small, .timeline-item small { color: var(--muted); }
+.badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(88,166,255,.35);
+  background: rgba(88,166,255,.1);
+  color: #c8e1ff;
+  font-size: 12px;
+}
+.progress {
+  height: 8px;
+  background: #090d14;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 7px;
+}
+.progress > i { display: block; height: 100%; background: var(--accent); }
+.timeline { display: grid; gap: 8px; }
+.empty { color: var(--muted); font-style: italic; }
 
 @media (max-width: 840px) {
   .layout { grid-template-columns: 1fr; padding: 12px; }
