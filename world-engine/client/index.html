@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MUD 世界模拟器 - 本地客户端</title>
+  <link rel="stylesheet" href="/client/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>MUD 世界模拟器</h1>
+      <p>本地网页版客户端 / Local Browser Client</p>
+    </div>
+    <div class="status-pill" id="connectionStatus">未连接</div>
+  </header>
+
+  <main class="layout">
+    <section class="panel">
+      <h2>账号 / Session</h2>
+      <div class="grid two">
+        <label>账号 ID<input id="accountId" value="local_account" /></label>
+        <label>账号名<input id="accountName" value="Local Account" /></label>
+      </div>
+      <div class="actions">
+        <button id="createAccountBtn">创建账号</button>
+        <button id="createSessionBtn">创建 Session</button>
+        <button id="checkSessionBtn">验证 Session</button>
+      </div>
+      <textarea id="tokenBox" placeholder="Session token" rows="2"></textarea>
+    </section>
+
+    <section class="panel">
+      <h2>角色</h2>
+      <div class="grid two">
+        <label>玩家 ID<input id="playerId" value="local_player" /></label>
+        <label>角色 ID<input id="entityId" value="local_hero" /></label>
+      </div>
+      <div class="grid two">
+        <label>玩家名<input id="playerName" value="Local Player" /></label>
+        <label>角色名<input id="entityName" value="Local Hero" /></label>
+      </div>
+      <div class="actions">
+        <button id="createPlayerBtn">创建角色</button>
+        <button id="loadPlayerBtn">刷新角色</button>
+      </div>
+    </section>
+
+    <section class="panel wide">
+      <h2>世界状态</h2>
+      <div class="metric-grid" id="worldMetrics"></div>
+      <div class="actions">
+        <button id="refreshWorldBtn">刷新世界</button>
+        <button id="tickBtn">推进 1 tick</button>
+        <button id="snapshotBtn">刷新快照</button>
+      </div>
+    </section>
+
+    <section class="panel wide">
+      <h2>玩家视图</h2>
+      <pre id="playerView">暂无玩家数据</pre>
+    </section>
+
+    <section class="panel">
+      <h2>即时命令</h2>
+      <div class="grid two">
+        <label>命令类型
+          <select id="commandType">
+            <option value="work">work</option>
+            <option value="train">train</option>
+            <option value="gather">gather</option>
+            <option value="rest">rest</option>
+            <option value="move">move</option>
+          </select>
+        </label>
+        <label>资源 / 地点<input id="commandArg" value="currency" /></label>
+      </div>
+      <label>数量<input id="commandAmount" type="number" value="5" /></label>
+      <div class="actions">
+        <button id="sendCommandBtn">执行命令</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>离线命令</h2>
+      <div class="grid two">
+        <label>类型
+          <select id="offlineType">
+            <option value="train">train</option>
+            <option value="work">work</option>
+            <option value="gather">gather</option>
+            <option value="rest">rest</option>
+          </select>
+        </label>
+        <label>资源<input id="offlineArg" value="currency" /></label>
+      </div>
+      <div class="grid three">
+        <label>数量<input id="offlineAmount" type="number" value="1" /></label>
+        <label>持续 tick<input id="offlineDuration" type="number" value="2" /></label>
+        <label>重复<input id="offlineRepeat" type="number" value="2" /></label>
+      </div>
+      <div class="actions">
+        <button id="queueOfflineBtn">安排离线任务</button>
+        <button id="loadOfflineBtn">刷新离线任务</button>
+      </div>
+      <pre id="offlineView">暂无离线任务</pre>
+    </section>
+
+    <section class="panel wide">
+      <h2>事件流</h2>
+      <div class="actions">
+        <button id="connectWsBtn">连接 WebSocket</button>
+        <button id="clearLogBtn">清空日志</button>
+      </div>
+      <pre id="eventLog"></pre>
+    </section>
+
+    <section class="panel wide">
+      <h2>原始响应</h2>
+      <pre id="rawOutput">等待操作</pre>
+    </section>
+  </main>
+
+  <script src="/client/app.js"></script>
+</body>
+</html>
