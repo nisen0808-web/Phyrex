@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "packId": "example-tiny-island",
+  "packName": "Example Tiny Island",
+  "description": "A small JSON-only template pack for modding and loader tests.",
+  "author": "Phyrex",
+  "tags": ["example", "json", "island"],
+  "templates": [
+    {
+      "id": "tiny_island",
+      "name": "Tiny Island",
+      "description": "A peaceful island settlement with a dangerous cave.",
+      "version": 1,
+      "seedTicks": 2,
+      "tags": ["island", "small", "playable"],
+      "definition": {
+        "world": {
+          "id": "tiny-island-world",
+          "seed": 31
+        },
+        "locations": [
+          {
+            "id": "island_village",
+            "name": "Island Village",
+            "type": "village",
+            "resources": {
+              "food": 700,
+              "wood": 350,
+              "currency": 180
+            },
+            "danger": 1
+          },
+          {
+            "id": "palm_beach",
+            "name": "Palm Beach",
+            "type": "coast",
+            "resources": {
+              "food": 500,
+              "wood": 220,
+              "herbs": 120
+            },
+            "danger": 5
+          },
+          {
+            "id": "echo_cave",
+            "name": "Echo Cave",
+            "type": "cave",
+            "resources": {
+              "stone": 450,
+              "metal": 160
+            },
+            "danger": 18
+          }
+        ],
+        "connections": [
+          ["island_village", "palm_beach"],
+          ["island_village", "echo_cave"]
+        ],
+        "entities": [
+          {
+            "id": "islander_0",
+            "name": "Village Elder",
+            "species": "human",
+            "locationId": "island_village",
+            "stats": {
+              "power": 12,
+              "intelligence": 55,
+              "social": 70
+            },
+            "resources": {
+              "currency": 240,
+              "food": 20
+            },
+            "demographics": {
+              "age": 58,
+              "generation": 1
+            }
+          },
+          {
+            "id": "islander_1",
+            "name": "Island Scout",
+            "species": "human",
+            "locationId": "palm_beach",
+            "stats": {
+              "power": 18,
+              "speed": 20,
+              "social": 35
+            },
+            "resources": {
+              "currency": 120,
+              "food": 12
+            },
+            "demographics": {
+              "age": 24,
+              "generation": 1
+            }
+          },
+          {
+            "id": "islander_2",
+            "name": "Cave Miner",
+            "species": "human",
+            "locationId": "echo_cave",
+            "stats": {
+              "power": 16,
+              "defense": 12,
+              "social": 25
+            },
+            "resources": {
+              "currency": 150,
+              "food": 10
+            },
+            "demographics": {
+              "age": 32,
+              "generation": 1
+            }
+          }
+        ],
+        "organizations": [
+          {
+            "key": "island_council",
+            "type": "house",
+            "name": "Island Council",
+            "leaderId": "islander_0",
+            "homeLocationId": "island_village",
+            "currency": 900,
+            "members": ["islander_0", "islander_1", "islander_2"]
+          }
+        ]
+      }
+    }
+  ]
+}
