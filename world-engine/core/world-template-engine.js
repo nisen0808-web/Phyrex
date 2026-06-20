@@ -2,7 +2,7 @@
 
 const { createWorld, registerLocation, connectLocations, registerEntity } = require('./world-engine');
 const { assignSpecies } = require('./species-engine');
-const { createOrganization } = require('./organization-engine');
+const { createOrganization, addOrganizationMember } = require('./organization-engine');
 const { initializeSimulation, runSimulationTicks } = require('./simulation-engine');
 
 const DEFAULT_TEMPLATE_SIMULATION = {
@@ -114,11 +114,12 @@ function resetWorldFromTemplate(currentWorld, registry, templateId, options = {}
 }
 
 function buildWorldFromDefinition(definition = {}, options = {}) {
-  const world = createWorld({
+  const worldOptions = {
     id: options.worldId || definition.world?.id || 'world',
     seed: options.seed ?? definition.world?.seed ?? 1,
-    calendar: definition.world?.calendar,
-  });
+  };
+  if (definition.world?.calendar) worldOptions.calendar = deepClone(definition.world.calendar);
+  const world = createWorld(worldOptions);
 
   for (const location of definition.locations || []) registerLocation(world, deepClone(location));
   for (const connection of definition.connections || []) {
@@ -136,7 +137,12 @@ function buildWorldFromDefinition(definition = {}, options = {}) {
     const organization = createOrganization(world, deepClone(input));
     organizations[input.key || input.id || organization.id] = organization;
     for (const memberId of input.members || []) {
-      if (!organization.members.includes(memberId)) organization.members.push(memberId);
+      if (memberId === organization.leaderId) continue;
+      if (!world.entities?.[memberId]) continue;
+      addOrganizationMember(world, organization.id, memberId, {
+        role: input.roles?.[memberId] || 'member',
+        createContract: false,
+      });
     }
   }
 
