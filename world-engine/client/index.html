@@ -13,6 +13,7 @@
       <p>本地可玩原型 / Local Playable Prototype</p>
     </div>
     <div class="top-actions">
+      <label class="inline-control"><input id="autoTickToggle" type="checkbox" checked />动作后推进</label>
       <label class="inline-control"><input id="autoRefreshToggle" type="checkbox" />自动刷新</label>
       <select id="refreshSeconds" aria-label="自动刷新间隔">
         <option value="3">3 秒</option>
@@ -26,9 +27,9 @@
   <main class="layout">
     <section class="panel onboarding">
       <h2>开始游戏</h2>
-      <p class="hint">一键创建本地账号、Session 和角色，然后加载全部游戏面板。</p>
+      <p class="hint">一键创建本地账号、Session 和角色，领取木剑与疗伤丹，并启动新手任务。</p>
       <div class="actions">
-        <button id="quickStartBtn" class="primary">一键开始</button>
+        <button id="quickStartBtn" class="primary">一键开始冒险</button>
         <button id="connectWsBtn">连接实时事件</button>
       </div>
     </section>
@@ -180,6 +181,7 @@
     </section>
   </main>
 
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/client/app.js"></script>
 </body>
 </html>
