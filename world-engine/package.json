@@ -12,6 +12,7 @@
     "snapshot": "node demo/export-snapshot.js",
     "runtime": "node demo/runtime-demo.js",
     "api": "node demo/api-server.js",
+    "api:live": "node demo/api-server.js --auto-loop --interval 1000 --ticks-per-cycle 1 --autosave-every 25 --autosave-path output/live-world-save.json",
     "viewer": "node viewer/serve-viewer.js"
   },
   "devDependencies": {}
