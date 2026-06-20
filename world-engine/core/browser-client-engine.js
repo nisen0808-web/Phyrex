@@ -4,12 +4,16 @@ const { queryWorld } = require('./query-engine');
 const { executePlayerCommand } = require('./command-engine');
 const { getActivePlayerCharacter } = require('./player-engine');
 const { processQuestsTick, getQuest, claimQuestReward, claimCompletedPlayerQuests } = require('./quest-engine');
+const { startTutorial } = require('./tutorial-engine');
 const { acceptBoardQuest } = require('./quest-board-engine');
 const { exploreLocation } = require('./encounter-engine');
-const { equipItem, unequipItem, useItem } = require('./inventory-engine');
+const { getPlayerInventory, equipItem, unequipItem, useItem } = require('./inventory-engine');
+const { grantItem } = require('./item-engine');
 const { buyItem, sellItem } = require('./shop-engine');
+const { cancelOfflineCommand } = require('./offline-command-engine');
 
 const BROWSER_ACTION_TYPES = {
+  START_ADVENTURE: 'start_adventure',
   COMMAND: 'command',
   MOVE: 'move',
   EXPLORE: 'explore',
@@ -21,6 +25,7 @@ const BROWSER_ACTION_TYPES = {
   USE_ITEM: 'use_item',
   BUY_ITEM: 'buy_item',
   SELL_ITEM: 'sell_item',
+  CANCEL_OFFLINE: 'cancel_offline',
 };
 
 function getPlayerDashboard(world, playerId, options = {}) {
@@ -45,7 +50,21 @@ function executeBrowserAction(world, playerId, input = {}) {
   if (!type) throw new Error('Browser action requires type');
 
   let result;
-  if (type === BROWSER_ACTION_TYPES.COMMAND) {
+  if (type === BROWSER_ACTION_TYPES.START_ADVENTURE) {
+    const entity = requireActiveEntity(world, playerId);
+    const inventory = getPlayerInventory(world, playerId);
+    const owned = new Set((inventory.items || []).map(item => item.definitionId));
+    const granted = [];
+    if (!owned.has('wooden_sword')) granted.push(grantItem(world, 'entity', entity.id, 'wooden_sword', 1));
+    if (!owned.has('healing_pill')) granted.push(grantItem(world, 'entity', entity.id, 'healing_pill', 2));
+    const tutorial = startTutorial(world, playerId);
+    result = {
+      entityId: entity.id,
+      grantedItemIds: granted.map(item => item.id),
+      tutorial: tutorial.tutorial,
+      createdQuestIds: tutorial.created.map(quest => quest.id),
+    };
+  } else if (type === BROWSER_ACTION_TYPES.COMMAND) {
     if (!input.command?.type) throw new Error('Browser command action requires command.type');
     result = executePlayerCommand(world, playerId, input.command, input.options || {});
   } else if (type === BROWSER_ACTION_TYPES.MOVE) {
@@ -77,9 +96,17 @@ function executeBrowserAction(world, playerId, input = {}) {
     result = buyItem(world, playerId, required(input, 'shopId'), required(input, 'itemDefinitionId'), Number(input.quantity || 1));
   } else if (type === BROWSER_ACTION_TYPES.SELL_ITEM) {
     result = sellItem(world, playerId, required(input, 'itemId'), Number(input.quantity || 1));
+  } else if (type === BROWSER_ACTION_TYPES.CANCEL_OFFLINE) {
+    const offlineCommandId = required(input, 'offlineCommandId');
+    const command = world.offlineCommands?.byId?.[offlineCommandId];
+    if (!command) throw new Error(`Missing offline command ${offlineCommandId}`);
+    if (command.playerId !== playerId) throw new Error(`Offline command ${offlineCommandId} does not belong to player ${playerId}`);
+    result = cancelOfflineCommand(world, offlineCommandId, input.reason || 'cancelled_by_player');
   } else {
     throw new Error(`Unknown browser action ${type}`);
   }
+
+  processQuestsTick(world);
 
   return {
     type,
