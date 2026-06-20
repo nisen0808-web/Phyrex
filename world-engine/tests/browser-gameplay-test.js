@@ -5,7 +5,7 @@ const http = require('http');
 const { createWorldApiServer } = require('../core/api-server-engine');
 
 async function main() {
-  const { server, api } = createWorldApiServer(null, { seedTicks: 5 });
+  const { server, api } = createWorldApiServer(null, { seedTicks: 5, requireAuth: true });
   const base = await listen(server);
 
   try {
@@ -14,12 +14,30 @@ async function main() {
       name: 'Gameplay Account',
       roles: ['player'],
     });
+    await requestJson(base, 'POST', '/accounts', {
+      id: 'gameplay_other',
+      name: 'Gameplay Other',
+      roles: ['player'],
+    });
+    await requestJson(base, 'POST', '/accounts', {
+      id: 'gameplay_gm',
+      name: 'Gameplay GM',
+      roles: ['gm'],
+    });
 
     const session = await requestJson(base, 'POST', '/sessions', {
       accountId: 'gameplay_account',
     });
-    const token = session.data.token;
-    const headers = bearer(token);
+    const otherSession = await requestJson(base, 'POST', '/sessions', {
+      accountId: 'gameplay_other',
+    });
+    const gmSession = await requestJson(base, 'POST', '/sessions', {
+      accountId: 'gameplay_gm',
+    });
+
+    const headers = bearer(session.data.token);
+    const otherHeaders = bearer(otherSession.data.token);
+    const gmHeaders = bearer(gmSession.data.token);
 
     const created = await requestJson(base, 'POST', '/accounts/gameplay_account/players', {
       player: { id: 'gameplay_player', name: 'Gameplay Player' },
@@ -43,15 +61,51 @@ async function main() {
     }, headers);
     assert.strictEqual(created.ok, true, 'player should be created');
 
-    let dashboardResponse = await requestJson(base, 'GET', '/players/gameplay_player/dashboard', null, headers);
+    const forbiddenDashboard = await requestJsonAllowError(
+      base,
+      'GET',
+      '/players/gameplay_player/dashboard',
+      null,
+      otherHeaders,
+    );
+    assert.strictEqual(forbiddenDashboard.statusCode, 403, 'other account should not access dashboard');
+
+    const forbiddenAction = await requestJsonAllowError(
+      base,
+      'POST',
+      '/players/gameplay_player/actions',
+      { type: 'explore' },
+      otherHeaders,
+    );
+    assert.strictEqual(forbiddenAction.statusCode, 403, 'other account should not execute gameplay action');
+
+    let dashboardResponse = await requestJson(
+      base,
+      'GET',
+      '/players/gameplay_player/dashboard',
+      null,
+      headers,
+    );
     let dashboard = dashboardResponse.data;
     assert.strictEqual(dashboard.player.player.id, 'gameplay_player', 'dashboard should include player');
     assert.ok(dashboard.map.current.neighbors.length >= 1, 'dashboard should include map exits');
     assert.ok(dashboard.board.items.length >= 1, 'dashboard should include board items');
     assert.ok(dashboard.shop.shops.length >= 1, 'dashboard should include shops');
 
-    const shop = dashboard.shop.shops.find(entry => entry.stock.some(item => item.definitionId === 'healing_pill'));
-    assert.ok(shop, 'a shop should sell healing pills');
+    const gmDashboard = await requestJson(
+      base,
+      'GET',
+      '/players/gameplay_player/dashboard',
+      null,
+      gmHeaders,
+    );
+    assert.strictEqual(gmDashboard.ok, true, 'gm should access player dashboard');
+
+    const shop = dashboard.shop.shops.find(entry => {
+      const ids = entry.stock.map(item => item.definitionId);
+      return ids.includes('healing_pill') && ids.includes('wooden_sword');
+    });
+    assert.ok(shop, 'a shop should sell healing pills and wooden swords');
 
     let action = await browserAction(base, 'gameplay_player', {
       type: 'buy_item',
@@ -60,7 +114,7 @@ async function main() {
       quantity: 2,
     }, headers);
     dashboard = action.data.dashboard;
-    let pill = dashboard.inventory.items.find(item => item.definitionId === 'healing_pill');
+    const pill = dashboard.inventory.items.find(item => item.definitionId === 'healing_pill');
     assert.ok(pill && pill.quantity >= 2, 'buy action should add healing pills');
 
     action = await browserAction(base, 'gameplay_player', {
@@ -101,7 +155,10 @@ async function main() {
       quantity: 1,
     }, headers);
     dashboard = action.data.dashboard;
-    assert.ok(dashboard.player.activeEntity.resources.currency > currencyBeforeSell, 'sell action should increase currency');
+    assert.ok(
+      dashboard.player.activeEntity.resources.currency > currencyBeforeSell,
+      'sell action should increase currency',
+    );
 
     const boardItem = dashboard.board.items[0];
     action = await browserAction(base, 'gameplay_player', {
@@ -110,7 +167,10 @@ async function main() {
     }, headers);
     dashboard = action.data.dashboard;
     const questId = action.data.result.quest.id;
-    assert.ok(dashboard.quests.quests.some(quest => quest.id === questId), 'accepted board quest should enter quest log');
+    assert.ok(
+      dashboard.quests.quests.some(quest => quest.id === questId),
+      'accepted board quest should enter quest log',
+    );
 
     action = await browserAction(base, 'gameplay_player', {
       type: 'explore',
@@ -124,17 +184,41 @@ async function main() {
       type: 'move',
       locationId: destination,
     }, headers);
-    assert.ok(['accepted', 'completed'].includes(action.data.result.command.status), 'move action should submit command');
+    assert.ok(
+      ['accepted', 'completed'].includes(action.data.result.command.status),
+      'move action should submit command',
+    );
 
-    const tick = await requestJson(base, 'POST', '/tick', { ticks: 3 });
-    assert.strictEqual(tick.data.status, 'idle', 'tick should finish idle');
-    dashboardResponse = await requestJson(base, 'GET', '/players/gameplay_player/dashboard', null, headers);
+    const playerTick = await requestJsonAllowError(
+      base,
+      'POST',
+      '/tick',
+      { ticks: 1 },
+      headers,
+    );
+    assert.strictEqual(playerTick.statusCode, 403, 'normal player should not control world tick');
+
+    const tick = await requestJson(base, 'POST', '/tick', { ticks: 3 }, gmHeaders);
+    assert.strictEqual(tick.data.status, 'idle', 'gm tick should finish idle');
+
+    dashboardResponse = await requestJson(
+      base,
+      'GET',
+      '/players/gameplay_player/dashboard',
+      null,
+      headers,
+    );
     dashboard = dashboardResponse.data;
-    assert.strictEqual(dashboard.map.currentLocationId, destination, 'move action should change location after tick');
+    assert.strictEqual(
+      dashboard.map.currentLocationId,
+      destination,
+      'move action should change location after tick',
+    );
 
     const quest = api.getWorld().quests.byId[questId];
     quest.status = 'completed';
     quest.completedAt = api.getWorld().tick;
+
     action = await browserAction(base, 'gameplay_player', {
       type: 'claim_quest',
       questId,
@@ -153,7 +237,13 @@ async function main() {
 }
 
 function browserAction(base, playerId, action, headers) {
-  return requestJson(base, 'POST', `/players/${encodeURIComponent(playerId)}/actions`, action, headers);
+  return requestJson(
+    base,
+    'POST',
+    `/players/${encodeURIComponent(playerId)}/actions`,
+    action,
+    headers,
+  );
 }
 
 function bearer(token) {
@@ -162,7 +252,9 @@ function bearer(token) {
 
 function listen(server) {
   return new Promise(resolve => {
-    server.listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${server.address().port}`));
+    server.listen(0, '127.0.0.1', () => {
+      resolve(`http://127.0.0.1:${server.address().port}`);
+    });
   });
 }
 
@@ -171,6 +263,15 @@ function close(server) {
 }
 
 function requestJson(base, method, pathname, body = null, extraHeaders = {}) {
+  return requestJsonAllowError(base, method, pathname, body, extraHeaders).then(result => {
+    if (result.statusCode >= 400) {
+      throw new Error(`HTTP ${result.statusCode}: ${JSON.stringify(result.body)}`);
+    }
+    return result.body;
+  });
+}
+
+function requestJsonAllowError(base, method, pathname, body = null, extraHeaders = {}) {
   const url = new URL(pathname, base);
   const payload = body ? JSON.stringify(body) : null;
   return new Promise((resolve, reject) => {
@@ -183,11 +284,12 @@ function requestJson(base, method, pathname, body = null, extraHeaders = {}) {
       const chunks = [];
       res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => {
-        const text = Buffer.concat(chunks).toString('utf8');
         try {
-          const json = JSON.parse(text || '{}');
-          if (res.statusCode >= 400) return reject(new Error(`HTTP ${res.statusCode}: ${text}`));
-          resolve(json);
+          const text = Buffer.concat(chunks).toString('utf8');
+          resolve({
+            statusCode: res.statusCode,
+            body: JSON.parse(text || '{}'),
+          });
         } catch (error) {
           reject(error);
         }
