@@ -30,6 +30,7 @@ const tests = [
   'client-web-test.js',
   'browser-gameplay-test.js',
   'browser-onboarding-test.js',
+  'world-template-test.js',
   'stability-100-test.js',
 ];
 
