@@ -16,6 +16,7 @@ const { saveWorld, loadWorld, listSaves } = require('./persistence-engine');
 const { createAccount, createSession, validateSession, revokeSession, getAccountView, linkPlayerToAccount, getAccountStats } = require('./account-session-engine');
 const { canAccessAccount, canAccessPlayer, canRunWorldControl, requirePermission, requireSession } = require('./api-permission-engine');
 const { recordApiRequest, getApiAuditLog, getApiErrors, getApiAuditStats } = require('./api-audit-engine');
+const { getPlayerDashboard, executeBrowserAction } = require('./browser-client-engine');
 
 const DEFAULT_API_OPTIONS = {
   port: 8790,
@@ -102,6 +103,25 @@ async function handleApiRequest(req, res, api, options) {
 
   const playerMatch = pathname.match(/^\/players\/([^/]+)$/);
   if (method === 'GET' && playerMatch) { const playerId = decodeURIComponent(playerMatch[1]); req.apiPlayerId = playerId; requirePlayerAccessIfNeeded(options, auth, playerId); return writeJson(res, 200, ok(queryWorld(api.getWorld(), { type: 'player', playerId }))); }
+
+  const dashboardMatch = pathname.match(/^\/players\/([^/]+)\/dashboard$/);
+  if (method === 'GET' && dashboardMatch) {
+    const playerId = decodeURIComponent(dashboardMatch[1]);
+    req.apiPlayerId = playerId;
+    requirePlayerAccessIfNeeded(options, auth, playerId);
+    return writeJson(res, 200, ok(getPlayerDashboard(api.getWorld(), playerId, { limit: Number(parsed.searchParams.get('limit') || 20) })));
+  }
+
+  const actionMatch = pathname.match(/^\/players\/([^/]+)\/actions$/);
+  if (method === 'POST' && actionMatch) {
+    const playerId = decodeURIComponent(actionMatch[1]);
+    req.apiPlayerId = playerId;
+    requirePlayerAccessIfNeeded(options, auth, playerId);
+    const body = await readJsonBody(req, options);
+    const result = executeBrowserAction(api.getWorld(), playerId, body || {});
+    api.broadcast({ type: 'browser.action', worldId: api.getWorld().id, tick: api.getWorld().tick, playerId, actionType: result.type });
+    return writeJson(res, 200, ok(result));
+  }
 
   const playerDetailMatch = pathname.match(/^\/players\/([^/]+)\/(inventory|quests|journal|map|shop|board|encounters|offline)$/);
   if (method === 'GET' && playerDetailMatch) {
