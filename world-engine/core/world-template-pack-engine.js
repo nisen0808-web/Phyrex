@@ -10,13 +10,23 @@ const {
 const WORLD_TEMPLATE_PACK_SCHEMA_VERSION = 1;
 
 function normalizeWorldTemplatePack(input, options = {}) {
-  if (!input || typeof input !== 'object') throw new Error('World template pack must be an object');
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('World template pack must be an object');
+  }
+
+  const singleTemplate = Boolean(input.id && input.definition && !Array.isArray(input.templates));
   const templates = Array.isArray(input.templates)
     ? input.templates
-    : input.id && input.definition
+    : singleTemplate
       ? [input]
       : [];
   if (!templates.length) throw new Error('World template pack requires templates');
+
+  const schemaVersion = Number(input.schemaVersion || WORLD_TEMPLATE_PACK_SCHEMA_VERSION);
+  if (!Number.isFinite(schemaVersion) || schemaVersion < 1) throw new Error('Invalid world template pack schemaVersion');
+  if (schemaVersion > WORLD_TEMPLATE_PACK_SCHEMA_VERSION) {
+    throw new Error(`Unsupported future world template pack schema ${schemaVersion}`);
+  }
 
   const ids = new Set();
   const normalized = templates.map(template => {
@@ -28,13 +38,22 @@ function normalizeWorldTemplatePack(input, options = {}) {
     return deepClone(template);
   });
 
+  const packId = input.packId
+    || (!singleTemplate ? input.id : null)
+    || options.packId
+    || 'world-template-pack';
+  const packName = input.packName
+    || (!singleTemplate ? input.name : null)
+    || options.name
+    || 'World Template Pack';
+
   return {
-    schemaVersion: Number(input.schemaVersion || WORLD_TEMPLATE_PACK_SCHEMA_VERSION),
-    id: input.packId || input.id && !input.definition ? input.id : options.packId || 'world-template-pack',
-    name: input.packName || input.name && Array.isArray(input.templates) ? input.name : options.name || 'World Template Pack',
-    description: input.description || '',
-    author: input.author || null,
-    tags: Array.isArray(input.tags) ? [...input.tags] : [],
+    schemaVersion,
+    id: packId,
+    name: packName,
+    description: singleTemplate ? options.description || '' : input.description || '',
+    author: singleTemplate ? options.author || null : input.author || null,
+    tags: singleTemplate ? [...(options.tags || [])] : Array.isArray(input.tags) ? [...input.tags] : [],
     templates: normalized,
     sourceFile: options.sourceFile || input.sourceFile || null,
   };
@@ -67,6 +86,7 @@ function loadWorldTemplateDirectory(registry, directory, options = {}) {
   if (!fs.existsSync(absolute)) return { directory: absolute, packs: [], registered: [], errors: [] };
   const files = fs.readdirSync(absolute)
     .filter(name => name.toLowerCase().endsWith('.json'))
+    .filter(name => fs.statSync(path.join(absolute, name)).isFile())
     .sort();
   const packs = [];
   const registered = [];
