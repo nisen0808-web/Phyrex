@@ -1,21 +1,14 @@
 # World Engine Quickstart
 
-这个文件只写最短路径，方便 clone 仓库后直接运行。
-
-## 1. 拉取代码
+## 1. 拉取并测试
 
 ```bash
 git clone https://github.com/nisen0808-web/Phyrex.git
 cd Phyrex
-```
-
-## 2. 运行完整快速测试
-
-```bash
 npm test
 ```
 
-默认测试包括：
+当前默认测试共 26 个：
 
 ```text
 smoke-test.js
@@ -38,97 +31,133 @@ journal-encounter-board-test.js
 item-inventory-shop-test.js
 persistence-offline-runtime-test.js
 api-server-test.js
+account-session-api-test.js
+api-permission-test.js
+api-admin-audit-test.js
+client-web-test.js
+browser-gameplay-test.js
 stability-100-test.js
 ```
 
-## 3. 运行世界 demo
-
-```bash
-npm run demo
-```
-
-指定 tick 数：
-
-```bash
-node world-engine/demo/run-demo.js 300
-```
-
-## 4. 运行固定试玩 demo
-
-```bash
-npm run play
-```
-
-## 5. 运行交互式 Shell
-
-```bash
-npm run shell
-```
-
-脚本化试玩：
-
-```bash
-npm run shell:sample
-```
-
-## 6. 内容层能力
-
-当前可玩内容层包括：
-
-```text
-quest-engine.js              任务、目标、奖励、领取
-tutorial-engine.js           新手任务链和下一步提示
-turn-report-engine.js        每次 wait 后生成回合报告
-map-engine.js                当前地点、出口、资源、附近实体、组织、城市
-shell-alias-engine.js        英文/中文命令别名
-player-journal-engine.js     玩家日志 / 个人史
-encounter-engine.js          探索遭遇 / 地点事件
-quest-board-engine.js        地点委托板 / 接取委托
-item-engine.js               物品定义 / 物品实例
-inventory-engine.js          背包 / 装备 / 使用物品
-shop-engine.js               地点商店 / 购买 / 出售
-```
-
-## 7. 世界服务引擎能力
-
-当前服务层包括：
-
-```text
-persistence-engine.js        save / load / autosave / list saves
-offline-command-engine.js    离线命令队列 / 长时间动作 / 定时执行
-runtime-engine.js            世界运行器 / tick batch / 自动存档 / runtime snapshot
-api-server-engine.js         HTTP API / 客户端接入 / tick event stream
-```
-
-运行 runtime demo：
-
-```bash
-npm run runtime
-```
-
-## 8. API Server
-
-启动 API 服务：
+## 2. 启动本地网页版
 
 ```bash
 npm run api
 ```
 
-指定端口：
+浏览器打开：
 
-```bash
-node world-engine/demo/api-server.js --host 127.0.0.1 --port 8790
+```text
+http://127.0.0.1:8790/client
 ```
 
-核心端点：
+Windows 也可以直接双击仓库根目录：
+
+```text
+start-local-web.bat
+```
+
+网页版当前支持：
+
+```text
+一键创建账号、Session、玩家和角色
+角色生命、精力、资源和装备状态
+地图出口与移动按钮
+探索地点
+查看并接取地点委托
+查看任务并领取奖励
+查看背包、装备、卸下和使用物品
+查看商店并购买、出售物品
+安排离线 work / train / gather / rest
+离线任务进度
+保存和读取世界
+自动刷新
+WebSocket 实时事件
+```
+
+## 3. 浏览器客户端核心 API
+
+```text
+GET  /players/:playerId/dashboard
+POST /players/:playerId/actions
+GET  /players/:playerId/inventory
+GET  /players/:playerId/quests
+GET  /players/:playerId/journal
+GET  /players/:playerId/map
+GET  /players/:playerId/shop
+GET  /players/:playerId/board
+GET  /players/:playerId/encounters
+GET  /players/:playerId/offline
+```
+
+统一玩法动作：
+
+```text
+command
+move
+explore
+accept_board_quest
+claim_quest
+claim_all_quests
+equip_item
+unequip_item
+use_item
+buy_item
+sell_item
+```
+
+示例：
+
+```bash
+curl -X POST http://127.0.0.1:8790/players/api_player/actions \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"explore"}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8790/players/api_player/actions \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"buy_item","shopId":"shop_qingyun_city_general","itemDefinitionId":"healing_pill","quantity":1}'
+```
+
+## 4. API Server
+
+启动：
+
+```bash
+npm run api
+```
+
+服务端能力：
+
+```text
+HTTP API
+SSE /stream
+WebSocket /ws/ticks
+Account / Session
+Bearer token
+Player binding
+player / gm / admin 权限
+GM 世界控制
+API audit
+Admin status / runtime / connections / errors
+```
+
+主要端点：
 
 ```text
 GET  /health
 GET  /world
 GET  /snapshot
 GET  /stream
+WS   /ws/ticks
+POST /accounts
+GET  /accounts/:accountId
+POST /accounts/:accountId/players
+POST /sessions
+GET  /session
+POST /sessions/revoke
 GET  /players/:playerId
-POST /players
 POST /commands
 POST /offline
 GET  /offline/:playerId
@@ -137,156 +166,82 @@ POST /runtime/run
 POST /save
 POST /load
 GET  /saves
+GET  /admin/status
+GET  /admin/runtime
+GET  /admin/connections
+GET  /admin/audit
+GET  /admin/errors
 ```
 
-创建玩家：
-
-```bash
-curl -X POST http://127.0.0.1:8790/players \
-  -H 'Content-Type: application/json' \
-  -d '{"player":{"id":"api_player","name":"API Player"},"character":{"id":"api_hero","name":"API Hero","species":"human","locationId":"qingyun_city","resources":{"currency":100,"food":10}}}'
-```
-
-提交命令：
-
-```bash
-curl -X POST http://127.0.0.1:8790/commands \
-  -H 'Content-Type: application/json' \
-  -d '{"playerId":"api_player","command":{"type":"work","resource":"currency","amount":10}}'
-```
-
-安排离线命令：
-
-```bash
-curl -X POST http://127.0.0.1:8790/offline \
-  -H 'Content-Type: application/json' \
-  -d '{"playerId":"api_player","command":{"type":"train","amount":1,"durationTicks":2,"runsEveryTicks":1,"repeat":2}}'
-```
-
-推进 tick：
-
-```bash
-curl -X POST http://127.0.0.1:8790/tick \
-  -H 'Content-Type: application/json' \
-  -d '{"ticks":3}'
-```
-
-Tick stream 使用 Server-Sent Events：
-
-```bash
-curl http://127.0.0.1:8790/stream
-```
-
-后续客户端可以用这个流订阅：
+完整接口说明见：
 
 ```text
-hello
-ping
-tick
-runtime
-save
-load
-command
-offline.queued
-player.created
+world-engine/API.md
 ```
 
-## 9. 地图、探索、委托、背包闭环
-
-典型玩法：
-
-```text
-地图
-商店
-购买 shop_qingyun_city_general wooden_sword 1
-购买 shop_qingyun_city_general healing_pill 2
-背包
-装备 wooden_sword
-使用 healing_pill
-委托
-接取 board_mist_forest_gather_wood
-探索
-日志
-采集 wood 5
-等待 1
-任务
-领取
-报告
-```
-
-## 10. Query Engine 常用查询
-
-```js
-queryWorld(world, { type: 'map', playerId: 'player_id' })
-queryWorld(world, { type: 'map', locationId: 'mist_forest' })
-queryWorld(world, { type: 'quests', playerId: 'player_id' })
-queryWorld(world, { type: 'tutorial', playerId: 'player_id' })
-queryWorld(world, { type: 'journal', playerId: 'player_id' })
-queryWorld(world, { type: 'encounters', playerId: 'player_id' })
-queryWorld(world, { type: 'board', playerId: 'player_id' })
-queryWorld(world, { type: 'inventory', playerId: 'player_id' })
-queryWorld(world, { type: 'shop', playerId: 'player_id' })
-queryWorld(world, { type: 'offline', playerId: 'player_id' })
-```
-
-## 11. 导出前端可读快照 JSON
+## 5. 世界运行与持久化
 
 ```bash
-npm run snapshot
+npm run runtime
 ```
 
-Snapshot 主要字段：
+当前服务层：
 
 ```text
-world
-counters
-population
-players
-commands
-offlineCommands
-quests
-tutorials
-journals
-encounters
-questBoards
-items
-shops
-cities
-organizations
-civilizations
-technology
-infrastructure
-governance
-conflicts
-processes
-emergence
-information
-memories
-narrative
-limits
-recentReports
+persistence-engine.js        save / load / autosave / list saves
+offline-command-engine.js    离线命令队列和长时间动作
+runtime-engine.js            tick batch、自动存档和 runtime snapshot
+api-server-engine.js         HTTP、SSE、WebSocket 和客户端托管
+browser-client-engine.js     浏览器 dashboard 和统一玩法动作
 ```
 
-## 12. 浏览器查看世界快照
+## 6. 命令行试玩
+
+```bash
+npm run play
+npm run shell
+npm run shell:sample
+```
+
+Shell 支持中英文命令，包括：
+
+```text
+地图 / map
+委托 / board
+接取 / accept
+探索 / explore
+日志 / journal
+背包 / inventory
+商店 / shop
+购买 / buy
+装备 / equip
+使用 / use
+出售 / sell
+卸下 / unequip
+任务 / quests
+领取 / claim
+```
+
+## 7. Snapshot 和 Viewer
 
 ```bash
 npm run snapshot
 npm run viewer
 ```
 
-打开：
+浏览器打开：
 
 ```text
-http://localhost:8787/viewer/index.html
+http://127.0.0.1:8787/viewer/index.html
 ```
 
-## 13. 运行 1000 tick 手动压测
+## 8. 1000 tick 压测
 
 ```bash
 npm run stress
 ```
 
-## 14. 当前关键上限
+## 9. 当前关键上限
 
 ```text
 world.memory <= 1000
@@ -304,21 +259,9 @@ itemInstances <= 1000
 shops <= 500 snapshot limit
 ```
 
-## 15. 常见命令
+## 10. 常见命令
 
 ```bash
-npm test
-npm run demo
-npm run play
-npm run shell
-npm run shell:sample
-npm run snapshot
-npm run runtime
-npm run api
-npm run viewer
-npm run stress
-
-cd world-engine
 npm test
 npm run demo
 npm run play
