@@ -6,24 +6,23 @@ const S = {
   playerId: 'local_player',
   socket: null,
   refreshTimer: null,
+  refreshBusy: false,
   dashboard: null,
+  toastTimer: null,
+  wsRefreshTimer: null,
 };
+
 const $ = id => document.getElementById(id);
 
 window.addEventListener('DOMContentLoaded', () => {
-  S.token = localStorage.getItem('mud_token') || '';
-  S.accountId = localStorage.getItem('mud_account_id') || S.accountId;
-  S.playerId = localStorage.getItem('mud_player_id') || S.playerId;
-  $('accountId').value = S.accountId;
-  $('playerId').value = S.playerId;
-  $('tokenBox').value = S.token;
+  restoreLocalState();
 
   on('quickStartBtn', quickStart);
   on('createAccountBtn', createAccount);
   on('createSessionBtn', createSession);
   on('checkSessionBtn', checkSession);
   on('createPlayerBtn', createPlayer);
-  on('loadPlayerBtn', loadPlayer);
+  on('loadPlayerBtn', loadDashboard);
   on('loadPanelsBtn', loadDashboard);
   on('refreshWorldBtn', refreshWorld);
   on('tickBtn', tickWorld);
@@ -36,14 +35,61 @@ window.addEventListener('DOMContentLoaded', () => {
   on('connectWsBtn', connectWs);
   on('clearLogBtn', async () => { $('eventLog').textContent = ''; });
 
+  $('autoTickToggle').addEventListener('change', persistClientOptions);
   $('autoRefreshToggle').addEventListener('change', configureAutoRefresh);
   $('refreshSeconds').addEventListener('change', configureAutoRefresh);
+  $('savePath').addEventListener('change', persistClientOptions);
   document.addEventListener('click', handleGameActionClick);
-  refreshWorld();
+
+  refreshWorld().catch(showError);
+  resumeLocalSession();
+  configureAutoRefresh();
 });
 
+function restoreLocalState() {
+  S.token = localStorage.getItem('mud_token') || '';
+  S.accountId = localStorage.getItem('mud_account_id') || S.accountId;
+  S.playerId = localStorage.getItem('mud_player_id') || S.playerId;
+  $('accountId').value = S.accountId;
+  $('playerId').value = S.playerId;
+  $('tokenBox').value = S.token;
+  $('autoTickToggle').checked = localStorage.getItem('mud_auto_tick') !== 'false';
+  $('autoRefreshToggle').checked = localStorage.getItem('mud_auto_refresh') === 'true';
+  $('refreshSeconds').value = localStorage.getItem('mud_refresh_seconds') || '5';
+  $('savePath').value = localStorage.getItem('mud_save_path') || 'world-engine/output/local-client-save.json';
+}
+
+function persistClientOptions() {
+  localStorage.setItem('mud_auto_tick', String($('autoTickToggle').checked));
+  localStorage.setItem('mud_auto_refresh', String($('autoRefreshToggle').checked));
+  localStorage.setItem('mud_refresh_seconds', $('refreshSeconds').value);
+  localStorage.setItem('mud_save_path', $('savePath').value.trim());
+}
+
+async function resumeLocalSession() {
+  if (!S.token || !S.playerId) return;
+  try {
+    await checkSession();
+    await loadDashboard();
+    connectWs();
+    status('已恢复本地会话', true);
+  } catch (error) {
+    log('未恢复旧会话：' + error.message);
+  }
+}
+
 function on(id, fn) {
-  $(id).addEventListener('click', () => fn().catch(showError));
+  $(id).addEventListener('click', async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      await fn();
+    } catch (error) {
+      showError(error);
+    } finally {
+      button.disabled = false;
+    }
+  });
 }
 
 async function quickStart() {
@@ -68,13 +114,13 @@ async function quickStart() {
   const account = await call('/accounts/' + encodeURIComponent(S.accountId));
   if (!(account.data.playerIds || []).includes(S.playerId)) {
     await createPlayer();
-  } else {
-    await loadDashboard();
   }
 
+  await runGameAction({ type: 'start_adventure' }, { advance: false });
   connectWs();
-  await refreshWorld();
+  await refreshAll();
   status('已就绪', true);
+  toast('冒险已开始：已发放新手物品并启动教程', true);
   log('一键开始完成');
 }
 
@@ -87,6 +133,7 @@ async function createAccount() {
     roles: ['player'],
   });
   show(json);
+  toast('账号已创建', true);
   log('账号已创建：' + S.accountId);
   return json;
 }
@@ -99,6 +146,7 @@ async function createSession() {
   });
   setToken(json.data.token);
   show(json);
+  toast('Session 已创建', true);
   log('Session 已创建');
   return json;
 }
@@ -139,6 +187,7 @@ async function createPlayer() {
   };
   const json = await call('/accounts/' + encodeURIComponent(S.accountId) + '/players', 'POST', payload);
   show(json);
+  toast('角色已创建', true);
   log('角色已创建：' + S.playerId);
   await loadDashboard();
   return json;
@@ -159,10 +208,6 @@ async function refreshWorld() {
     ['commands', t.commands],
   ].map(([label, value]) => metric(label, value)).join('');
   return json;
-}
-
-async function loadPlayer() {
-  return loadDashboard();
 }
 
 async function loadDashboard() {
@@ -211,6 +256,7 @@ async function queueOffline() {
   if (type === 'work' || type === 'gather') command.resource = $('offlineArg').value.trim() || 'currency';
   const json = await call('/offline', 'POST', { playerId: S.playerId, command });
   show(json);
+  toast('离线任务已安排', true);
   log('离线任务已安排：' + type);
   await loadOffline();
   return json;
@@ -226,6 +272,7 @@ async function loadOffline() {
 async function tickWorld() {
   const json = await call('/tick', 'POST', { ticks: 1 });
   show(json);
+  toast('世界已推进 1 tick', true);
   log('世界推进 1 tick');
   await refreshAll();
   return json;
@@ -240,32 +287,43 @@ async function refreshSnapshot() {
 
 async function saveWorld() {
   const filePath = $('savePath').value.trim() || 'world-engine/output/local-client-save.json';
+  persistClientOptions();
   const json = await call('/save', 'POST', {
     filePath,
     options: { createBackup: true },
   });
   show(json);
+  toast('世界已保存', true);
   log('世界已保存：' + filePath);
   return json;
 }
 
 async function loadWorld() {
   const filePath = $('savePath').value.trim() || 'world-engine/output/local-client-save.json';
+  persistClientOptions();
   const json = await call('/load', 'POST', { filePath });
   show(json);
+  toast('世界已读取', true);
   log('世界已读取：' + filePath);
   await refreshAll();
   return json;
 }
 
 async function refreshAll() {
-  await refreshWorld();
-  if ($('playerId').value.trim()) await loadDashboard().catch(error => log('面板刷新失败：' + error.message));
+  if (S.refreshBusy) return;
+  S.refreshBusy = true;
+  try {
+    await refreshWorld();
+    if ($('playerId').value.trim()) await loadDashboard().catch(error => log('面板刷新失败：' + error.message));
+  } finally {
+    S.refreshBusy = false;
+  }
 }
 
 function configureAutoRefresh() {
   if (S.refreshTimer) clearInterval(S.refreshTimer);
   S.refreshTimer = null;
+  persistClientOptions();
   if (!$('autoRefreshToggle').checked) {
     log('自动刷新已关闭');
     return;
@@ -292,10 +350,19 @@ async function handleGameActionClick(event) {
 
 function actionFromButton(button) {
   const type = button.dataset.gameAction;
+  if (type === 'command') {
+    const command = {
+      type: button.dataset.commandType,
+      amount: Number(button.dataset.amount || 1),
+    };
+    if (button.dataset.resource) command.resource = button.dataset.resource;
+    if (button.dataset.locationId) command.locationId = button.dataset.locationId;
+    return { type, command };
+  }
   if (type === 'move') return { type, locationId: button.dataset.locationId };
   if (type === 'accept_board_quest') return { type, boardItemId: button.dataset.boardItemId };
   if (type === 'claim_quest') return { type, questId: button.dataset.questId };
-  if (type === 'claim_all_quests' || type === 'explore') return { type };
+  if (type === 'claim_all_quests' || type === 'explore' || type === 'start_adventure') return { type };
   if (type === 'equip_item' || type === 'use_item' || type === 'sell_item') {
     return { type, itemId: button.dataset.itemId, quantity: Number(button.dataset.quantity || 1) };
   }
@@ -308,28 +375,70 @@ function actionFromButton(button) {
       quantity: Number(button.dataset.quantity || 1),
     };
   }
+  if (type === 'cancel_offline') {
+    return { type, offlineCommandId: button.dataset.offlineCommandId };
+  }
   return { type };
 }
 
-async function runGameAction(action) {
+async function runGameAction(action, options = {}) {
   S.playerId = $('playerId').value.trim() || S.playerId;
   const json = await call('/players/' + encodeURIComponent(S.playerId) + '/actions', 'POST', action);
   show(json);
+
   if (json.data?.dashboard) {
     S.dashboard = json.data.dashboard;
     renderDashboard(json.data.dashboard);
-  } else {
-    await loadDashboard();
   }
+
+  const shouldAdvance = options.advance !== false && $('autoTickToggle').checked && actionNeedsTick(action, json);
+  if (shouldAdvance) {
+    try {
+      await call('/tick', 'POST', { ticks: 1 });
+      log('动作后自动推进 1 tick');
+      await loadDashboard();
+    } catch (error) {
+      log('动作已排队，当前账号不能主动推进世界：' + error.message);
+    }
+  }
+
   await refreshWorld();
+  toast(actionLabel(action.type) + '完成', true);
   log('玩法动作：' + action.type);
   return json;
+}
+
+function actionNeedsTick(action, json) {
+  if (!['command', 'move'].includes(action.type)) return false;
+  const statusValue = json.data?.result?.command?.status;
+  return statusValue === 'accepted';
+}
+
+function actionLabel(type) {
+  const labels = {
+    start_adventure: '冒险初始化',
+    command: '命令',
+    move: '移动',
+    explore: '探索',
+    accept_board_quest: '接取委托',
+    claim_quest: '领取奖励',
+    claim_all_quests: '领取奖励',
+    equip_item: '装备',
+    unequip_item: '卸下装备',
+    use_item: '使用物品',
+    buy_item: '购买',
+    sell_item: '出售',
+    cancel_offline: '取消离线任务',
+  };
+  return labels[type] || type;
 }
 
 function renderCharacter(data) {
   const entity = data?.activeEntity || {};
   const stats = entity.stats || {};
   const resources = entity.resources || {};
+  const tutorial = data?.tutorial || {};
+  const hint = tutorial.nextHint || '点击“一键开始冒险”启动新手任务。';
   $('characterPanel').innerHTML = card(entity.name || S.playerId, [
     '位置：' + esc(entity.locationId || '-'),
     bar('生命', stats.health, stats.maxHealth),
@@ -340,20 +449,32 @@ function renderCharacter(data) {
       'currency ' + (resources.currency || 0),
       'food ' + (resources.food || 0),
     ]),
+    '<div class="tutorial-hint"><strong>新手提示</strong>' + esc(hint) + '</div>',
+    '<div class="actions">' +
+      actionButton('工作', 'command', { commandType: 'work', resource: 'currency', amount: 10 }) +
+      actionButton('修炼', 'command', { commandType: 'train', amount: 2 }) +
+      actionButton('休息', 'command', { commandType: 'rest' }) +
+      actionButton('探索', 'explore') +
+    '</div>',
   ].join(''));
 }
 
 function renderMap(data) {
   const current = data?.current || data;
   if (!current?.id) return empty('mapPanel', '暂无地图数据');
-  const resourceBadges = Object.entries(current.resources || {}).map(([key, value]) => key + ' ' + value);
+  const resourceEntries = Object.entries(current.resources || {});
+  const resourceBadges = resourceEntries.map(([key, value]) => key + ' ' + value);
+  const gatherResource = resourceEntries.find(([, value]) => Number(value || 0) > 0)?.[0] || 'food';
   const exits = (current.neighbors || []).map(neighbor => {
     return '<div class="exit-row"><span>' + esc(neighbor.name || neighbor.id) + ' · danger ' + esc(neighbor.danger || 0) + '</span>' + actionButton('前往', 'move', { locationId: neighbor.id }) + '</div>';
   }).join('');
   $('mapPanel').innerHTML = card(current.name || current.id, [
     '类型：' + esc(current.type || '-') + ' · danger ' + esc(current.danger || 0),
     resourceBadges.length ? badges(resourceBadges) : '',
-    '<div class="actions">' + actionButton('探索当前地点', 'explore') + '</div>',
+    '<div class="actions">' +
+      actionButton('探索当前地点', 'explore') +
+      actionButton('采集 ' + gatherResource, 'command', { commandType: 'gather', resource: gatherResource, amount: 3 }) +
+    '</div>',
     exits || '<div class="empty">没有出口</div>',
   ].join(''));
 }
@@ -434,7 +555,10 @@ function renderOffline(data) {
   $('offlineProgress').innerHTML = commands.slice(0, 10).map(command => {
     const completed = Number(command.completedRuns || 0);
     const repeat = Math.max(1, Number(command.repeat || 1));
-    return card(command.type || command.id, '状态：' + esc(command.status || '-') + bar('进度', completed, repeat));
+    const cancel = ['queued', 'running'].includes(command.status)
+      ? '<div class="actions">' + actionButton('取消任务', 'cancel_offline', { offlineCommandId: command.id }, 'danger') + '</div>'
+      : '';
+    return card(command.type || command.id, '状态：' + esc(command.status || '-') + '<br>下次执行：tick ' + esc(command.nextRunAt ?? '-') + bar('进度', completed, repeat) + cancel);
   }).join('');
 }
 
@@ -447,10 +571,15 @@ function connectWs() {
     log('ws ' + event.data);
     let payload = null;
     try { payload = JSON.parse(event.data); } catch (_) {}
-    if (payload && ['tick', 'browser.action', 'load'].includes(payload.type)) refreshAll().catch(showError);
+    if (payload && ['tick', 'browser.action', 'load', 'offline.queued'].includes(payload.type)) scheduleWsRefresh();
   };
   S.socket.onclose = () => status('WebSocket 已关闭');
   S.socket.onerror = () => status('WebSocket 错误', false);
+}
+
+function scheduleWsRefresh() {
+  if (S.wsRefreshTimer) clearTimeout(S.wsRefreshTimer);
+  S.wsRefreshTimer = setTimeout(() => refreshAll().catch(showError), 250);
 }
 
 async function call(path, method = 'GET', body = null) {
@@ -518,8 +647,17 @@ function status(text, ok) {
   $('connectionStatus').className = 'status-pill ' + (ok === true ? 'ok' : ok === false ? 'bad' : '');
 }
 
+function toast(text, ok = true) {
+  const element = $('toast');
+  element.textContent = text;
+  element.className = 'toast show ' + (ok ? 'ok' : 'bad');
+  if (S.toastTimer) clearTimeout(S.toastTimer);
+  S.toastTimer = setTimeout(() => { element.className = 'toast'; }, 2600);
+}
+
 function showError(error) {
   status('错误', false);
+  toast(error.message, false);
   log('ERROR ' + error.message);
   $('rawOutput').textContent = error.stack || error.message;
 }
