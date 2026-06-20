@@ -28,6 +28,7 @@ const tests = [
   'api-permission-test.js',
   'api-admin-audit-test.js',
   'client-web-test.js',
+  'browser-gameplay-test.js',
   'stability-100-test.js',
 ];
 
