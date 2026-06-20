@@ -10,12 +10,29 @@
   <header class="topbar">
     <div>
       <h1>MUD 世界模拟器</h1>
-      <p>本地网页版客户端 / Local Browser Client</p>
+      <p>本地可玩原型 / Local Playable Prototype</p>
     </div>
-    <div class="status-pill" id="connectionStatus">未连接</div>
+    <div class="top-actions">
+      <label class="inline-control"><input id="autoRefreshToggle" type="checkbox" />自动刷新</label>
+      <select id="refreshSeconds" aria-label="自动刷新间隔">
+        <option value="3">3 秒</option>
+        <option value="5" selected>5 秒</option>
+        <option value="10">10 秒</option>
+      </select>
+      <div class="status-pill" id="connectionStatus">未连接</div>
+    </div>
   </header>
 
   <main class="layout">
+    <section class="panel onboarding">
+      <h2>开始游戏</h2>
+      <p class="hint">一键创建本地账号、Session 和角色，然后加载全部游戏面板。</p>
+      <div class="actions">
+        <button id="quickStartBtn" class="primary">一键开始</button>
+        <button id="connectWsBtn">连接实时事件</button>
+      </div>
+    </section>
+
     <section class="panel">
       <h2>账号 / Session</h2>
       <div class="grid two">
@@ -55,6 +72,13 @@
         <button id="tickBtn">推进 1 tick</button>
         <button id="snapshotBtn">刷新快照</button>
       </div>
+      <div class="grid two save-grid">
+        <label>存档路径<input id="savePath" value="world-engine/output/local-client-save.json" /></label>
+        <div class="actions compact">
+          <button id="saveWorldBtn">保存世界</button>
+          <button id="loadWorldBtn">读取世界</button>
+        </div>
+      </div>
     </section>
 
     <section class="panel hero-card">
@@ -68,8 +92,16 @@
     </section>
 
     <section class="panel">
-      <h2>任务</h2>
+      <div class="section-title">
+        <h2>任务</h2>
+        <button class="small" data-game-action="claim_all_quests">领取全部完成奖励</button>
+      </div>
       <div id="questPanel" class="card-list">暂无任务</div>
+    </section>
+
+    <section class="panel">
+      <h2>地点委托</h2>
+      <div id="boardPanel" class="card-list">暂无委托</div>
     </section>
 
     <section class="panel">
@@ -104,6 +136,7 @@
       <label>数量<input id="commandAmount" type="number" value="5" /></label>
       <div class="actions">
         <button id="sendCommandBtn">执行命令</button>
+        <button data-game-action="explore">探索当前地点</button>
       </div>
     </section>
 
@@ -129,13 +162,13 @@
         <button id="queueOfflineBtn">安排离线任务</button>
         <button id="loadOfflineBtn">刷新离线任务</button>
       </div>
+      <div id="offlineProgress" class="card-list"></div>
       <pre id="offlineView">暂无离线任务</pre>
     </section>
 
     <section class="panel wide">
       <h2>实时连接</h2>
       <div class="actions">
-        <button id="connectWsBtn">连接 WebSocket</button>
         <button id="clearLogBtn">清空日志</button>
       </div>
       <pre id="eventLog"></pre>
