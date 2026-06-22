@@ -3,7 +3,7 @@
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const tests = ['stability-100-test.js'];
+const tests = ['world-template-test.js'];
 const results = [];
 
 for (const test of tests) {
