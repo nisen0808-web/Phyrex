@@ -4,8 +4,37 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const tests = [
+  'smoke-test.js',
+  'information-memory-test.js',
+  'identity-culture-test.js',
+  'religion-civilization-test.js',
+  'desire-opportunity-test.js',
+  'process-emergence-test.js',
+  'governance-conflict-test.js',
+  'technology-infrastructure-test.js',
+  'snapshot-test.js',
+  'viewer-test.js',
+  'player-command-test.js',
+  'shell-engine-test.js',
+  'shell-script-test.js',
+  'quest-tutorial-report-test.js',
+  'map-alias-test.js',
+  'query-content-test.js',
+  'journal-encounter-board-test.js',
+  'item-inventory-shop-test.js',
+  'persistence-offline-runtime-test.js',
+  'api-server-test.js',
+  'account-session-api-test.js',
+  'api-permission-test.js',
+  'api-admin-audit-test.js',
+  'client-web-test.js',
+  'browser-gameplay-test.js',
+  'browser-onboarding-test.js',
   'browser-character-control-test.js',
   'runtime-loop-test.js',
+  'browser-admin-console-test.js',
+  'world-template-test.js',
+  'stability-100-test.js',
 ];
 
 const results = [];
