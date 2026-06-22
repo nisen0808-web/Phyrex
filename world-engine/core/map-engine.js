@@ -66,12 +66,17 @@ function createLocationMap(world, locationId, options = {}) {
 
 function createPlayerMap(world, playerId, options = {}) {
   const player = world.players?.byId?.[playerId];
-  const entity = player?.activeEntityId ? world.entities?.[player.activeEntityId] : null;
-  const locationId = entity?.locationId || player?.observerLocationId || Object.keys(world.locations || {})[0] || null;
+  const activeEntity = player?.activeEntityId ? world.entities?.[player.activeEntityId] : null;
+  const observing = player?.controlMode === 'observer';
+  const locationId = observing
+    ? player?.observerLocationId || activeEntity?.locationId || Object.keys(world.locations || {})[0] || null
+    : activeEntity?.locationId || player?.observerLocationId || Object.keys(world.locations || {})[0] || null;
   if (!locationId) return null;
   return {
     playerId,
-    activeEntityId: entity?.id || null,
+    controlMode: player?.controlMode || 'character',
+    activeEntityId: activeEntity?.id || null,
+    observerLocationId: player?.observerLocationId || null,
     currentLocationId: locationId,
     current: createLocationMap(world, locationId, options),
   };
