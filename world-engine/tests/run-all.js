@@ -33,6 +33,7 @@ const tests = [
   'browser-character-control-test.js',
   'runtime-loop-test.js',
   'browser-admin-console-test.js',
+  'browser-save-manager-test.js',
   'world-template-test.js',
   'stability-100-test.js',
 ];

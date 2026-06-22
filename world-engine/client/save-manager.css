@@ -1,0 +1,198 @@
+.save-manager-panel {
+  border-color: rgba(88, 166, 255, 0.45);
+  background: linear-gradient(135deg, rgba(88, 166, 255, 0.11), rgba(22, 27, 34, 0.96));
+}
+
+.save-manager-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(13, 17, 23, 0.72);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.save-manager-status::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.save-manager-status.ready {
+  color: var(--ok);
+  border-color: rgba(63, 185, 80, 0.5);
+}
+
+.save-manager-status.loading {
+  color: var(--accent);
+  border-color: rgba(88, 166, 255, 0.5);
+}
+
+.save-manager-status.restricted,
+.save-manager-status.error {
+  color: var(--bad);
+  border-color: rgba(248, 81, 73, 0.5);
+}
+
+.save-manager-grid {
+  margin-top: 14px;
+}
+
+.save-notes-label {
+  margin-top: 10px;
+}
+
+.save-manager-actions {
+  align-items: center;
+}
+
+.save-autosave-status {
+  margin-top: 14px;
+}
+
+.save-autosave-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.75fr) minmax(320px, 1.25fr);
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #0b1018;
+}
+
+.save-autosave-card.enabled {
+  border-color: rgba(63, 185, 80, 0.38);
+}
+
+.save-autosave-card.restricted {
+  border-color: rgba(248, 81, 73, 0.35);
+}
+
+.save-autosave-card strong,
+.save-autosave-card small {
+  display: block;
+}
+
+.save-autosave-card small {
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+.save-autosave-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.save-list-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  margin-bottom: 8px;
+}
+
+.save-list-heading h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.save-list {
+  display: grid;
+  gap: 9px;
+}
+
+.save-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #0b1018;
+}
+
+.save-card:hover {
+  border-color: rgba(88, 166, 255, 0.45);
+}
+
+.save-card.unreadable {
+  border-color: rgba(248, 81, 73, 0.32);
+}
+
+.save-card-main {
+  min-width: 0;
+}
+
+.save-card-main strong,
+.save-card-main small {
+  display: block;
+}
+
+.save-card-main small {
+  margin-top: 4px;
+  color: var(--muted);
+  word-break: break-word;
+}
+
+.save-card-main p {
+  margin-top: 8px;
+  color: var(--text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.save-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.save-manager-error {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid rgba(248, 81, 73, 0.38);
+  border-radius: 12px;
+  background: rgba(248, 81, 73, 0.06);
+  color: var(--bad);
+}
+
+.save-manager-error span {
+  color: var(--muted);
+  word-break: break-word;
+}
+
+@media (max-width: 840px) {
+  .save-autosave-card {
+    grid-template-columns: 1fr;
+  }
+
+  .save-card {
+    flex-direction: column;
+  }
+
+  .save-card-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 560px) {
+  .save-autosave-meta {
+    grid-template-columns: 1fr;
+  }
+}

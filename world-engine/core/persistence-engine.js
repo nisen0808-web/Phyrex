@@ -83,14 +83,20 @@ function listSaves(directory) {
       let header = {};
       try {
         const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+        const metadata = parsed.metadata && typeof parsed.metadata === 'object' && !Array.isArray(parsed.metadata)
+          ? { ...parsed.metadata }
+          : {};
         header = {
           schemaVersion: parsed.schemaVersion,
           worldId: parsed.worldId || parsed.world?.id,
           tick: parsed.tick ?? parsed.world?.tick,
           savedAt: parsed.savedAt,
+          metadata,
+          label: metadata.label || metadata.name || null,
+          reason: metadata.reason || null,
         };
       } catch (_) {
-        header = { unreadable: true };
+        header = { unreadable: true, metadata: {} };
       }
       return { file, name, size: stat.size, mtimeMs: stat.mtimeMs, ...header };
     })
