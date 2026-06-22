@@ -4,14 +4,10 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const tests = [
-  'journal-encounter-board-test.js',
-  'item-inventory-shop-test.js',
-  'persistence-offline-runtime-test.js',
-  'api-server-test.js',
-  'account-session-api-test.js',
-  'api-permission-test.js',
-  'api-admin-audit-test.js',
-  'client-web-test.js',
+  'browser-gameplay-test.js',
+  'browser-onboarding-test.js',
+  'browser-character-control-test.js',
+  'runtime-loop-test.js',
 ];
 
 const results = [];
@@ -34,6 +30,4 @@ for (const test of tests) {
 const failed = results.filter(result => !result.passed);
 console.log(`world-engine test runner completed ${tests.length} tests: ${tests.length - failed.length} passed, ${failed.length} failed`);
 
-if (failed.length) {
-  process.exitCode = 1;
-}
+if (failed.length) process.exitCode = 1;
