@@ -31,6 +31,8 @@ start-local-web.bat
 商店购买
 离线任务与进度
 保存和读取世界
+存档列表、名称、备注和读取确认
+持续运行自动存档状态
 自动刷新
 WebSocket 实时事件
 多角色创建与切换
@@ -124,6 +126,33 @@ POST /admin/loop/step
 
 可配置循环间隔、每轮 tick 数、自动存档间隔和存档路径。
 
+## 本地存档管理
+
+浏览器中的“本地存档管理”面板使用：
+
+```text
+POST /save
+POST /load
+GET  /saves?dir=<directory>
+GET  /admin/loop
+```
+
+面板支持：
+
+```text
+保存路径和存档目录
+显示名称和备注
+生成带时间戳的新路径
+存档元数据列表
+文件大小、世界 ID、tick 和保存原因
+读取前确认
+选择已有存档作为快速保存路径
+显示持续运行自动存档间隔、路径和最近状态
+可选自动刷新
+```
+
+存档列表会返回 `metadata`、`label` 和 `reason`，旧存档没有元数据时仍可正常列出。
+
 ## GM / 运维控制台
 
 浏览器会聚合：
@@ -154,7 +183,7 @@ API 请求与错误计数
 ```text
 player 只能访问自己的 dashboard 和 actions
 gm/admin 可以访问任意玩家
-gm/admin 才能推进 tick、保存和读档
+gm/admin 才能推进 tick、保存、列出存档和读档
 gm/admin 才能控制持续世界运行
 gm/admin 才能打开运维控制台数据
 ```
