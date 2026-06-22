@@ -21,6 +21,8 @@ async function main() {
     assert.ok(index.text.includes('/client/runtime-controls.css'), 'index should reference runtime control styles');
     assert.ok(index.text.includes('/client/character-controls.js'), 'index should reference character controls');
     assert.ok(index.text.includes('/client/character-controls.css'), 'index should reference character control styles');
+    assert.ok(index.text.includes('/client/admin-console.js'), 'index should reference admin console');
+    assert.ok(index.text.includes('/client/admin-console.css'), 'index should reference admin console styles');
     assert.ok(index.text.includes('quickStartBtn'), 'index should include quick start');
     assert.ok(index.text.includes('saveWorldBtn'), 'index should include save button');
     assert.ok(index.text.includes('loadWorldBtn'), 'index should include load button');
@@ -55,6 +57,13 @@ async function main() {
     assert.ok(characterJs.text.includes('observer_mode'), 'character controls should enter observer mode');
     assert.ok(characterJs.text.includes('renderControlledCharacters'), 'character controls should render controlled characters');
 
+    const adminJs = await request(base, '/client/admin-console.js');
+    assert.strictEqual(adminJs.statusCode, 200, 'admin-console.js should be served');
+    assert.ok(adminJs.headers['content-type'].includes('application/javascript'), 'admin-console.js content type should be JavaScript');
+    assert.ok(adminJs.text.includes('refreshAdminConsole'), 'admin console should refresh operational data');
+    assert.ok(adminJs.text.includes('renderAdminAudit'), 'admin console should render API audit data');
+    assert.ok(adminJs.text.includes('renderAdminErrors'), 'admin console should render API errors');
+
     const css = await request(base, '/client/style.css');
     assert.strictEqual(css.statusCode, 200, 'style.css should be served');
     assert.ok(css.headers['content-type'].includes('text/css'), 'style.css content type should be CSS');
@@ -71,6 +80,12 @@ async function main() {
     assert.ok(characterCss.headers['content-type'].includes('text/css'), 'character-controls.css content type should be CSS');
     assert.ok(characterCss.text.includes('.character-control-row'), 'character CSS should style character rows');
     assert.ok(characterCss.text.includes('.character-manager-grid'), 'character CSS should style manager grid');
+
+    const adminCss = await request(base, '/client/admin-console.css');
+    assert.strictEqual(adminCss.statusCode, 200, 'admin-console.css should be served');
+    assert.ok(adminCss.headers['content-type'].includes('text/css'), 'admin-console.css content type should be CSS');
+    assert.ok(adminCss.text.includes('.admin-console-panel'), 'admin CSS should style the console panel');
+    assert.ok(adminCss.text.includes('.admin-table'), 'admin CSS should style the audit table');
 
     const missing = await request(base, '/client/not-found.js');
     assert.strictEqual(missing.statusCode, 404, 'missing client asset should return 404');
