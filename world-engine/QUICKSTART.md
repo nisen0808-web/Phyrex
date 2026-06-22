@@ -8,7 +8,7 @@ cd Phyrex
 npm test
 ```
 
-当前默认测试共 26 个：
+当前默认测试共 31 个：
 
 ```text
 smoke-test.js
@@ -36,6 +36,11 @@ api-permission-test.js
 api-admin-audit-test.js
 client-web-test.js
 browser-gameplay-test.js
+browser-onboarding-test.js
+browser-character-control-test.js
+runtime-loop-test.js
+browser-admin-console-test.js
+world-template-test.js
 stability-100-test.js
 ```
 
@@ -69,10 +74,14 @@ start-local-web.bat
 查看背包、装备、卸下和使用物品
 查看商店并购买、出售物品
 安排离线 work / train / gather / rest
-离线任务进度
+离线任务进度和取消
 保存和读取世界
 自动刷新
 WebSocket 实时事件
+创建和切换多个受控角色
+观察者模式
+持续世界运行、暂停、停止和单步推进
+GM / 运维状态、连接、审计和错误面板
 ```
 
 ## 3. 浏览器客户端核心 API
@@ -104,6 +113,11 @@ unequip_item
 use_item
 buy_item
 sell_item
+cancel_offline
+start_adventure
+create_character
+switch_character
+observer_mode
 ```
 
 示例：
@@ -139,8 +153,9 @@ Bearer token
 Player binding
 player / gm / admin 权限
 GM 世界控制
+持续世界运行控制
 API audit
-Admin status / runtime / connections / errors
+Admin status / runtime / loop / connections / audit / errors
 ```
 
 主要端点：
@@ -168,6 +183,12 @@ POST /load
 GET  /saves
 GET  /admin/status
 GET  /admin/runtime
+GET  /admin/loop
+POST /admin/loop/start
+POST /admin/loop/pause
+POST /admin/loop/stop
+POST /admin/loop/config
+POST /admin/loop/step
 GET  /admin/connections
 GET  /admin/audit
 GET  /admin/errors
@@ -191,6 +212,7 @@ npm run runtime
 persistence-engine.js        save / load / autosave / list saves
 offline-command-engine.js    离线命令队列和长时间动作
 runtime-engine.js            tick batch、自动存档和 runtime snapshot
+runtime-loop-engine.js       定时持续运行、暂停、停止、单步和自动存档
 api-server-engine.js         HTTP、SSE、WebSocket 和客户端托管
 browser-client-engine.js     浏览器 dashboard 和统一玩法动作
 ```
@@ -257,6 +279,8 @@ encounters <= 300 per player
 questBoards <= 500 snapshot limit
 itemInstances <= 1000
 shops <= 500 snapshot limit
+API audit log <= 1000
+API errors <= 200
 ```
 
 ## 10. 常见命令
