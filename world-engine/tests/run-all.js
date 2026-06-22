@@ -4,7 +4,8 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const tests = [
-  'browser-admin-console-test.js',
+  'browser-character-control-test.js',
+  'runtime-loop-test.js',
 ];
 
 const results = [];
