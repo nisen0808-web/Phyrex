@@ -6,6 +6,7 @@
   <title>MUD 世界模拟器 - 本地客户端</title>
   <link rel="stylesheet" href="/client/style.css" />
   <link rel="stylesheet" href="/client/runtime-controls.css" />
+  <link rel="stylesheet" href="/client/character-controls.css" />
 </head>
 <body>
   <header class="topbar">
@@ -86,6 +87,52 @@
     <section class="panel hero-card">
       <h2>角色状态</h2>
       <div id="characterPanel" class="card-list">暂无角色状态</div>
+    </section>
+
+    <section class="panel wide character-manager">
+      <div class="section-title">
+        <div>
+          <h2>多角色控制</h2>
+          <p class="hint">同一个玩家可控制多个角色，并可在角色模式和观察者模式之间切换。</p>
+        </div>
+      </div>
+      <div id="controlModePanel" class="card-list"></div>
+      <div class="character-manager-grid">
+        <div class="character-manager-block">
+          <h3>账号中的玩家</h3>
+          <div id="accountPlayersPanel"><div class="empty">等待账号数据</div></div>
+        </div>
+        <div class="character-manager-block">
+          <h3>当前玩家的受控角色</h3>
+          <div id="controlledCharactersPanel"><div class="empty">等待角色数据</div></div>
+        </div>
+      </div>
+      <div class="character-create-grid">
+        <label>新角色 ID<input id="newCharacterId" value="local_player_character_2" /></label>
+        <label>新角色名<input id="newCharacterName" value="角色 2" /></label>
+        <label>种族
+          <select id="newCharacterSpecies">
+            <option value="human">human</option>
+          </select>
+        </label>
+        <label>出生地点
+          <select id="newCharacterLocation">
+            <option value="qingyun_city">Qingyun City</option>
+          </select>
+        </label>
+      </div>
+      <div class="character-create-actions">
+        <label class="inline-control"><input id="newCharacterActive" type="checkbox" />创建后立即切换</label>
+        <button id="createAdditionalCharacterBtn" class="primary">创建额外角色</button>
+      </div>
+      <div class="character-observer-controls">
+        <label>观察地点
+          <select id="observerLocationId">
+            <option value="qingyun_city">Qingyun City</option>
+          </select>
+        </label>
+        <button id="observerModeBtn">进入观察者模式</button>
+      </div>
     </section>
 
     <section class="panel">
@@ -184,6 +231,7 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/client/app.js"></script>
+  <script src="/client/character-controls.js"></script>
   <script src="/client/runtime-controls.js"></script>
 </body>
 </html>
