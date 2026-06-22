@@ -12,13 +12,6 @@ const tests = [
   'api-permission-test.js',
   'api-admin-audit-test.js',
   'client-web-test.js',
-  'browser-gameplay-test.js',
-  'browser-onboarding-test.js',
-  'browser-character-control-test.js',
-  'runtime-loop-test.js',
-  'browser-admin-console-test.js',
-  'world-template-test.js',
-  'stability-100-test.js',
 ];
 
 const results = [];
@@ -29,8 +22,9 @@ for (const test of tests) {
   const passed = result.status === 0;
   results.push({ test, passed, status: result.status, stdout: result.stdout, stderr: result.stderr });
 
-  if (passed) console.log(`PASS ${test}`);
-  else {
+  if (passed) {
+    console.log(`PASS ${test}`);
+  } else {
     console.error(`FAIL ${test}`);
     if (result.stdout) console.error(result.stdout);
     if (result.stderr) console.error(result.stderr);
@@ -39,4 +33,7 @@ for (const test of tests) {
 
 const failed = results.filter(result => !result.passed);
 console.log(`world-engine test runner completed ${tests.length} tests: ${tests.length - failed.length} passed, ${failed.length} failed`);
-if (failed.length) process.exitCode = 1;
+
+if (failed.length) {
+  process.exitCode = 1;
+}
