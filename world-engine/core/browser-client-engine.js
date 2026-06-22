@@ -2,7 +2,13 @@
 
 const { queryWorld } = require('./query-engine');
 const { executePlayerCommand } = require('./command-engine');
-const { getActivePlayerCharacter } = require('./player-engine');
+const {
+  getActivePlayerCharacter,
+  createPlayerCharacter,
+  switchPlayerCharacter,
+  setPlayerObserverMode,
+} = require('./player-engine');
+const { getAccountByPlayer, getAccountView } = require('./account-session-engine');
 const { processQuestsTick, getQuest, claimQuestReward, claimCompletedPlayerQuests } = require('./quest-engine');
 const { startTutorial } = require('./tutorial-engine');
 const { acceptBoardQuest } = require('./quest-board-engine');
@@ -26,13 +32,18 @@ const BROWSER_ACTION_TYPES = {
   BUY_ITEM: 'buy_item',
   SELL_ITEM: 'sell_item',
   CANCEL_OFFLINE: 'cancel_offline',
+  CREATE_CHARACTER: 'create_character',
+  SWITCH_CHARACTER: 'switch_character',
+  OBSERVER_MODE: 'observer_mode',
 };
 
 function getPlayerDashboard(world, playerId, options = {}) {
   const limit = Number(options.limit || 20);
+  const account = getAccountByPlayer(world, playerId);
   return {
     playerId,
     tick: world.tick,
+    account: account ? getAccountView(world, account.id) : null,
     player: queryWorld(world, { type: 'player', playerId }),
     map: queryWorld(world, { type: 'map', playerId }),
     quests: queryWorld(world, { type: 'quests', playerId, options: { limit } }),
@@ -102,6 +113,36 @@ function executeBrowserAction(world, playerId, input = {}) {
     if (!command) throw new Error(`Missing offline command ${offlineCommandId}`);
     if (command.playerId !== playerId) throw new Error(`Offline command ${offlineCommandId} does not belong to player ${playerId}`);
     result = cancelOfflineCommand(world, offlineCommandId, input.reason || 'cancelled_by_player');
+  } else if (type === BROWSER_ACTION_TYPES.CREATE_CHARACTER) {
+    const character = { ...(input.character || {}) };
+    if (!character.id && input.entityId) character.id = input.entityId;
+    if (!character.name && input.name) character.name = input.name;
+    if (!character.locationId && input.locationId) character.locationId = input.locationId;
+    if (!character.species && input.species) character.species = input.species;
+    if (input.active !== undefined) character.active = input.active;
+    const entity = createPlayerCharacter(world, playerId, character, input.options || {});
+    result = {
+      entityId: entity.id,
+      name: entity.name,
+      locationId: entity.locationId,
+      active: world.players?.byId?.[playerId]?.activeEntityId === entity.id,
+    };
+  } else if (type === BROWSER_ACTION_TYPES.SWITCH_CHARACTER) {
+    const entityId = required(input, 'entityId');
+    const player = switchPlayerCharacter(world, playerId, entityId);
+    result = {
+      entityId,
+      activeEntityId: player.activeEntityId,
+      controlMode: player.controlMode,
+      status: player.status,
+    };
+  } else if (type === BROWSER_ACTION_TYPES.OBSERVER_MODE) {
+    const player = setPlayerObserverMode(world, playerId, input.locationId || null);
+    result = {
+      controlMode: player.controlMode,
+      observerLocationId: player.observerLocationId,
+      status: player.status,
+    };
   } else {
     throw new Error(`Unknown browser action ${type}`);
   }
