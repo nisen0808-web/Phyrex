@@ -118,7 +118,8 @@ function main() {
   assert.strictEqual(Object.keys(reset.accounts.byPlayer).length, 0);
   assert.ok(validateSession(reset, session.token));
   assert.ok(reset.apiAudit.log.some(entry => entry.path === '/before-reset'));
-  assert.strictEqual(reset.players, undefined);
+  assert.strictEqual(reset.players?.byId?.old_player, undefined);
+  assert.strictEqual(Object.keys(reset.players?.byId || {}).length, 0);
   assert.strictEqual(reset.entities.old_hero, undefined);
 
   const snapshot = createWorldSnapshot(reset);
