@@ -1,0 +1,105 @@
+.character-manager {
+  border-color: rgba(188, 140, 255, .35);
+  background: linear-gradient(135deg, rgba(132, 84, 255, .09), rgba(22, 27, 34, .96));
+}
+
+.character-manager-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.character-manager-block {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(11, 16, 24, .72);
+}
+
+.character-manager-block h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.character-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(22, 27, 34, .78);
+}
+
+.character-control-row + .character-control-row {
+  margin-top: 8px;
+}
+
+.character-control-row.active {
+  border-color: rgba(63, 185, 80, .55);
+  background: rgba(63, 185, 80, .08);
+}
+
+.character-control-row strong {
+  display: block;
+  color: var(--text);
+}
+
+.character-control-row small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.character-create-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.character-create-actions {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.character-create-actions label.inline-control {
+  min-height: 38px;
+}
+
+.character-observer-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin-top: 12px;
+}
+
+#controlModePanel .mini-card {
+  margin-top: 0;
+}
+
+@media (max-width: 960px) {
+  .character-create-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .character-manager-grid,
+  .character-create-grid,
+  .character-observer-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .character-control-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
