@@ -48,7 +48,7 @@ function main() {
   assert.ok(frontier.entities.frontier_cultivator_1.organizationIds.includes(sect.id), 'entity membership index should be populated');
   assert.strictEqual(sect.roles.frontier_cultivator_0, 'leader', 'leader role should not be overwritten');
 
-  const crossroads = createWorldFromTemplate(registry, 'merchant_crossroads', { seedTicks: 1 });
+  const crossroads = createWorldFromTemplate(registry, 'merchant_crossroads', { sedTicks: 1 });
   assert.ok(Object.keys(crossroads.locations).length >= 4, 'crossroads should include locations');
   assert.ok(Object.keys(crossroads.entities).length >= 14, 'crossroads should include population');
   assert.notStrictEqual(crossroads.locations.jade_harbor.resources.food, frontier.locations.qingyun_city.resources.food, 'templates should create independent data');
@@ -99,7 +99,7 @@ function main() {
   assert.deepStrictEqual(reset.accounts.byId.template_admin.playerIds, [], 'reset should clear old player links');
   assert.strictEqual(Object.keys(reset.accounts.byPlayer).length, 0, 'reset should clear reverse player links');
   assert.ok(validateSession(reset, session.token), 'preserved session should remain valid');
-  assert.ok(reset.apiAudit.entries.length >= 1, 'reset should preserve API audit log');
+  assert.ok(reset.apiAudit.log.length >= 1, 'reset should preserve API audit log');
   assert.strictEqual(reset.players, undefined, 'old players should not leak into reset world');
   assert.strictEqual(reset.entities.old_hero, undefined, 'old entities should not leak into reset world');
 
