@@ -25,6 +25,8 @@ async function main() {
     assert.ok(index.text.includes('/client/admin-console.css'), 'index should reference admin console styles');
     assert.ok(index.text.includes('/client/save-manager.js'), 'index should reference save manager');
     assert.ok(index.text.includes('/client/save-manager.css'), 'index should reference save manager styles');
+    assert.ok(index.text.includes('/client/world-template-manager.js'), 'index should reference world template manager');
+    assert.ok(index.text.includes('/client/world-template-manager.css'), 'index should reference world template manager styles');
     assert.ok(index.text.includes('quickStartBtn'), 'index should include quick start');
     assert.ok(index.text.includes('saveWorldBtn'), 'index should include save button');
     assert.ok(index.text.includes('loadWorldBtn'), 'index should include load button');
@@ -73,6 +75,14 @@ async function main() {
     assert.ok(saveManagerJs.text.includes('createManagedSave'), 'save manager should create named saves');
     assert.ok(saveManagerJs.text.includes('renderSaveAutosaveStatus'), 'save manager should render autosave status');
 
+    const templateManagerJs = await request(base, '/client/world-template-manager.js');
+    assert.strictEqual(templateManagerJs.statusCode, 200, 'world-template-manager.js should be served');
+    assert.ok(templateManagerJs.headers['content-type'].includes('application/javascript'), 'world-template-manager.js content type should be JavaScript');
+    assert.ok(templateManagerJs.text.includes('refreshWorldTemplates'), 'template manager should refresh templates');
+    assert.ok(templateManagerJs.text.includes('resetWorldFromSelectedTemplate'), 'template manager should reset the world');
+    assert.ok(templateManagerJs.text.includes('recreateTemplatePlayer'), 'template manager should recreate a player');
+    assert.ok(templateManagerJs.text.includes('window.confirm'), 'template manager should confirm destructive reset');
+
     const css = await request(base, '/client/style.css');
     assert.strictEqual(css.statusCode, 200, 'style.css should be served');
     assert.ok(css.headers['content-type'].includes('text/css'), 'style.css content type should be CSS');
@@ -101,6 +111,12 @@ async function main() {
     assert.ok(saveManagerCss.headers['content-type'].includes('text/css'), 'save-manager.css content type should be CSS');
     assert.ok(saveManagerCss.text.includes('.save-manager-panel'), 'save manager CSS should style the panel');
     assert.ok(saveManagerCss.text.includes('.save-card'), 'save manager CSS should style save cards');
+
+    const templateManagerCss = await request(base, '/client/world-template-manager.css');
+    assert.strictEqual(templateManagerCss.statusCode, 200, 'world-template-manager.css should be served');
+    assert.ok(templateManagerCss.headers['content-type'].includes('text/css'), 'world-template-manager.css content type should be CSS');
+    assert.ok(templateManagerCss.text.includes('.world-template-panel'), 'template manager CSS should style the panel');
+    assert.ok(templateManagerCss.text.includes('.world-template-card'), 'template manager CSS should style template cards');
 
     const missing = await request(base, '/client/not-found.js');
     assert.strictEqual(missing.statusCode, 404, 'missing client asset should return 404');
