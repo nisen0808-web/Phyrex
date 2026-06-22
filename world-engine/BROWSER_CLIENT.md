@@ -33,6 +33,8 @@ start-local-web.bat
 保存和读取世界
 存档列表、名称、备注和读取确认
 持续运行自动存档状态
+内置世界模板选择与安全重置
+模板重置后自动重建当前玩家
 自动刷新
 WebSocket 实时事件
 多角色创建与切换
@@ -153,6 +155,49 @@ GET  /admin/loop
 
 存档列表会返回 `metadata`、`label` 和 `reason`，旧存档没有元数据时仍可正常列出。
 
+## 世界模板管理
+
+浏览器中的“世界模板管理”面板使用：
+
+```text
+GET  /admin/templates
+POST /admin/templates/reset
+```
+
+当前内置模板：
+
+```text
+empty_sandbox
+cultivation_frontier
+merchant_crossroads
+```
+
+重置前可以配置：
+
+```text
+新世界 ID
+初始化 tick
+当前世界备份与备份路径
+保留账号和 Session
+保留 API 审计
+运行中的持续循环自动暂停
+在新模板默认地点重建当前玩家和角色
+```
+
+模板重置会移除旧玩家与旧角色，因为它们可能引用新模板中不存在的地点或组织。保留账号时，账号与 Session 继续有效，浏览器可以自动在新世界的默认地点重建当前玩家。
+
+运行循环处于 `running` 状态时，API 必须显式传入 `pauseLoop=true`，否则返回 `409 runtime_loop_running`。重置事件会通过实时连接广播为：
+
+```text
+world.template.reset
+```
+
+完整说明见：
+
+```text
+world-engine/WORLD_TEMPLATES.md
+```
+
 ## GM / 运维控制台
 
 浏览器会聚合：
@@ -185,5 +230,6 @@ player 只能访问自己的 dashboard 和 actions
 gm/admin 可以访问任意玩家
 gm/admin 才能推进 tick、保存、列出存档和读档
 gm/admin 才能控制持续世界运行
+gm/admin 才能查看和重置世界模板
 gm/admin 才能打开运维控制台数据
 ```
