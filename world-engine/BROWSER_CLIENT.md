@@ -33,6 +33,10 @@ start-local-web.bat
 保存和读取世界
 自动刷新
 WebSocket 实时事件
+多角色创建与切换
+观察者模式
+持续世界运行控制
+GM / 运维控制台
 ```
 
 ## Dashboard
@@ -44,6 +48,7 @@ GET /players/:playerId/dashboard
 一次返回：
 
 ```text
+account
 player
 map
 quests
@@ -75,6 +80,11 @@ unequip_item
 use_item
 buy_item
 sell_item
+cancel_offline
+start_adventure
+create_character
+switch_character
+observer_mode
 ```
 
 示例：
@@ -99,6 +109,44 @@ curl -X POST http://127.0.0.1:8790/players/api_player/actions \
 
 每次动作默认返回刷新后的 dashboard。
 
+## 持续世界运行
+
+浏览器中的“持续世界运行”面板使用：
+
+```text
+GET  /admin/loop
+POST /admin/loop/start
+POST /admin/loop/pause
+POST /admin/loop/stop
+POST /admin/loop/config
+POST /admin/loop/step
+```
+
+可配置循环间隔、每轮 tick 数、自动存档间隔和存档路径。
+
+## GM / 运维控制台
+
+浏览器会聚合：
+
+```text
+GET /admin/status
+GET /admin/connections
+GET /admin/audit?limit=200
+GET /admin/errors?limit=50
+```
+
+面板提供：
+
+```text
+世界 tick、玩家、账号和 Session 指标
+持续运行状态
+SSE / WebSocket 连接数
+API 请求与错误计数
+按 HTTP 方法、状态码和路径筛选审计记录
+最近错误列表
+可选自动刷新
+```
+
 ## 权限
 
 开启 `requireAuth=true` 后：
@@ -107,4 +155,6 @@ curl -X POST http://127.0.0.1:8790/players/api_player/actions \
 player 只能访问自己的 dashboard 和 actions
 gm/admin 可以访问任意玩家
 gm/admin 才能推进 tick、保存和读档
+gm/admin 才能控制持续世界运行
+gm/admin 才能打开运维控制台数据
 ```
