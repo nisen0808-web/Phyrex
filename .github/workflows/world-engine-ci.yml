@@ -27,6 +27,16 @@ jobs:
           npm --version
       - name: Run complete test suite
         run: npm test
+      - name: Run repeatability diagnostic
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee repeat-test-output.txt
+      - name: Upload repeatability output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repeat-test-output-${{ matrix.node-version }}
+          path: repeat-test-output.txt
 
   stress:
     runs-on: ubuntu-latest
