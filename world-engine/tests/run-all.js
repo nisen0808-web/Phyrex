@@ -36,6 +36,9 @@ const tests = [
   'browser-save-manager-test.js',
   'browser-action-queue-test.js',
   'browser-command-palette-test.js',
+  'world-template-api-test.js',
+  'browser-world-insights-test.js',
+  'browser-workspace-layout-test.js',
   'world-template-test.js',
   'stability-100-test.js',
 ];
