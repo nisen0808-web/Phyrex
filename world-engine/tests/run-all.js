@@ -34,6 +34,7 @@ const tests = [
   'runtime-loop-test.js',
   'browser-admin-console-test.js',
   'browser-save-manager-test.js',
+  'browser-action-queue-test.js',
   'world-template-test.js',
   'stability-100-test.js',
 ];
