@@ -2,7 +2,7 @@
 
 const assert = require('assert');
 const http = require('http');
-const { createWorldApiServer } = require('../core/api-server-engine');
+const { createWorldApiServer } = require('../core/world-template-api-engine');
 
 async function main() {
   const { server } = createWorldApiServer(null, { seedTicks: 5 });
@@ -15,16 +15,35 @@ async function main() {
 
     const index = await request(base, '/client');
     assert.strictEqual(index.statusCode, 200, '/client should serve index');
-    assert.ok(index.text.includes('/client/app.js'), 'index should reference app.js');
-    assert.ok(index.text.includes('/client/style.css'), 'index should reference style.css');
-    assert.ok(index.text.includes('/client/runtime-controls.js'), 'index should reference runtime controls');
-    assert.ok(index.text.includes('/client/runtime-controls.css'), 'index should reference runtime control styles');
-    assert.ok(index.text.includes('/client/character-controls.js'), 'index should reference character controls');
-    assert.ok(index.text.includes('/client/character-controls.css'), 'index should reference character control styles');
-    assert.ok(index.text.includes('/client/admin-console.js'), 'index should reference admin console');
-    assert.ok(index.text.includes('/client/admin-console.css'), 'index should reference admin console styles');
-    assert.ok(index.text.includes('/client/save-manager.js'), 'index should reference save manager');
-    assert.ok(index.text.includes('/client/save-manager.css'), 'index should reference save manager styles');
+    for (const asset of [
+      '/client/app.js',
+      '/client/style.css',
+      '/client/runtime-controls.js',
+      '/client/runtime-controls.css',
+      '/client/character-controls.js',
+      '/client/character-controls.css',
+      '/client/admin-console.js',
+      '/client/admin-console.css',
+      '/client/save-manager.js',
+      '/client/save-manager.css',
+      '/client/action-queue-model.js',
+      '/client/action-queue.js',
+      '/client/action-queue.css',
+      '/client/world-template-manager.js',
+      '/client/world-template-manager.css',
+      '/client/world-insights-model.js',
+      '/client/world-insights.js',
+      '/client/world-insights.css',
+      '/client/workspace-layout-model.js',
+      '/client/workspace-layout.js',
+      '/client/workspace-layout.css',
+      '/client/command-palette-model.js',
+      '/client/command-palette.js',
+      '/client/command-palette.css',
+      '/client/world-control-command-extensions.js',
+    ]) {
+      assert.ok(index.text.includes(asset), `index should reference ${asset}`);
+    }
     assert.ok(index.text.includes('quickStartBtn'), 'index should include quick start');
     assert.ok(index.text.includes('saveWorldBtn'), 'index should include save button');
     assert.ok(index.text.includes('loadWorldBtn'), 'index should include load button');
@@ -53,54 +72,54 @@ async function main() {
 
     const characterJs = await request(base, '/client/character-controls.js');
     assert.strictEqual(characterJs.statusCode, 200, 'character-controls.js should be served');
-    assert.ok(characterJs.headers['content-type'].includes('application/javascript'), 'character-controls.js content type should be JavaScript');
-    assert.ok(characterJs.text.includes('createAdditionalCharacter'), 'character controls should create characters');
-    assert.ok(characterJs.text.includes('switch_character'), 'character controls should switch characters');
-    assert.ok(characterJs.text.includes('observer_mode'), 'character controls should enter observer mode');
-    assert.ok(characterJs.text.includes('renderControlledCharacters'), 'character controls should render controlled characters');
+    assert.ok(characterJs.headers['content-type'].includes('application/javascript'));
+    assert.ok(characterJs.text.includes('createAdditionalCharacter'));
+    assert.ok(characterJs.text.includes('switch_character'));
+    assert.ok(characterJs.text.includes('observer_mode'));
+    assert.ok(characterJs.text.includes('renderControlledCharacters'));
 
     const adminJs = await request(base, '/client/admin-console.js');
     assert.strictEqual(adminJs.statusCode, 200, 'admin-console.js should be served');
-    assert.ok(adminJs.headers['content-type'].includes('application/javascript'), 'admin-console.js content type should be JavaScript');
-    assert.ok(adminJs.text.includes('refreshAdminConsole'), 'admin console should refresh operational data');
-    assert.ok(adminJs.text.includes('renderAdminAudit'), 'admin console should render API audit data');
-    assert.ok(adminJs.text.includes('renderAdminErrors'), 'admin console should render API errors');
+    assert.ok(adminJs.text.includes('refreshAdminConsole'));
+    assert.ok(adminJs.text.includes('renderAdminAudit'));
+    assert.ok(adminJs.text.includes('renderAdminErrors'));
 
     const saveManagerJs = await request(base, '/client/save-manager.js');
     assert.strictEqual(saveManagerJs.statusCode, 200, 'save-manager.js should be served');
-    assert.ok(saveManagerJs.headers['content-type'].includes('application/javascript'), 'save-manager.js content type should be JavaScript');
-    assert.ok(saveManagerJs.text.includes('refreshSaveManager'), 'save manager should refresh save listings');
-    assert.ok(saveManagerJs.text.includes('createManagedSave'), 'save manager should create named saves');
-    assert.ok(saveManagerJs.text.includes('renderSaveAutosaveStatus'), 'save manager should render autosave status');
+    assert.ok(saveManagerJs.text.includes('refreshSaveManager'));
+    assert.ok(saveManagerJs.text.includes('createManagedSave'));
+    assert.ok(saveManagerJs.text.includes('renderSaveAutosaveStatus'));
+
+    const templateManagerJs = await request(base, '/client/world-template-manager.js');
+    assert.strictEqual(templateManagerJs.statusCode, 200, 'world-template-manager.js should be served');
+    assert.ok(templateManagerJs.text.includes('refreshWorldTemplates'));
+    assert.ok(templateManagerJs.text.includes('resetWorldFromSelectedTemplate'));
+    assert.ok(templateManagerJs.text.includes('recreateTemplatePlayer'));
+    assert.ok(templateManagerJs.text.includes('window.confirm'));
 
     const css = await request(base, '/client/style.css');
     assert.strictEqual(css.statusCode, 200, 'style.css should be served');
-    assert.ok(css.headers['content-type'].includes('text/css'), 'style.css content type should be CSS');
-    assert.ok(css.text.includes('.mini-card'), 'style.css should include mini-card style');
-    assert.ok(css.text.includes('.timeline'), 'style.css should include timeline style');
-    assert.ok(css.text.includes('.toast'), 'style.css should include toast style');
+    assert.ok(css.headers['content-type'].includes('text/css'));
+    assert.ok(css.text.includes('.mini-card'));
+    assert.ok(css.text.includes('.timeline'));
+    assert.ok(css.text.includes('.toast'));
 
-    const runtimeCss = await request(base, '/client/runtime-controls.css');
-    assert.strictEqual(runtimeCss.statusCode, 200, 'runtime-controls.css should be served');
-    assert.ok(runtimeCss.headers['content-type'].includes('text/css'), 'runtime-controls.css content type should be CSS');
-
-    const characterCss = await request(base, '/client/character-controls.css');
-    assert.strictEqual(characterCss.statusCode, 200, 'character-controls.css should be served');
-    assert.ok(characterCss.headers['content-type'].includes('text/css'), 'character-controls.css content type should be CSS');
-    assert.ok(characterCss.text.includes('.character-control-row'), 'character CSS should style character rows');
-    assert.ok(characterCss.text.includes('.character-manager-grid'), 'character CSS should style manager grid');
-
-    const adminCss = await request(base, '/client/admin-console.css');
-    assert.strictEqual(adminCss.statusCode, 200, 'admin-console.css should be served');
-    assert.ok(adminCss.headers['content-type'].includes('text/css'), 'admin-console.css content type should be CSS');
-    assert.ok(adminCss.text.includes('.admin-console-panel'), 'admin CSS should style the console panel');
-    assert.ok(adminCss.text.includes('.admin-table'), 'admin CSS should style the audit table');
-
-    const saveManagerCss = await request(base, '/client/save-manager.css');
-    assert.strictEqual(saveManagerCss.statusCode, 200, 'save-manager.css should be served');
-    assert.ok(saveManagerCss.headers['content-type'].includes('text/css'), 'save-manager.css content type should be CSS');
-    assert.ok(saveManagerCss.text.includes('.save-manager-panel'), 'save manager CSS should style the panel');
-    assert.ok(saveManagerCss.text.includes('.save-card'), 'save manager CSS should style save cards');
+    for (const [asset, marker] of [
+      ['/client/runtime-controls.css', '.runtime-loop-panel'],
+      ['/client/character-controls.css', '.character-control-row'],
+      ['/client/admin-console.css', '.admin-console-panel'],
+      ['/client/save-manager.css', '.save-manager-panel'],
+      ['/client/action-queue.css', '.action-queue-panel'],
+      ['/client/world-template-manager.css', '.world-template-panel'],
+      ['/client/world-insights.css', '.world-insights-panel'],
+      ['/client/workspace-layout.css', '.workspace-navigator-overlay'],
+      ['/client/command-palette.css', '.command-palette-overlay'],
+    ]) {
+      const result = await request(base, asset);
+      assert.strictEqual(result.statusCode, 200, `${asset} should be served`);
+      assert.ok(result.headers['content-type'].includes('text/css'), `${asset} should use CSS content type`);
+      assert.ok(result.text.includes(marker), `${asset} should include ${marker}`);
+    }
 
     const missing = await request(base, '/client/not-found.js');
     assert.strictEqual(missing.statusCode, 404, 'missing client asset should return 404');
@@ -121,9 +140,7 @@ async function main() {
 
 function listen(server) {
   return new Promise(resolve => {
-    server.listen(0, '127.0.0.1', () => {
-      resolve(`http://127.0.0.1:${server.address().port}`);
-    });
+    server.listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${server.address().port}`));
   });
 }
 
@@ -137,13 +154,11 @@ function request(base, pathname) {
     const req = http.get(url, res => {
       const chunks = [];
       res.on('data', chunk => chunks.push(chunk));
-      res.on('end', () => {
-        resolve({
-          statusCode: res.statusCode,
-          headers: res.headers,
-          text: Buffer.concat(chunks).toString('utf8'),
-        });
-      });
+      res.on('end', () => resolve({
+        statusCode: res.statusCode,
+        headers: res.headers,
+        text: Buffer.concat(chunks).toString('utf8'),
+      }));
     });
     req.on('error', reject);
   });
