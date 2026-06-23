@@ -165,7 +165,7 @@ function closeCommandPalette() {
   COMMAND_PALETTE_UI.open = false;
   overlay.hidden = true;
   document.body.classList.remove('command-palette-opened');
-  document.getElementById('commandPaletteOpenBtn')?.focus();
+  document.getElementById('commandPaletteOpenBtn')?.focus({ preventScroll: true });
 }
 
 function renderCommandPalette() {
