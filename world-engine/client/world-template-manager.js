@@ -283,9 +283,17 @@ function captureTemplatePlayerIdentity() {
 }
 
 function clearWorldTemplateSession() {
-  localStorage.removeItem('mud_token');
-  const tokenBox = document.getElementById('tokenBox');
-  if (tokenBox) tokenBox.value = '';
+  if (typeof window.setToken === 'function') window.setToken('');
+  else {
+    localStorage.removeItem('mud_token');
+    const tokenBox = document.getElementById('tokenBox');
+    if (tokenBox) tokenBox.value = '';
+  }
+  const connectionStatus = document.getElementById('connectionStatus');
+  if (connectionStatus) {
+    connectionStatus.textContent = 'Session 已清除';
+    connectionStatus.className = 'status-pill';
+  }
 }
 
 async function refreshAfterTemplateReset(options = {}) {
