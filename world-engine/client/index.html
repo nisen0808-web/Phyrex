@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MUD 世界模拟器 - 本地客户端</title>
+  <title>MUD 世界模拟器 - 运营客户端</title>
   <link rel="stylesheet" href="/client/style.css" />
   <link rel="stylesheet" href="/client/runtime-controls.css" />
   <link rel="stylesheet" href="/client/character-controls.css" />
@@ -19,7 +19,7 @@
   <header class="topbar">
     <div>
       <h1>MUD 世界模拟器</h1>
-      <p>本地可玩原型 / Local Playable Prototype</p>
+      <p>可运营单实例 / Operational Single-Instance</p>
     </div>
     <div class="top-actions">
       <label class="inline-control"><input id="autoTickToggle" type="checkbox" checked />动作后推进</label>
@@ -238,6 +238,7 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/client/app.js"></script>
+  <script src="/client/operational-transport.js"></script>
   <script src="/client/character-controls.js"></script>
   <script src="/client/runtime-controls.js"></script>
   <script src="/client/admin-console.js"></script>
