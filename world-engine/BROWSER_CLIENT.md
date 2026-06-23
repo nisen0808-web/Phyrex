@@ -30,6 +30,7 @@ start-local-web.bat
 背包装备、卸下、使用和出售
 商店购买
 离线任务与进度
+行动队列、重复执行、暂停和失败重试
 保存和读取世界
 存档列表、名称、备注和读取确认
 持续运行自动存档状态
@@ -110,6 +111,37 @@ curl -X POST http://127.0.0.1:8790/players/api_player/actions \
 ```
 
 每次动作默认返回刷新后的 dashboard。
+
+## 行动队列 / 回合计划器
+
+浏览器可以把以下动作加入本地队列：
+
+```text
+work
+train
+gather
+rest
+explore
+move
+```
+
+队列能力：
+
+```text
+按顺序串行执行
+每项重复 1 到 99 次
+预设工作、修炼、采集、休息和探索
+步骤间隔 0 / 250 ms / 1 秒 / 3 秒
+当前动作完成后暂停
+选择出错即停或继续后续动作
+失败项重试
+上移、下移和移除
+清除已完成或全部重来
+localStorage 持久化
+页面重载后将中断的 running 项恢复为 pending
+```
+
+队列调用现有 `POST /players/:playerId/actions`。`command` 和 `move` 仍沿用页面顶部“动作后推进”选项，因此不会引入独立的 tick 规则。
 
 ## 持续世界运行
 
