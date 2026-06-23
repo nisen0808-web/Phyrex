@@ -1,6 +1,7 @@
 'use strict';
 
-const { createWorldApiServer, DEFAULT_API_OPTIONS } = require('../core/api-server-engine');
+const { DEFAULT_API_OPTIONS } = require('../core/api-server-engine');
+const { createWorldApiServer } = require('../core/world-template-api-engine');
 const { getRuntimeLoopSummary } = require('../core/runtime-loop-engine');
 
 function main() {
@@ -70,6 +71,8 @@ function endpoints() {
     'POST /admin/loop/stop',
     'POST /admin/loop/config',
     'POST /admin/loop/step',
+    'GET /admin/templates',
+    'POST /admin/templates/reset',
     'POST /save',
     'POST /load',
     'GET /saves',
