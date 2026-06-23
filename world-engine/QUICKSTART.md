@@ -8,7 +8,7 @@ cd Phyrex
 npm test
 ```
 
-当前默认测试共 34 个：
+当前默认测试共 37 个：
 
 ```text
 smoke-test.js
@@ -43,6 +43,9 @@ browser-admin-console-test.js
 browser-save-manager-test.js
 browser-action-queue-test.js
 browser-command-palette-test.js
+world-template-api-test.js
+browser-world-insights-test.js
+browser-workspace-layout-test.js
 world-template-test.js
 stability-100-test.js
 ```
@@ -80,6 +83,9 @@ start-local-web.bat
 离线任务进度和取消
 行动队列、重复执行、暂停和失败重试
 命令面板、中英文搜索、收藏、最近记录和单键快捷操作
+世界模板、重置前备份、循环安全和玩家重建
+世界人口、排行榜、活动和运行诊断洞察
+面板搜索、跳转、固定、折叠和紧凑工作区
 保存和读取世界
 存档名称、备注、列表、读取确认和自动存档状态
 自动刷新
@@ -160,6 +166,7 @@ Player binding
 player / gm / admin 权限
 GM 世界控制
 持续世界运行控制
+世界模板列表和安全重置
 API audit
 Admin status / runtime / loop / connections / audit / errors
 ```
@@ -195,6 +202,8 @@ POST /admin/loop/pause
 POST /admin/loop/stop
 POST /admin/loop/config
 POST /admin/loop/step
+GET  /admin/templates
+POST /admin/templates/reset
 GET  /admin/connections
 GET  /admin/audit
 GET  /admin/errors
@@ -220,6 +229,7 @@ offline-command-engine.js    离线命令队列和长时间动作
 runtime-engine.js            tick batch、自动存档和 runtime snapshot
 runtime-loop-engine.js       定时持续运行、暂停、停止、单步和自动存档
 api-server-engine.js         HTTP、SSE、WebSocket 和客户端托管
+world-template-api-engine.js 世界模板权限、备份、重置和循环同步
 browser-client-engine.js     浏览器 dashboard 和统一玩法动作
 ```
 
@@ -262,6 +272,8 @@ npm run viewer
 ```text
 http://127.0.0.1:8787/viewer/index.html
 ```
+
+浏览器客户端中的“世界洞察”也直接使用 `/snapshot`，可查看人口分布、排行榜、最近活动和诊断，并可复制摘要或导出 JSON。
 
 ## 8. 1000 tick 压测
 
