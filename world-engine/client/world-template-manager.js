@@ -170,6 +170,8 @@ function selectWorldTemplate(templateId, options = {}) {
 async function resetWorldFromSelectedTemplate() {
   const template = selectedWorldTemplate();
   if (!template) throw new Error('请选择世界模板');
+  assertTemplateResetClientSafe();
+
   const backup = worldTemplateChecked('templateBackupCurrent');
   const preserveAccounts = worldTemplateChecked('templatePreserveAccounts');
   const recreatePlayer = worldTemplateChecked('templateRecreatePlayer');
@@ -195,6 +197,9 @@ async function resetWorldFromSelectedTemplate() {
     pauseLoop: worldTemplateChecked('templatePauseLoop'),
   };
   const json = await worldTemplateRequest('/admin/templates/reset', 'POST', payload);
+
+  if (!preserveAccounts) clearWorldTemplateSession();
+
   let recreated = null;
   let recreateError = null;
   if (recreatePlayer && preserveAccounts && identity.accountId && identity.playerId) {
@@ -206,7 +211,7 @@ async function resetWorldFromSelectedTemplate() {
   }
 
   renderWorldTemplateResult(json.data, recreated, recreateError);
-  await refreshAfterTemplateReset();
+  await refreshAfterTemplateReset({ preserveAccounts });
   setWorldTemplateStatus(recreateError ? 'warning' : 'ready');
   notifyWorldTemplate(
     recreateError
@@ -217,6 +222,13 @@ async function resetWorldFromSelectedTemplate() {
   return { reset: json, recreated, recreateError };
 }
 
+function assertTemplateResetClientSafe() {
+  const queueState = document.getElementById('actionQueueStatus')?.textContent?.trim().toLowerCase();
+  if (queueState === 'running' || queueState === 'pausing') {
+    throw new Error('请先暂停行动队列，再重置世界');
+  }
+}
+
 async function recreatePlayerForCurrentTemplate() {
   const identity = captureTemplatePlayerIdentity();
   if (!identity.accountId || !identity.playerId) throw new Error('账号 ID 和玩家 ID 不能为空');
@@ -225,7 +237,7 @@ async function recreatePlayerForCurrentTemplate() {
     || null;
   const json = await recreateTemplatePlayer(identity, locationId);
   renderWorldTemplateResult(null, json, null);
-  await refreshAfterTemplateReset();
+  await refreshAfterTemplateReset({ preserveAccounts: true });
   notifyWorldTemplate('当前玩家已在世界中重建', true);
   return json;
 }
@@ -250,9 +262,13 @@ async function recreateTemplatePlayer(identity, locationId) {
     'POST',
     payload,
   );
-  localStorage.setItem('mud_player_id', identity.playerId);
+  const recreatedPlayerId = json.data?.player?.id || identity.playerId;
+  const recreatedEntityId = json.data?.entity?.id || payload.character.id;
+  localStorage.setItem('mud_player_id', recreatedPlayerId);
   const playerInput = document.getElementById('playerId');
-  if (playerInput) playerInput.value = identity.playerId;
+  if (playerInput) playerInput.value = recreatedPlayerId;
+  const entityInput = document.getElementById('entityId');
+  if (entityInput) entityInput.value = recreatedEntityId;
   return json;
 }
 
@@ -266,15 +282,25 @@ function captureTemplatePlayerIdentity() {
   };
 }
 
-async function refreshAfterTemplateReset() {
+function clearWorldTemplateSession() {
+  localStorage.removeItem('mud_token');
+  const tokenBox = document.getElementById('tokenBox');
+  if (tokenBox) tokenBox.value = '';
+}
+
+async function refreshAfterTemplateReset(options = {}) {
   const tasks = [];
-  if (typeof window.refreshAll === 'function') tasks.push(window.refreshAll());
-  else if (typeof refreshAll === 'function') tasks.push(refreshAll());
+  if (options.preserveAccounts !== false) {
+    if (typeof window.refreshAll === 'function') tasks.push(window.refreshAll());
+    else if (typeof refreshAll === 'function') tasks.push(refreshAll());
+  } else if (typeof window.refreshWorld === 'function') {
+    tasks.push(window.refreshWorld());
+  }
   if (typeof window.refreshAdminConsole === 'function') tasks.push(window.refreshAdminConsole());
   if (typeof window.refreshSaveManager === 'function') tasks.push(window.refreshSaveManager());
-  if (typeof window.refreshRuntimeLoopFromClient === 'function') tasks.push(window.refreshRuntimeLoopFromClient());
+  if (typeof window.refreshRuntimeLoop === 'function') tasks.push(window.refreshRuntimeLoop());
   await Promise.allSettled(tasks);
-  await refreshWorldTemplates();
+  if (options.preserveAccounts !== false) await refreshWorldTemplates();
 }
 
 function renderWorldTemplateList() {
