@@ -8,7 +8,7 @@ cd Phyrex
 npm test
 ```
 
-当前默认测试共 33 个：
+当前默认测试共 34 个：
 
 ```text
 smoke-test.js
@@ -42,6 +42,7 @@ runtime-loop-test.js
 browser-admin-console-test.js
 browser-save-manager-test.js
 browser-action-queue-test.js
+browser-command-palette-test.js
 world-template-test.js
 stability-100-test.js
 ```
@@ -78,6 +79,7 @@ start-local-web.bat
 安排离线 work / train / gather / rest
 离线任务进度和取消
 行动队列、重复执行、暂停和失败重试
+命令面板、中英文搜索、收藏、最近记录和单键快捷操作
 保存和读取世界
 存档名称、备注、列表、读取确认和自动存档状态
 自动刷新
