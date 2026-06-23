@@ -5,6 +5,11 @@ const TEMPLATE_UI = {
   current: null,
   selectedId: null,
   busy: false,
+  restored: {
+    worldId: false,
+    seedTicks: false,
+    backupPath: false,
+  },
 };
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -32,9 +37,9 @@ function mountWorldTemplateManager() {
     '<div class="world-template-heading"><h3>可用模板</h3><span id="worldTemplateCount" class="badge">0</span></div>',
     '<div id="worldTemplateList" class="world-template-list"><div class="empty">等待模板列表</div></div>',
     '<div class="grid three world-template-options">',
-    '  <label>新世界 ID<input id="templateWorldId" placeholder="留空使用模板默认值" /></label>',
-    '  <label>初始化 tick<input id="templateSeedTicks" type="number" min="0" value="0" /></label>',
-    '  <label>备份路径<input id="templateBackupPath" value="world-engine/output/template-reset-backup.json" /></label>',
+    '  <label>新世界 ID<input id="templateWorldId" placeholder="使用模板默认值" /></label>',
+    '  <label>初始化 tick<input id="templateSeedTicks" type="number" min="0" placeholder="使用模板默认值" /></label>',
+    '  <label>备份路径<input id="templateBackupPath" placeholder="自动生成带时间戳的路径" /></label>',
     '</div>',
     '<div class="world-template-checks">',
     '  <label class="inline-control"><input id="templateBackupCurrent" type="checkbox" checked />重置前备份</label>',
@@ -61,13 +66,21 @@ function bindWorldTemplateControls() {
   bindWorldTemplateButton('recreateTemplatePlayerBtn', recreatePlayerForCurrentTemplate);
   document.getElementById('worldTemplateList')?.addEventListener('click', event => {
     const button = event.target.closest('[data-template-id]');
-    if (!button) return;
-    selectWorldTemplate(button.dataset.templateId);
+    if (button) selectWorldTemplate(button.dataset.templateId);
   });
+
+  const trackedInputs = {
+    templateWorldId: 'worldId',
+    templateSeedTicks: 'seedTicks',
+    templateBackupPath: 'backupPath',
+  };
+  for (const [id, key] of Object.entries(trackedInputs)) {
+    document.getElementById(id)?.addEventListener('change', () => {
+      TEMPLATE_UI.restored[key] = true;
+      persistWorldTemplateOptions();
+    });
+  }
   for (const id of [
-    'templateWorldId',
-    'templateSeedTicks',
-    'templateBackupPath',
     'templateBackupCurrent',
     'templatePreserveAccounts',
     'templatePreserveAudit',
@@ -93,18 +106,22 @@ function bindWorldTemplateButton(id, handler) {
 }
 
 function restoreWorldTemplateOptions() {
-  setWorldTemplateValue('templateWorldId', localStorage.getItem('mud_template_world_id') || '');
-  setWorldTemplateValue('templateSeedTicks', localStorage.getItem('mud_template_seed_ticks') || '0');
-  setWorldTemplateValue(
-    'templateBackupPath',
-    localStorage.getItem('mud_template_backup_path') || 'world-engine/output/template-reset-backup.json',
-  );
+  restoreWorldTemplateTextOption('mud_template_world_id', 'templateWorldId', 'worldId');
+  restoreWorldTemplateTextOption('mud_template_seed_ticks', 'templateSeedTicks', 'seedTicks');
+  restoreWorldTemplateTextOption('mud_template_backup_path', 'templateBackupPath', 'backupPath');
   setWorldTemplateChecked('templateBackupCurrent', localStorage.getItem('mud_template_backup') !== 'false');
   setWorldTemplateChecked('templatePreserveAccounts', localStorage.getItem('mud_template_preserve_accounts') !== 'false');
   setWorldTemplateChecked('templatePreserveAudit', localStorage.getItem('mud_template_preserve_audit') !== 'false');
   setWorldTemplateChecked('templatePauseLoop', localStorage.getItem('mud_template_pause_loop') !== 'false');
   setWorldTemplateChecked('templateRecreatePlayer', localStorage.getItem('mud_template_recreate_player') !== 'false');
   TEMPLATE_UI.selectedId = localStorage.getItem('mud_template_selected_id') || null;
+}
+
+function restoreWorldTemplateTextOption(storageKey, elementId, restoredKey) {
+  const saved = localStorage.getItem(storageKey);
+  if (saved === null) return;
+  setWorldTemplateValue(elementId, saved);
+  TEMPLATE_UI.restored[restoredKey] = true;
 }
 
 function persistWorldTemplateOptions() {
@@ -151,17 +168,23 @@ function selectWorldTemplate(templateId, options = {}) {
   if (!template) return null;
   TEMPLATE_UI.selectedId = template.id;
   document.querySelectorAll('[data-template-id]').forEach(element => {
-    element.classList.toggle('selected', element.dataset.templateId === template.id);
-    element.setAttribute('aria-pressed', String(element.dataset.templateId === template.id));
+    const selected = element.dataset.templateId === template.id;
+    element.classList.toggle('selected', selected);
+    element.setAttribute('aria-pressed', String(selected));
   });
-  if (!options.preserveInputs || !worldTemplateValue('templateWorldId')) {
+
+  const preserve = options.preserveInputs === true;
+  if (!preserve || !TEMPLATE_UI.restored.worldId) {
     setWorldTemplateValue('templateWorldId', template.defaultWorldId || template.id);
+    TEMPLATE_UI.restored.worldId = true;
   }
-  if (!options.preserveInputs || worldTemplateValue('templateSeedTicks') === '') {
+  if (!preserve || !TEMPLATE_UI.restored.seedTicks) {
     setWorldTemplateValue('templateSeedTicks', String(template.seedTicks || 0));
+    TEMPLATE_UI.restored.seedTicks = true;
   }
-  if (!options.preserveInputs || !worldTemplateValue('templateBackupPath')) {
+  if (!preserve || !TEMPLATE_UI.restored.backupPath) {
     setWorldTemplateValue('templateBackupPath', suggestedTemplateBackupPath(template.id));
+    TEMPLATE_UI.restored.backupPath = true;
   }
   persistWorldTemplateOptions();
   return template;
@@ -184,10 +207,11 @@ async function resetWorldFromSelectedTemplate() {
 
   const identity = captureTemplatePlayerIdentity();
   setWorldTemplateStatus('resetting');
+  const seedText = worldTemplateValue('templateSeedTicks');
   const payload = {
     templateId: template.id,
     worldId: worldTemplateValue('templateWorldId') || undefined,
-    seedTicks: Math.max(0, Number(worldTemplateValue('templateSeedTicks') || template.seedTicks || 0)),
+    seedTicks: seedText === '' ? Number(template.seedTicks || 0) : Math.max(0, Number(seedText)),
     backup,
     backupPath: backup ? worldTemplateValue('templateBackupPath') || suggestedTemplateBackupPath(template.id) : undefined,
     preserveAccounts,
@@ -209,9 +233,7 @@ async function resetWorldFromSelectedTemplate() {
   await refreshAfterTemplateReset();
   setWorldTemplateStatus(recreateError ? 'warning' : 'ready');
   notifyWorldTemplate(
-    recreateError
-      ? '世界已重置，但玩家重建失败：' + recreateError
-      : '世界已重置为：' + template.name,
+    recreateError ? '世界已重置，但玩家重建失败：' + recreateError : '世界已重置为：' + template.name,
     !recreateError,
   );
   return { reset: json, recreated, recreateError };
@@ -231,24 +253,20 @@ async function recreatePlayerForCurrentTemplate() {
 }
 
 async function recreateTemplatePlayer(identity, locationId) {
-  const payload = {
-    player: {
-      id: identity.playerId,
-      name: identity.playerName || identity.playerId,
-    },
-    character: {
-      id: identity.entityId || identity.playerId + '_hero',
-      name: identity.entityName || identity.entityId || identity.playerId,
-      species: 'human',
-      locationId: locationId || undefined,
-      resources: { currency: 100, food: 10 },
-      demographics: { age: 18, generation: 1 },
-    },
-  };
   const json = await worldTemplateRequest(
     '/accounts/' + encodeURIComponent(identity.accountId) + '/players',
     'POST',
-    payload,
+    {
+      player: { id: identity.playerId, name: identity.playerName || identity.playerId },
+      character: {
+        id: identity.entityId || identity.playerId + '_hero',
+        name: identity.entityName || identity.entityId || identity.playerId,
+        species: 'human',
+        locationId: locationId || undefined,
+        resources: { currency: 100, food: 10 },
+        demographics: { age: 18, generation: 1 },
+      },
+    },
   );
   localStorage.setItem('mud_player_id', identity.playerId);
   const playerInput = document.getElementById('playerId');
@@ -269,10 +287,9 @@ function captureTemplatePlayerIdentity() {
 async function refreshAfterTemplateReset() {
   const tasks = [];
   if (typeof window.refreshAll === 'function') tasks.push(window.refreshAll());
-  else if (typeof refreshAll === 'function') tasks.push(refreshAll());
   if (typeof window.refreshAdminConsole === 'function') tasks.push(window.refreshAdminConsole());
   if (typeof window.refreshSaveManager === 'function') tasks.push(window.refreshSaveManager());
-  if (typeof window.refreshRuntimeLoopFromClient === 'function') tasks.push(window.refreshRuntimeLoopFromClient());
+  if (typeof window.refreshRuntimeLoop === 'function') tasks.push(window.refreshRuntimeLoop());
   await Promise.allSettled(tasks);
   await refreshWorldTemplates();
 }
