@@ -1,7 +1,15 @@
 {
+  "name": "phyrex-world-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MUD world simulation engine and local browser operations client",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "test": "node world-engine/tests/run-all.js",
     "stress": "node world-engine/tests/stability-1000-test.js",
+    "verify:release": "node world-engine/tests/release-readiness-test.js",
     "demo": "node world-engine/demo/run-demo.js",
     "templates": "node world-engine/demo/template-demo.js",
     "play": "node world-engine/demo/play-demo.js",
@@ -11,6 +19,7 @@
     "runtime": "node world-engine/demo/runtime-demo.js",
     "api": "node world-engine/demo/api-server.js",
     "api:live": "node world-engine/demo/api-server.js --auto-loop --interval 1000 --ticks-per-cycle 1 --autosave-every 25 --autosave-path world-engine/output/live-world-save.json",
+    "api:production": "node world-engine/demo/api-server.js --production --auth",
     "viewer": "node world-engine/viewer/serve-viewer.js"
   },
   "devDependencies": {}
