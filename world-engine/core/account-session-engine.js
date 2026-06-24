@@ -20,21 +20,28 @@ const DEFAULT_ACCOUNT_OPTIONS = {
 };
 
 function ensureAccountState(world) {
-  if (!world.accounts) {
-    world.accounts = {
-      byId: {},
-      byPlayer: {},
-      sessions: {},
-      byToken: {},
-      stats: {
-        created: 0,
-        sessionsCreated: 0,
-        sessionsRevoked: 0,
-        playersLinked: 0,
-      },
+  if (!world.accounts) world.accounts = {};
+  const state = world.accounts;
+  if (!state.byId) state.byId = {};
+  if (!state.byPlayer) state.byPlayer = {};
+  if (!state.sessions) state.sessions = {};
+  if (!state.byTokenHash) state.byTokenHash = {};
+  if (!state.stats) {
+    state.stats = {
+      created: 0,
+      sessionsCreated: 0,
+      sessionsRevoked: 0,
+      sessionsMigrated: 0,
+      playersLinked: 0,
     };
   }
-  return world.accounts;
+  if (state.stats.sessionsMigrated === undefined) state.stats.sessionsMigrated = 0;
+  migrateLegacySessionTokens(state);
+  return state;
+}
+
+function repairAccountSessionState(world) {
+  return ensureAccountState(world);
 }
 
 function createAccount(world, input = {}) {
@@ -45,7 +52,7 @@ function createAccount(world, input = {}) {
     id,
     name: input.name || id,
     status: input.status || ACCOUNT_STATUS.ACTIVE,
-    roles: Array.isArray(input.roles) && input.roles.length ? [...input.roles] : ['player'],
+    roles: normalizeRoles(input.roles),
     playerIds: Array.isArray(input.playerIds) ? [...new Set(input.playerIds)] : [],
     createdAt: world.tick,
     updatedAt: world.tick,
@@ -54,7 +61,7 @@ function createAccount(world, input = {}) {
   };
   state.byId[id] = account;
   for (const playerId of account.playerIds) state.byPlayer[playerId] = id;
-  state.stats.created += 1;
+  state.stats.created = Number(state.stats.created || 0) + 1;
   return account;
 }
 
@@ -71,7 +78,7 @@ function linkPlayerToAccount(world, accountId, playerId) {
   if (!account.playerIds.includes(playerId)) account.playerIds.push(playerId);
   account.updatedAt = world.tick;
   state.byPlayer[playerId] = accountId;
-  state.stats.playersLinked += 1;
+  state.stats.playersLinked = Number(state.stats.playersLinked || 0) + 1;
   return account;
 }
 
@@ -88,9 +95,12 @@ function createSession(world, accountId, options = {}) {
   if (account.status !== ACCOUNT_STATUS.ACTIVE) throw new Error(`Account ${accountId} is not active`);
   const ttl = Number(options.sessionTtlTicks ?? DEFAULT_ACCOUNT_OPTIONS.sessionTtlTicks);
   const token = options.token || `sess_${randomId(32)}`;
+  const tokenHash = hashSessionToken(token);
+  if (state.byTokenHash[tokenHash]) throw new Error('Session token collision');
   const session = {
     id: `session_${world.tick}_${randomId(8)}`,
-    token,
+    tokenHash,
+    tokenPrefix: sessionTokenPrefix(token),
     accountId,
     status: SESSION_STATUS.ACTIVE,
     createdAt: world.tick,
@@ -99,17 +109,22 @@ function createSession(world, accountId, options = {}) {
     meta: { ...(options.meta || {}) },
   };
   state.sessions[session.id] = session;
-  state.byToken[token] = session.id;
+  state.byTokenHash[tokenHash] = session.id;
   account.lastLoginAt = world.tick;
   account.updatedAt = world.tick;
-  state.stats.sessionsCreated += 1;
-  trimAccountSessions(world, accountId, options.maxSessionsPerAccount || DEFAULT_ACCOUNT_OPTIONS.maxSessionsPerAccount);
-  return session;
+  state.stats.sessionsCreated = Number(state.stats.sessionsCreated || 0) + 1;
+  trimAccountSessions(
+    world,
+    accountId,
+    options.maxSessionsPerAccount || DEFAULT_ACCOUNT_OPTIONS.maxSessionsPerAccount,
+  );
+  return { ...session, token };
 }
 
 function getSessionByToken(world, token) {
+  if (!token) return null;
   const state = ensureAccountState(world);
-  const sessionId = state.byToken[token];
+  const sessionId = state.byTokenHash[hashSessionToken(token)];
   return sessionId ? state.sessions[sessionId] || null : null;
 }
 
@@ -119,6 +134,7 @@ function validateSession(world, token) {
   if (session.status !== SESSION_STATUS.ACTIVE) return null;
   if (session.expiresAt !== null && Number(session.expiresAt) < Number(world.tick || 0)) {
     session.status = SESSION_STATUS.EXPIRED;
+    delete ensureAccountState(world).byTokenHash[session.tokenHash];
     return null;
   }
   session.lastSeenAt = world.tick;
@@ -131,12 +147,28 @@ function revokeSession(world, tokenOrSessionId, reason = 'manual') {
   const state = ensureAccountState(world);
   const session = state.sessions[tokenOrSessionId] || getSessionByToken(world, tokenOrSessionId);
   if (!session) return null;
-  if (session.status === SESSION_STATUS.ACTIVE) state.stats.sessionsRevoked += 1;
+  if (session.status === SESSION_STATUS.ACTIVE) {
+    state.stats.sessionsRevoked = Number(state.stats.sessionsRevoked || 0) + 1;
+  }
   session.status = SESSION_STATUS.REVOKED;
   session.revokedAt = world.tick;
   session.revokeReason = reason;
-  delete state.byToken[session.token];
+  if (session.tokenHash) delete state.byTokenHash[session.tokenHash];
   return session;
+}
+
+function revokeAccountSessions(world, accountId, options = {}) {
+  const state = ensureAccountState(world);
+  const exceptSessionId = options.exceptSessionId || null;
+  const reason = options.reason || 'account_sessions_revoked';
+  const revoked = [];
+  for (const session of Object.values(state.sessions || {})) {
+    if (session.accountId !== accountId || session.id === exceptSessionId) continue;
+    if (session.status !== SESSION_STATUS.ACTIVE) continue;
+    const result = revokeSession(world, session.id, reason);
+    if (result) revoked.push(result);
+  }
+  return revoked;
 }
 
 function getAccountView(world, accountId) {
@@ -152,7 +184,9 @@ function getAccountView(world, accountId) {
     playerIds: [...(account.playerIds || [])],
     players: (account.playerIds || []).map(playerId => {
       const player = world.players?.byId?.[playerId];
-      return player ? { id: player.id, name: player.name, status: player.status, activeEntityId: player.activeEntityId } : { id: playerId, missing: true };
+      return player
+        ? { id: player.id, name: player.name, status: player.status, activeEntityId: player.activeEntityId }
+        : { id: playerId, missing: true };
     }),
     sessions: sessions.map(session => sanitizeSession(session)),
     createdAt: account.createdAt,
@@ -181,6 +215,7 @@ function sanitizeSession(session) {
     id: session.id,
     accountId: session.accountId,
     status: session.status,
+    tokenPrefix: session.tokenPrefix || null,
     createdAt: session.createdAt,
     lastSeenAt: session.lastSeenAt,
     expiresAt: session.expiresAt,
@@ -190,8 +225,57 @@ function sanitizeSession(session) {
 
 function trimAccountSessions(world, accountId, limit) {
   const state = ensureAccountState(world);
-  const sessions = Object.values(state.sessions || {}).filter(session => session.accountId === accountId).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+  const sessions = Object.values(state.sessions || {})
+    .filter(session => session.accountId === accountId)
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
   for (const session of sessions.slice(limit)) revokeSession(world, session.id, 'trimmed');
+}
+
+function migrateLegacySessionTokens(state) {
+  const mappings = state.byToken && typeof state.byToken === 'object'
+    ? Object.entries(state.byToken)
+    : [];
+  for (const [token, sessionId] of mappings) {
+    const session = state.sessions?.[sessionId];
+    if (!session) continue;
+    migrateOneSessionToken(state, session, token);
+  }
+
+  for (const session of Object.values(state.sessions || {})) {
+    if (session.token) migrateOneSessionToken(state, session, session.token);
+    if (session.tokenHash && session.status === SESSION_STATUS.ACTIVE) {
+      state.byTokenHash[session.tokenHash] = session.id;
+    }
+    delete session.token;
+  }
+  delete state.byToken;
+}
+
+function migrateOneSessionToken(state, session, token) {
+  if (!token) return;
+  if (!session.tokenHash) {
+    session.tokenHash = hashSessionToken(token);
+    session.tokenPrefix = session.tokenPrefix || sessionTokenPrefix(token);
+    state.stats.sessionsMigrated = Number(state.stats.sessionsMigrated || 0) + 1;
+  }
+  if (session.status === SESSION_STATUS.ACTIVE) state.byTokenHash[session.tokenHash] = session.id;
+  delete session.token;
+}
+
+function hashSessionToken(token) {
+  return crypto.createHash('sha256').update(String(token || ''), 'utf8').digest('hex');
+}
+
+function sessionTokenPrefix(token) {
+  const value = String(token || '');
+  return value ? value.slice(0, 12) : null;
+}
+
+function normalizeRoles(roles) {
+  const allowed = new Set(['player', 'gm', 'admin']);
+  const values = Array.isArray(roles) && roles.length ? roles : ['player'];
+  const normalized = [...new Set(values.map(value => String(value || '').trim()).filter(value => allowed.has(value)))];
+  return normalized.length ? normalized : ['player'];
 }
 
 function randomId(bytes) {
@@ -212,6 +296,7 @@ module.exports = {
   SESSION_STATUS,
   DEFAULT_ACCOUNT_OPTIONS,
   ensureAccountState,
+  repairAccountSessionState,
   createAccount,
   getAccount,
   linkPlayerToAccount,
@@ -220,7 +305,9 @@ module.exports = {
   getSessionByToken,
   validateSession,
   revokeSession,
+  revokeAccountSessions,
   getAccountView,
   getAccountStats,
   sanitizeSession,
+  hashSessionToken,
 };
