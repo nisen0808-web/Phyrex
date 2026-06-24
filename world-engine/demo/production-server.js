@@ -23,13 +23,8 @@ const {
   setAccountSecret,
   hasAccountSecret,
 } = require('../core/credential-engine');
-const {
-  createProductionApiServer,
-} = require('../core/production-api-engine');
-const {
-  stopRuntimeLoop,
-  getRuntimeLoopSummary,
-} = require('../core/runtime-loop-engine');
+const { createProductionApiServer } = require('../core/production-api-engine');
+const { stopRuntimeLoop, getRuntimeLoopSummary } = require('../core/runtime-loop-engine');
 
 async function main() {
   const config = loadProductionConfig(process.env, process.cwd());
@@ -53,39 +48,44 @@ async function initializeProductionRuntime(config) {
   const previousCwd = process.cwd();
   process.chdir(config.dataDir);
 
-  const registry = createWorldTemplateRegistry();
-  const initialized = initializeProductionWorld(config, registry);
-  const world = initialized.world;
-  const bootstrap = await ensureBootstrapAdmin(world, config);
+  try {
+    const registry = createWorldTemplateRegistry();
+    const initialized = initializeProductionWorld(config, registry);
+    const world = initialized.world;
+    const bootstrap = await ensureBootstrapAdmin(world, config);
 
-  if (initialized.created || bootstrap.changed) {
-    saveWorld(world, config.worldFile, {
-      createBackup: !initialized.created,
-      reason: initialized.created ? 'production_bootstrap' : 'credential_bootstrap',
-      metadata: {
-        service: config.serviceName,
-        templateId: world.template?.id || config.templateId,
-      },
+    if (initialized.created || bootstrap.changed) {
+      saveWorld(world, config.worldFile, {
+        createBackup: !initialized.created,
+        reason: initialized.created ? 'production_bootstrap' : 'credential_bootstrap',
+        metadata: {
+          service: config.serviceName,
+          templateId: world.template?.id || config.templateId,
+        },
+      });
+    }
+
+    const serverResult = createProductionApiServer(world, {
+      ...config,
+      version: '1.0.0',
+      defaultSavePath: config.worldFile,
+      templateRegistry: registry,
+      runtimeLoop: config.runtimeLoop,
     });
+
+    return {
+      ...serverResult,
+      config,
+      registry,
+      initialized,
+      bootstrap,
+      previousCwd,
+      shuttingDown: false,
+    };
+  } catch (error) {
+    process.chdir(previousCwd);
+    throw error;
   }
-
-  const serverResult = createProductionApiServer(world, {
-    ...config,
-    version: '1.0.0',
-    defaultSavePath: config.worldFile,
-    templateRegistry: registry,
-    runtimeLoop: config.runtimeLoop,
-  });
-
-  return {
-    ...serverResult,
-    config,
-    registry,
-    initialized,
-    bootstrap,
-    previousCwd,
-    shuttingDown: false,
-  };
 }
 
 function initializeProductionWorld(config, registry) {
@@ -126,7 +126,10 @@ async function ensureBootstrapAdmin(world, config) {
     await setAccountSecret(account, config.adminSecret);
     changed = true;
   } else {
-    account.roles = [...new Set([...(account.roles || []), 'admin', 'gm'])];
+    const previousRoles = [...(account.roles || [])];
+    account.roles = [...new Set([...previousRoles, 'admin', 'gm'])];
+    if (account.roles.length !== previousRoles.length) changed = true;
+
     if (!hasAccountSecret(account)) {
       if (!config.adminSecret) throw startupError('MUD_ADMIN_SECRET is required to secure the existing bootstrap admin');
       await setAccountSecret(account, config.adminSecret);
@@ -147,17 +150,20 @@ async function ensureBootstrapAdmin(world, config) {
 
 function installProcessHandlers(runtime) {
   const shutdown = signal => gracefulShutdown(runtime, signal).catch(error => {
-    logEvent('error', 'server.shutdown_failed', { signal, error: error.message });
+    logEvent('error', 'server.shutdown_failed', { signal, error: error.stack || error.message });
     process.exitCode = 1;
   });
 
   process.once('SIGTERM', () => shutdown('SIGTERM'));
   process.once('SIGINT', () => shutdown('SIGINT'));
-  process.on('unhandledRejection', error => {
+  process.once('unhandledRejection', error => {
     logEvent('error', 'process.unhandled_rejection', { error: error?.stack || error?.message || String(error) });
+    process.exitCode = 1;
+    shutdown('unhandledRejection');
   });
-  process.on('uncaughtException', error => {
+  process.once('uncaughtException', error => {
     logEvent('error', 'process.uncaught_exception', { error: error.stack || error.message });
+    process.exitCode = 1;
     shutdown('uncaughtException');
   });
 }
@@ -169,12 +175,19 @@ async function gracefulShutdown(runtime, signal = 'shutdown') {
   stopRuntimeLoop(runtime.api.runtimeLoop, `production_${String(signal).toLowerCase()}`);
 
   let save = null;
+  let saveError = null;
   if (runtime.config.shutdownSave) {
-    save = saveWorld(runtime.api.getWorld(), runtime.config.worldFile, {
-      createBackup: true,
-      reason: 'shutdown',
-      metadata: { signal, service: runtime.config.serviceName },
-    });
+    try {
+      save = saveWorld(runtime.api.getWorld(), runtime.config.worldFile, {
+        createBackup: true,
+        reason: 'shutdown',
+        metadata: { signal, service: runtime.config.serviceName },
+      });
+    } catch (error) {
+      saveError = error.message;
+      process.exitCode = 1;
+      logEvent('error', 'server.shutdown_save_failed', { signal, error: saveError });
+    }
   }
 
   const timeout = setTimeout(() => {
@@ -183,15 +196,22 @@ async function gracefulShutdown(runtime, signal = 'shutdown') {
   }, runtime.config.shutdownTimeoutMs);
   timeout.unref();
 
-  await new Promise((resolve, reject) => {
-    runtime.server.close(error => error ? reject(error) : resolve());
-  });
+  await closeServer(runtime.server);
   clearTimeout(timeout);
+  if (runtime.previousCwd && process.cwd() !== runtime.previousCwd) process.chdir(runtime.previousCwd);
   logEvent('info', 'server.stopped', {
     signal,
     worldId: runtime.api.getWorld().id,
     tick: runtime.api.getWorld().tick,
     save,
+    saveError,
+  });
+}
+
+function closeServer(server) {
+  if (!server.listening) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    server.close(error => error ? reject(error) : resolve());
   });
 }
 
@@ -256,7 +276,9 @@ module.exports = {
   initializeProductionRuntime,
   initializeProductionWorld,
   ensureBootstrapAdmin,
+  installProcessHandlers,
   gracefulShutdown,
+  closeServer,
   productionEndpoints,
   logEvent,
 };
