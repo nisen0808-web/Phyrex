@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MUD 世界模拟器 - 本地客户端</title>
+  <title>MUD 世界模拟器</title>
   <link rel="stylesheet" href="/client/style.css" />
   <link rel="stylesheet" href="/client/runtime-controls.css" />
   <link rel="stylesheet" href="/client/character-controls.css" />
@@ -14,12 +14,13 @@
   <link rel="stylesheet" href="/client/world-insights.css" />
   <link rel="stylesheet" href="/client/workspace-layout.css" />
   <link rel="stylesheet" href="/client/command-palette.css" />
+  <link rel="stylesheet" href="/client/production-client.css" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>MUD 世界模拟器</h1>
-      <p>本地可玩原型 / Local Playable Prototype</p>
+      <p>World Engine Operations Client</p>
     </div>
     <div class="top-actions">
       <label class="inline-control"><input id="autoTickToggle" type="checkbox" checked />动作后推进</label>
@@ -36,7 +37,7 @@
   <main class="layout">
     <section class="panel onboarding">
       <h2>开始游戏</h2>
-      <p class="hint">一键创建本地账号、Session 和角色，领取木剑与疗伤丹，并启动新手任务。</p>
+      <p class="hint">创建或登录账号，建立玩家与角色，然后启动新手任务。</p>
       <div class="actions">
         <button id="quickStartBtn" class="primary">一键开始冒险</button>
         <button id="connectWsBtn">连接实时事件</button>
@@ -46,15 +47,15 @@
     <section class="panel">
       <h2>账号 / Session</h2>
       <div class="grid two">
-        <label>账号 ID<input id="accountId" value="local_account" /></label>
+        <label>账号 ID<input id="accountId" value="local_account" autocomplete="username" /></label>
         <label>账号名<input id="accountName" value="Local Account" /></label>
       </div>
       <div class="actions">
         <button id="createAccountBtn">创建账号</button>
-        <button id="createSessionBtn">创建 Session</button>
+        <button id="createSessionBtn">登录并创建 Session</button>
         <button id="checkSessionBtn">验证 Session</button>
       </div>
-      <textarea id="tokenBox" placeholder="Session token" rows="2"></textarea>
+      <textarea id="tokenBox" placeholder="Session token" rows="2" spellcheck="false"></textarea>
     </section>
 
     <section class="panel">
@@ -238,6 +239,7 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/client/app.js"></script>
+  <script src="/client/production-client.js"></script>
   <script src="/client/character-controls.js"></script>
   <script src="/client/runtime-controls.js"></script>
   <script src="/client/admin-console.js"></script>
