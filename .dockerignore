@@ -1,0 +1,10 @@
+.git
+.github
+.env
+.env.*
+!.env.production.example
+node_modules
+world-engine/data
+world-engine/output
+world-engine/saves
+*.log
