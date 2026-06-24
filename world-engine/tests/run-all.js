@@ -39,6 +39,9 @@ const tests = [
   'world-template-api-test.js',
   'browser-world-insights-test.js',
   'browser-workspace-layout-test.js',
+  'password-credential-engine-test.js',
+  'session-token-hash-test.js',
+  'request-throttle-test.js',
   'world-template-test.js',
   'stability-100-test.js',
 ];
