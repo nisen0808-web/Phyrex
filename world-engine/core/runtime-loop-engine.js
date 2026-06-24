@@ -18,6 +18,7 @@ const DEFAULT_RUNTIME_LOOP_OPTIONS = {
   maxErrors: 50,
   immediate: false,
   simulation: {},
+  persistence: {},
 };
 
 function createRuntimeLoop(worldOrProvider, options = {}) {
@@ -227,7 +228,10 @@ function maybeAutosave(loop, world) {
   const file = loop.options.autosavePath;
   if (!every || !file) return null;
   if (Number(world.tick || 0) - Number(loop.lastAutosaveTick || 0) < every) return null;
-  const save = saveWorld(world, file, { reason: 'runtime_loop_autosave' });
+  const save = saveWorld(world, file, {
+    ...(loop.options.persistence || {}),
+    reason: 'runtime_loop_autosave',
+  });
   loop.lastAutosaveTick = world.tick;
   loop.lastAutosave = save;
   return save;
