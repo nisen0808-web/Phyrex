@@ -2,9 +2,7 @@
 
 const fs = require('fs');
 const { URL } = require('url');
-const {
-  createWorldApiServer: createTemplateWorldApiServer,
-} = require('./world-template-api-engine');
+const { createWorldApiServer: createTemplateWorldApiServer } = require('./world-template-api-engine');
 const {
   createAccount,
   createSession,
@@ -15,11 +13,7 @@ const {
   getAccountStats,
   sanitizeSession,
 } = require('./account-session-engine');
-const {
-  canRunWorldControl,
-  requirePermission,
-  requireSession,
-} = require('./api-permission-engine');
+const { canRunWorldControl, requirePermission, requireSession } = require('./api-permission-engine');
 const {
   createCredentialRecord,
   verifyAccountSecret,
@@ -27,10 +21,7 @@ const {
   credentialSummary,
   validateAccountSecret,
 } = require('./credential-engine');
-const {
-  configurePersistenceSecurity,
-  getPersistenceSecurity,
-} = require('./persistence-engine');
+const { configurePersistenceSecurity, getPersistenceSecurity } = require('./persistence-engine');
 const { recordApiRequest } = require('./api-audit-engine');
 
 const DIRECT_PATHS = new Set([
@@ -51,45 +42,54 @@ function createProductionApiServer(worldInput, options = {}) {
     requireAuth: true,
     maxBodyBytes: config.maxBodyBytes,
   });
-  const requestListeners = result.server.listeners('request');
-  const baseRequestListener = requestListeners[0];
+  const baseRequestListener = result.server.listeners('request')[0];
   if (typeof baseRequestListener !== 'function') throw new Error('production_api_missing_request_listener');
   result.server.removeListener('request', baseRequestListener);
 
-  const rateLimiter = createRateLimiter(config.rateLimit);
+  const limiter = createRateLimiter(config.rateLimit);
   result.server.on('request', (req, res) => {
     installProductionHeaders(req, res, config);
     const parsed = new URL(req.url || '/', 'http://localhost');
     const pathname = normalizePath(parsed.pathname);
 
     if (!originAllowed(req, config)) {
+      auditImmediate(result.api, req, pathname, 403, 'origin_forbidden');
       return writeJson(res, 403, { ok: false, error: 'origin_forbidden' });
     }
     if (req.method === 'OPTIONS') return handlePreflight(req, res, config);
     if (parsed.searchParams.has('token') && pathname !== '/stream') {
+      auditImmediate(result.api, req, pathname, 400, 'query_token_forbidden');
       return writeJson(res, 400, { ok: false, error: 'query_token_forbidden' });
     }
 
-    const bucket = rateLimitBucket(pathname);
-    const rate = rateLimiter.consume(bucket, requestIp(req, config), Date.now());
+    const rate = limiter.consume(rateLimitBucket(pathname), requestIp(req, config), Date.now());
     applyRateHeaders(res, rate);
     if (!rate.allowed) {
       res.setHeader('Retry-After', String(Math.max(1, Math.ceil(rate.retryAfterMs / 1000))));
+      auditImmediate(result.api, req, pathname, 429, 'rate_limit_exceeded');
       return writeJson(res, 429, { ok: false, error: 'rate_limit_exceeded' });
     }
 
     if (pathname === '/stream') {
       const auth = requestAuth(result.api.getWorld(), req, parsed, true);
-      if (!auth) return writeJson(res, 401, { ok: false, error: 'auth_required' });
+      if (!auth) {
+        auditImmediate(result.api, req, pathname, 401, 'auth_required');
+        return writeJson(res, 401, { ok: false, error: 'auth_required' });
+      }
       req.apiAccountId = auth.account.id;
       parsed.searchParams.delete('token');
-      req.url = parsed.pathname + (parsed.search ? parsed.search : '');
+      req.url = parsed.pathname + (parsed.searchParams.toString() ? `?${parsed.searchParams}` : '');
       return baseRequestListener.call(result.server, req, res);
     }
 
     if (isDirectProductionPath(pathname)) {
-      return handleDirectProductionRequest(req, res, parsed, pathname, result.api, config);
+      handleDirectProductionRequest(req, res, parsed, pathname, result.api, config).catch(error => {
+        if (!res.headersSent) writeJson(res, error.statusCode || 500, { ok: false, error: error.message || 'production_api_error' });
+        else res.destroy(error);
+      });
+      return;
     }
+
     if (pathname === '/saves' && !parsed.searchParams.get('dir')) {
       parsed.searchParams.set('dir', config.dataDir);
       req.url = `${parsed.pathname}?${parsed.searchParams.toString()}`;
@@ -97,8 +97,7 @@ function createProductionApiServer(worldInput, options = {}) {
     return baseRequestListener.call(result.server, req, res);
   });
 
-  const upgradeListeners = result.server.listeners('upgrade');
-  const baseUpgradeListener = upgradeListeners[0];
+  const baseUpgradeListener = result.server.listeners('upgrade')[0];
   if (typeof baseUpgradeListener === 'function') {
     result.server.removeListener('upgrade', baseUpgradeListener);
     result.server.on('upgrade', (req, socket, head) => {
@@ -109,7 +108,7 @@ function createProductionApiServer(worldInput, options = {}) {
         if (!auth) return rejectUpgrade(socket, 401, 'auth_required');
         req.apiAccountId = auth.account.id;
         parsed.searchParams.delete('token');
-        req.url = parsed.pathname + (parsed.searchParams.toString() ? `?${parsed.searchParams.toString()}` : '');
+        req.url = parsed.pathname + (parsed.searchParams.toString() ? `?${parsed.searchParams}` : '');
       }
       return baseUpgradeListener.call(result.server, req, socket, head);
     });
@@ -117,20 +116,17 @@ function createProductionApiServer(worldInput, options = {}) {
 
   result.api.production = {
     config: productionSummary(config),
-    rateLimiter,
+    rateLimiter: limiter,
     startedAt: new Date().toISOString(),
   };
-  return {
-    ...result,
-    production: result.api.production,
-  };
+  return { ...result, production: result.api.production };
 }
 
 async function handleDirectProductionRequest(req, res, parsed, pathname, api, config) {
   const started = Date.now();
   const method = req.method || 'GET';
-  let errorMessage = null;
   let auth = null;
+  let errorMessage = null;
   try {
     auth = requestAuth(api.getWorld(), req, parsed, false);
     req.apiAccountId = auth?.account?.id || null;
@@ -139,32 +135,26 @@ async function handleDirectProductionRequest(req, res, parsed, pathname, api, co
       const readiness = productionReadiness(api, config);
       return writeJson(res, readiness.ready ? 200 : 503, readiness);
     }
-
     if (method === 'POST' && pathname === '/accounts') {
       const body = await readJsonBody(req, config);
-      return registerAccount(res, api, config, auth, body, false);
+      return await registerAccount(res, api, config, auth, body, false);
     }
-
     if (method === 'POST' && pathname === '/sessions') {
       const body = await readJsonBody(req, config);
-      return loginAccount(res, api, config, body);
+      return await loginAccount(res, api, config, body);
     }
-
     if (method === 'GET' && pathname === '/admin/accounts') {
       requireWorldControl(auth);
-      const accounts = Object.keys(api.getWorld().accounts?.byId || {})
-        .sort()
-        .map(accountId => ({
-          ...getAccountView(api.getWorld(), accountId),
-          credential: credentialSummary(getAccount(api.getWorld(), accountId)),
-        }));
+      const accounts = Object.keys(api.getWorld().accounts?.byId || {}).sort().map(accountId => ({
+        ...getAccountView(api.getWorld(), accountId),
+        credential: credentialSummary(getAccount(api.getWorld(), accountId)),
+      }));
       return writeJson(res, 200, ok({ accounts, stats: getAccountStats(api.getWorld()) }));
     }
-
     if (method === 'POST' && pathname === '/admin/accounts') {
       requireWorldControl(auth);
       const body = await readJsonBody(req, config);
-      return registerAccount(res, api, config, auth, body, true);
+      return await registerAccount(res, api, config, auth, body, true);
     }
 
     const secretMatch = pathname.match(/^\/admin\/accounts\/([^/]+)\/secret$/);
@@ -175,10 +165,7 @@ async function handleDirectProductionRequest(req, res, parsed, pathname, api, co
       if (!account) throw httpError(404, 'missing_account');
       const body = await readJsonBody(req, config);
       validateAccountSecret(body.secret, config.credentialOptions);
-      account.meta = {
-        ...(account.meta || {}),
-        auth: await createCredentialRecord(body.secret, config.credentialOptions),
-      };
+      account.meta = { ...(account.meta || {}), auth: await createCredentialRecord(body.secret, config.credentialOptions) };
       const revoked = body.revokeSessions === false ? 0 : revokeAccountSessions(api.getWorld(), accountId, 'credential_rotated');
       return writeJson(res, 200, ok({
         account: getAccountView(api.getWorld(), accountId),
@@ -191,7 +178,6 @@ async function handleDirectProductionRequest(req, res, parsed, pathname, api, co
       requireWorldControl(auth);
       return writeJson(res, 200, ok(productionSecuritySummary(api, config)));
     }
-
     return writeJson(res, 405, { ok: false, error: 'method_not_allowed', path: pathname });
   } catch (error) {
     errorMessage = error.message || 'production_api_error';
@@ -215,15 +201,16 @@ async function registerAccount(res, api, config, auth, body, adminRoute) {
   if (policy === 'disabled') throw httpError(403, 'registration_disabled');
   if (policy === 'admin') requireWorldControl(auth);
 
-  const id = validateAccountId(body.id || body.account?.id);
+  const accountInput = body.account || body || {};
+  const id = validateAccountId(accountInput.id);
   if (getAccount(api.getWorld(), id)) throw httpError(409, 'account_exists');
-  const secret = body.secret || body.account?.secret;
+  const secret = body.secret || accountInput.secret;
   validateAccountSecret(secret, config.credentialOptions);
   const authRecord = await createCredentialRecord(secret, config.credentialOptions);
-  const roles = policy === 'open' ? ['player'] : normalizeRoles(body.roles || body.account?.roles);
+  const roles = policy === 'open' ? ['player'] : normalizeRoles(accountInput.roles || body.roles);
   const account = createAccount(api.getWorld(), {
     id,
-    name: validateAccountName(body.name || body.account?.name || id),
+    name: validateAccountName(accountInput.name || id),
     roles,
     meta: { auth: authRecord },
   });
@@ -269,6 +256,8 @@ function productionReadiness(api, config) {
     ready,
     service: config.serviceName,
     version: config.version,
+    registrationPolicy: config.registrationPolicy,
+    credentialsRequired: true,
     worldId: api.getWorld()?.id || null,
     tick: api.getWorld()?.tick ?? null,
     storage: { ready: storageReady, error: storageError },
@@ -301,13 +290,11 @@ function normalizeProductionApiOptions(options = {}) {
     serviceName: String(options.serviceName || 'phyrex-world-engine'),
     version: String(options.version || '1.0.0'),
     dataDir: String(options.dataDir || process.cwd()),
-    maxBodyBytes: Number(options.maxBodyBytes || 256 * 1024),
-    registrationPolicy: ['disabled', 'admin', 'open'].includes(options.registrationPolicy)
-      ? options.registrationPolicy
-      : 'admin',
+    maxBodyBytes: Math.max(1024, Number(options.maxBodyBytes || 256 * 1024)),
+    registrationPolicy: ['disabled', 'admin', 'open'].includes(options.registrationPolicy) ? options.registrationPolicy : 'admin',
     sessionTtlTicks: Math.max(1, Number(options.sessionTtlTicks || 100000)),
     maxSessionsPerAccount: Math.max(1, Number(options.maxSessionsPerAccount || 10)),
-    corsOrigins: Array.isArray(options.corsOrigins) ? [...options.corsOrigins] : [],
+    corsOrigins: Array.isArray(options.corsOrigins) ? options.corsOrigins.filter(origin => origin && origin !== '*') : [],
     trustProxy: Boolean(options.trustProxy),
     rateLimit: {
       windowMs: Math.max(1000, Number(options.rateLimit?.windowMs || 60000)),
@@ -352,7 +339,6 @@ function installProductionHeaders(req, res, config) {
     }
     return nativeWriteHead(statusCode, sanitizeCorsHeaders(reasonOrHeaders, allowedOrigin));
   };
-
   nativeSetHeader('X-Content-Type-Options', 'nosniff');
   nativeSetHeader('X-Frame-Options', 'DENY');
   nativeSetHeader('Referrer-Policy', 'no-referrer');
@@ -369,8 +355,8 @@ function installProductionHeaders(req, res, config) {
 function sanitizeCorsHeaders(headers, allowedOrigin) {
   const output = { ...(headers || {}) };
   for (const key of Object.keys(output)) {
-    if (key.toLowerCase() === 'access-control-allow-origin') delete output[key];
-    if (key.toLowerCase() === 'access-control-allow-credentials') delete output[key];
+    const lower = key.toLowerCase();
+    if (lower === 'access-control-allow-origin' || lower === 'access-control-allow-credentials') delete output[key];
   }
   if (allowedOrigin) {
     output['Access-Control-Allow-Origin'] = allowedOrigin;
@@ -399,15 +385,15 @@ function requestAllowedOrigin(req, config) {
   const protocol = config.trustProxy
     ? String(req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim()
     : (req.socket?.encrypted ? 'https' : 'http');
-  const host = String(req.headers.host || '').trim();
+  const host = config.trustProxy
+    ? String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim()
+    : String(req.headers.host || '').trim();
   const sameOrigin = host ? `${protocol}://${host}` : null;
-  if (origin === sameOrigin || config.corsOrigins.includes(origin)) return origin;
-  return null;
+  return origin === sameOrigin || config.corsOrigins.includes(origin) ? origin : null;
 }
 
 function requestAuth(world, req, parsed, allowQuery) {
-  const header = String(req.headers.authorization || '');
-  const match = header.match(/^Bearer\s+(.+)$/i);
+  const match = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
   const token = match?.[1]?.trim() || (allowQuery ? parsed.searchParams.get('token') : null);
   return token ? validateSession(world, token) : null;
 }
@@ -419,9 +405,7 @@ function requireWorldControl(auth) {
 }
 
 function revokeAccountSessions(world, accountId, reason) {
-  const sessions = Object.values(world.accounts?.sessions || {}).filter(session => (
-    session.accountId === accountId && session.status === 'active'
-  ));
+  const sessions = Object.values(world.accounts?.sessions || {}).filter(session => session.accountId === accountId && session.status === 'active');
   for (const session of sessions) revokeSession(world, session.id, reason);
   return sessions.length;
 }
@@ -460,17 +444,13 @@ function createRateLimiter(options) {
   const entries = new Map();
   return {
     consume(bucket, key, now) {
-      const limit = bucket === 'auth'
-        ? options.authMax
-        : bucket === 'registration' ? options.registrationMax : options.generalMax;
+      const limit = bucket === 'auth' ? options.authMax : bucket === 'registration' ? options.registrationMax : options.generalMax;
       const id = `${bucket}:${key}`;
       let entry = entries.get(id);
       if (!entry || now >= entry.resetAt) entry = { count: 0, resetAt: now + options.windowMs };
       entry.count += 1;
       entries.set(id, entry);
-      if (entries.size > 10000) {
-        for (const [entryId, current] of entries) if (now >= current.resetAt) entries.delete(entryId);
-      }
+      if (entries.size > 10000) for (const [entryId, current] of entries) if (now >= current.resetAt) entries.delete(entryId);
       return {
         allowed: entry.count <= limit,
         limit,
@@ -479,8 +459,8 @@ function createRateLimiter(options) {
         retryAfterMs: Math.max(0, entry.resetAt - now),
       };
     },
-    size() { return entries.size; },
-    clear() { entries.clear(); },
+    size: () => entries.size,
+    clear: () => entries.clear(),
   };
 }
 
@@ -507,11 +487,22 @@ async function readJsonBody(req, config) {
     chunks.push(chunk);
   }
   if (!chunks.length) return {};
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } catch (_error) {
-    throw httpError(400, 'invalid_json');
-  }
+  const text = Buffer.concat(chunks).toString('utf8');
+  if (!text.trim()) return {};
+  try { return JSON.parse(text); }
+  catch (_error) { throw httpError(400, 'invalid_json'); }
+}
+
+function auditImmediate(api, req, pathname, statusCode, error) {
+  recordApiRequest(api.getWorld(), {
+    method: req.method || 'GET',
+    path: pathname,
+    statusCode,
+    durationMs: 0,
+    accountId: req.apiAccountId || null,
+    error,
+    userAgent: req.headers['user-agent'] || null,
+  });
 }
 
 function rejectUpgrade(socket, statusCode, message) {
@@ -522,8 +513,7 @@ function rejectUpgrade(socket, statusCode, message) {
 }
 
 function normalizePath(value) {
-  const text = String(value || '/').replace(/\/+$/g, '');
-  return text || '/';
+  return String(value || '/').replace(/\/+$/g, '') || '/';
 }
 
 function httpError(statusCode, message) {
@@ -537,6 +527,7 @@ function ok(data) {
 }
 
 function writeJson(res, statusCode, payload) {
+  if (res.writableEnded) return;
   const text = JSON.stringify(payload);
   res.statusCode = statusCode;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
