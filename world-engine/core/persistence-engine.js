@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { repairAccountSessionState } = require('./account-session-engine');
 
 const PERSISTENCE_SCHEMA_VERSION = 1;
 
@@ -13,6 +14,7 @@ const DEFAULT_PERSISTENCE_OPTIONS = {
 
 function createSaveEnvelope(world, options = {}) {
   if (!world) throw new Error('createSaveEnvelope requires world');
+  if (world.accounts) repairAccountSessionState(world);
   const now = new Date().toISOString();
   return {
     schemaVersion: PERSISTENCE_SCHEMA_VERSION,
@@ -104,7 +106,9 @@ function listSaves(directory) {
 }
 
 function migrateSaveEnvelope(envelope) {
-  if (envelope.schemaVersion > PERSISTENCE_SCHEMA_VERSION) throw new Error(`Unsupported future save schema ${envelope.schemaVersion}`);
+  if (envelope.schemaVersion > PERSISTENCE_SCHEMA_VERSION) {
+    throw new Error(`Unsupported future save schema ${envelope.schemaVersion}`);
+  }
   let current = envelope;
   while (current.schemaVersion < PERSISTENCE_SCHEMA_VERSION) current = migrateOneVersion(current);
   return current;
@@ -140,6 +144,7 @@ function normalizeEnvelope(raw) {
 
 function repairLoadedWorld(world) {
   if (!world || typeof world !== 'object') return world;
+  if (world.accounts) repairAccountSessionState(world);
   deleteTransientSetCaches(world);
   return world;
 }
