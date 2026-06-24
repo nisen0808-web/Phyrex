@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+!.env.production.example
+*.log
+coverage/
+world-engine/data/
+world-engine/saves/
+world-engine/output/*.json
+world-engine/output/*.bak.*
+world-engine/output/*.tmp-*
