@@ -9,22 +9,26 @@ const DEFAULT_PERSISTENCE_OPTIONS = {
   pretty: true,
   createBackup: true,
   maxBackups: 5,
+  excludeSessions: false,
 };
 
 function createSaveEnvelope(world, options = {}) {
   if (!world) throw new Error('createSaveEnvelope requires world');
+  const config = { ...DEFAULT_PERSISTENCE_OPTIONS, ...(options || {}) };
   const now = new Date().toISOString();
+  const persistentWorld = prepareWorldForPersistence(world, config);
   return {
     schemaVersion: PERSISTENCE_SCHEMA_VERSION,
     savedAt: now,
-    worldId: world.id,
-    tick: world.tick,
+    worldId: persistentWorld.id,
+    tick: persistentWorld.tick,
     metadata: {
-      ...(options.metadata || {}),
+      ...(config.metadata || {}),
       engine: 'world-engine',
-      reason: options.reason || 'manual',
+      reason: config.reason || 'manual',
+      sessionsExcluded: Boolean(config.excludeSessions),
     },
-    world,
+    world: persistentWorld,
   };
 }
 
@@ -44,6 +48,7 @@ function saveWorld(world, filePath, options = {}) {
     tick: envelope.tick,
     savedAt: envelope.savedAt,
     bytes: Buffer.byteLength(text, 'utf8'),
+    sessionsExcluded: Boolean(envelope.metadata.sessionsExcluded),
   };
 }
 
@@ -94,6 +99,7 @@ function listSaves(directory) {
           metadata,
           label: metadata.label || metadata.name || null,
           reason: metadata.reason || null,
+          sessionsExcluded: Boolean(metadata.sessionsExcluded),
         };
       } catch (_) {
         header = { unreadable: true, metadata: {} };
@@ -101,6 +107,16 @@ function listSaves(directory) {
       return { file, name, size: stat.size, mtimeMs: stat.mtimeMs, ...header };
     })
     .sort((a, b) => Number(b.mtimeMs || 0) - Number(a.mtimeMs || 0));
+}
+
+function prepareWorldForPersistence(world, options = {}) {
+  if (!options.excludeSessions) return world;
+  const clone = JSON.parse(JSON.stringify(world));
+  if (clone.accounts) {
+    clone.accounts.sessions = {};
+    clone.accounts.byToken = {};
+  }
+  return clone;
 }
 
 function migrateSaveEnvelope(envelope) {
@@ -141,6 +157,10 @@ function normalizeEnvelope(raw) {
 function repairLoadedWorld(world) {
   if (!world || typeof world !== 'object') return world;
   deleteTransientSetCaches(world);
+  if (world.accounts) {
+    if (!world.accounts.sessions || typeof world.accounts.sessions !== 'object') world.accounts.sessions = {};
+    if (!world.accounts.byToken || typeof world.accounts.byToken !== 'object') world.accounts.byToken = {};
+  }
   return world;
 }
 
@@ -179,6 +199,7 @@ module.exports = {
   loadWorld,
   autosaveWorld,
   listSaves,
+  prepareWorldForPersistence,
   migrateSaveEnvelope,
   repairLoadedWorld,
 };
