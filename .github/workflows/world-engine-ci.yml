@@ -7,6 +7,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -39,3 +42,47 @@ jobs:
           node-version: 22.x
       - name: Run 1000 tick stability test
         run: npm run stress
+
+  production-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build --tag phyrex-world-engine:ci .
+      - name: Run production container smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker volume create phyrex-ci-data >/dev/null
+          cleanup() {
+            docker rm -f phyrex-ci >/dev/null 2>&1 || true
+            docker volume rm phyrex-ci-data >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker run --detach \
+            --name phyrex-ci \
+            --publish 8790:8790 \
+            --env MUD_ADMIN_ID=ci_admin \
+            --env MUD_ADMIN_SECRET='CI Administrator Secret 123' \
+            --env MUD_AUTO_LOOP=false \
+            --env MUD_AUTOSAVE_EVERY_TICKS=0 \
+            --volume phyrex-ci-data:/data \
+            phyrex-world-engine:ci >/dev/null
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8790/ready > /tmp/ready.json; then
+              break
+            fi
+            if [ "$attempt" = 30 ]; then
+              docker logs phyrex-ci
+              exit 1
+            fi
+            sleep 1
+          done
+          node -e "const r=require('/tmp/ready.json'); if(!r.ready) process.exit(1)"
+          curl --fail --silent \
+            --header 'Content-Type: application/json' \
+            --data '{"accountId":"ci_admin","secret":"CI Administrator Secret 123"}' \
+            http://127.0.0.1:8790/sessions > /tmp/session.json
+          node -e "const r=require('/tmp/session.json'); if(!r.ok || !r.data.token) process.exit(1)"
+          docker exec phyrex-ci node world-engine/demo/healthcheck.js
