@@ -13,6 +13,11 @@ const {
   analyzeSystemRegistry,
 } = require('./system-scheduler-engine');
 const {
+  createSimulationPipelineRegistry,
+  createSimulationFrame,
+  getSimulationPipelineSummary,
+} = require('./simulation-pipeline-engine');
+const {
   ensureRandomState,
   withDeterministicGlobals,
   getRandomSummary,
@@ -21,8 +26,29 @@ const { ensureWorldIdState } = require('./world-id-engine');
 const { hashWorldState } = require('./state-integrity-engine');
 
 const DETERMINISTIC_KERNEL_VERSION = 1;
+const KERNEL_PIPELINES = {
+  MODULAR: 'modular',
+  LEGACY: 'legacy',
+};
 
 function createDeterministicSimulationKernel(options = {}) {
+  const pipeline = normalizePipeline(options.pipeline);
+  const registry = pipeline === KERNEL_PIPELINES.LEGACY
+    ? createLegacySimulationRegistry(options)
+    : createSimulationPipelineRegistry({ phases: options.phases });
+  return {
+    version: DETERMINISTIC_KERNEL_VERSION,
+    pipeline,
+    registry,
+    options: {
+      failurePolicy: options.failurePolicy || 'halt',
+      atomic: Boolean(options.atomic),
+      recordResults: Boolean(options.recordResults),
+    },
+  };
+}
+
+function createLegacySimulationRegistry(options = {}) {
   const registry = createSystemRegistry({
     phases: options.phases || ['before', 'simulation', 'after'],
   });
@@ -32,21 +58,14 @@ function createDeterministicSimulationKernel(options = {}) {
     priority: 0,
     reads: ['*'],
     writes: ['*'],
+    tags: ['simulation', 'legacy'],
     run: context => {
       const report = runSimulationTick(context.world, context.shared.simulationOptions || {});
       context.shared.simulationReport = report;
       return report;
     },
   });
-  return {
-    version: DETERMINISTIC_KERNEL_VERSION,
-    registry,
-    options: {
-      failurePolicy: options.failurePolicy || 'halt',
-      atomic: Boolean(options.atomic),
-      recordResults: Boolean(options.recordResults),
-    },
-  };
+  return registry;
 }
 
 function registerKernelSystem(kernel, definition) {
@@ -63,20 +82,29 @@ function runDeterministicSimulationTick(world, options = {}, kernel = null) {
   ensureDeterministicWorldState(world);
   const activeKernel = kernel || createDeterministicSimulationKernel(options.kernel || {});
   validateKernel(activeKernel);
+  const simulationOptions = options.simulation || options;
+  const tick = Number(world.tick || 0);
   const shared = {
-    simulationOptions: options.simulation || options,
+    simulationOptions,
     simulationReport: null,
+    simulationFrame: activeKernel.pipeline === KERNEL_PIPELINES.MODULAR
+      ? createSimulationFrame(world, simulationOptions)
+      : null,
     metadata: { ...(options.metadata || {}) },
   };
   const schedule = runSystemSchedule(world, activeKernel.registry, {
     ...activeKernel.options,
     ...(options.scheduler || {}),
-    tick: Number(world.tick || 0),
-    targetTick: Number(world.tick || 0) + 1,
+    tick,
+    targetTick: tick + 1,
     shared,
   });
-  if (!shared.simulationReport) throw new Error('Deterministic kernel did not execute world.simulation');
+  if (!shared.simulationReport) {
+    throw new Error(`Deterministic ${activeKernel.pipeline} pipeline did not finalize a simulation report`);
+  }
   shared.simulationReport.kernel = {
+    version: activeKernel.version,
+    pipeline: activeKernel.pipeline,
     scheduleId: schedule.id,
     completed: schedule.completed,
     skipped: schedule.skipped,
@@ -102,7 +130,11 @@ function getDeterministicSimulationSummary(world, kernel = null) {
     simulation: getSimulationSummary(world),
     random: getRandomSummary(world),
     scheduler: getSchedulerSummary(world),
+    pipeline: kernel?.pipeline || null,
     registry: kernel ? analyzeSystemRegistry(kernel.registry) : null,
+    modularPipeline: kernel?.pipeline === KERNEL_PIPELINES.MODULAR
+      ? getSimulationPipelineSummary(kernel.registry)
+      : null,
     worldDigest: hashWorldState(world),
   };
 }
@@ -113,20 +145,33 @@ function ensureDeterministicWorldState(world) {
   return world;
 }
 
+function normalizePipeline(value) {
+  if (value === undefined || value === null || value === '') return KERNEL_PIPELINES.MODULAR;
+  const pipeline = String(value).trim().toLowerCase();
+  if (!Object.values(KERNEL_PIPELINES).includes(pipeline)) {
+    throw new Error(`Unsupported deterministic simulation pipeline ${pipeline}`);
+  }
+  return pipeline;
+}
+
 function validateKernel(kernel) {
   if (!kernel || kernel.version !== DETERMINISTIC_KERNEL_VERSION || !kernel.registry) {
     throw new Error('Invalid deterministic simulation kernel');
   }
+  kernel.pipeline = normalizePipeline(kernel.pipeline || KERNEL_PIPELINES.LEGACY);
   return kernel;
 }
 
 module.exports = {
   DETERMINISTIC_KERNEL_VERSION,
+  KERNEL_PIPELINES,
   createDeterministicSimulationKernel,
+  createLegacySimulationRegistry,
   registerKernelSystem,
   initializeDeterministicSimulation,
   runDeterministicSimulationTick,
   runDeterministicSimulationTicks,
   getDeterministicSimulationSummary,
   ensureDeterministicWorldState,
+  normalizePipeline,
 };
