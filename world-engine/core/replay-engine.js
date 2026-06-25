@@ -39,14 +39,16 @@ function createReplayTape(world, options = {}) {
   const state = ensureReplayState(world);
   state.tapesCreated = Number(state.tapesCreated || 0) + 1;
   const includeInitialWorld = options.includeInitialWorld !== false;
+  const tapeId = options.id || nextEngineId(world, 'replay');
+  const initialHash = hashSimulationState(world, options.hashOptions || {});
   const tape = {
     version: REPLAY_VERSION,
-    id: options.id || nextEngineId(world, 'replay'),
+    id: tapeId,
     name: options.name || null,
     worldId: world.id || null,
     seed: cloneValue(world.seed),
     startTick: Number(world.tick || 0),
-    initialHash: hashSimulationState(world, options.hashOptions || {}),
+    initialHash,
     initialWorld: includeInitialWorld ? cloneValue(world) : null,
     operations: [],
     checkpoints: [],
@@ -62,6 +64,7 @@ function createReplayTape(world, options = {}) {
 
 function executeAndRecord(world, tape, kind, input, handler, options = {}) {
   if (typeof handler !== 'function') throw new Error('executeAndRecord requires handler');
+  const tickBefore = Number(world.tick || 0);
   const beforeHash = hashSimulationState(world, tape.hashOptions || {});
   const result = handler(world, cloneValue(input), options);
   if (result && typeof result.then === 'function') {
@@ -70,6 +73,7 @@ function executeAndRecord(world, tape, kind, input, handler, options = {}) {
   const operation = recordReplayOperation(world, tape, {
     kind,
     input,
+    tickBefore,
     beforeHash,
     result,
     metadata: options.metadata,
@@ -79,11 +83,13 @@ function executeAndRecord(world, tape, kind, input, handler, options = {}) {
 
 async function executeAndRecordAsync(world, tape, kind, input, handler, options = {}) {
   if (typeof handler !== 'function') throw new Error('executeAndRecordAsync requires handler');
+  const tickBefore = Number(world.tick || 0);
   const beforeHash = hashSimulationState(world, tape.hashOptions || {});
   const result = await handler(world, cloneValue(input), options);
   const operation = recordReplayOperation(world, tape, {
     kind,
     input,
+    tickBefore,
     beforeHash,
     result,
     metadata: options.metadata,
@@ -94,9 +100,10 @@ async function executeAndRecordAsync(world, tape, kind, input, handler, options 
 function recordReplayOperation(world, tape, input = {}) {
   validateTape(tape);
   const state = ensureReplayState(world);
+  const index = tape.operations.length;
   const operation = {
-    index: tape.operations.length,
-    id: input.id || nextEngineId(world, 'replay_step'),
+    index,
+    id: input.id || `${tape.id}_step_${index + 1}`,
     tickBefore: Number(input.tickBefore ?? world.tick ?? 0),
     tickAfter: Number(world.tick || 0),
     kind: String(input.kind || 'operation'),
@@ -141,7 +148,125 @@ function replayTape(tape, handlers, options = {}) {
     });
   }
 
-  const report = {
+  const report = createReplayReport(tape, world, initialHash);
+  try {
+    for (const operation of tape.operations) {
+      replayOneOperation(world, tape, operation, handlers, options, report);
+    }
+    completeReplayReport(world, tape, options, report);
+    updateReplaySummary(world, tape, report, null);
+    return report;
+  } catch (error) {
+    if (error instanceof ReplayDivergenceError) updateReplaySummary(world, tape, report, error.details);
+    throw error;
+  }
+}
+
+async function replayTapeAsync(tape, handlers, options = {}) {
+  validateTape(tape);
+  if (!tape.initialWorld && typeof options.createWorld !== 'function') {
+    throw new Error('Replay tape has no initial world; createWorld option is required');
+  }
+  const world = tape.initialWorld
+    ? cloneValue(tape.initialWorld)
+    : await options.createWorld(cloneValue(tape));
+  const initialHash = hashSimulationState(world, tape.hashOptions || {});
+  if (options.verifyInitial !== false && initialHash !== tape.initialHash) {
+    throw createDivergence('Initial replay state does not match tape', {
+      index: -1,
+      expectedHash: tape.initialHash,
+      actualHash: initialHash,
+    });
+  }
+
+  const report = createReplayReport(tape, world, initialHash);
+  try {
+    for (const operation of tape.operations) {
+      const handler = resolveReplayHandler(handlers, operation.kind);
+      const beforeHash = verifyReplayBefore(world, tape, operation, options);
+      const result = await handler(world, cloneValue(operation.input), operation, options);
+      verifyReplayAfter(world, operation, beforeHash, result, options, report);
+    }
+    completeReplayReport(world, tape, options, report);
+    updateReplaySummary(world, tape, report, null);
+    return report;
+  } catch (error) {
+    if (error instanceof ReplayDivergenceError) updateReplaySummary(world, tape, report, error.details);
+    throw error;
+  }
+}
+
+function replayOneOperation(world, tape, operation, handlers, options, report) {
+  const handler = resolveReplayHandler(handlers, operation.kind);
+  const beforeHash = verifyReplayBefore(world, tape, operation, options);
+  const result = handler(world, cloneValue(operation.input), operation, options);
+  if (result && typeof result.then === 'function') throw new Error('Replay handler returned Promise; use replayTapeAsync');
+  return verifyReplayAfter(world, operation, beforeHash, result, options, report);
+}
+
+function verifyReplayBefore(world, tape, operation, options) {
+  const beforeHash = hashSimulationState(world, tape.hashOptions || {});
+  if (options.verifyBefore !== false && operation.beforeHash && beforeHash !== operation.beforeHash) {
+    throw createDivergence(`Replay diverged before operation ${operation.index}`, {
+      operation,
+      index: operation.index,
+      phase: 'before',
+      expectedHash: operation.beforeHash,
+      actualHash: beforeHash,
+    });
+  }
+  return beforeHash;
+}
+
+function verifyReplayAfter(world, operation, beforeHash, result, options, report) {
+  const afterHash = hashSimulationState(world, report.world.engine?.replay?.hashOptions || {});
+  const item = {
+    index: operation.index,
+    id: operation.id,
+    kind: operation.kind,
+    beforeHash,
+    afterHash,
+    expectedHash: operation.afterHash,
+    result: cloneValue(result),
+    matched: afterHash === operation.afterHash,
+  };
+  report.operations.push(item);
+  if (!item.matched && options.verifyAfter !== false) {
+    throw createDivergence(`Replay diverged after operation ${operation.index}`, {
+      operation,
+      index: operation.index,
+      phase: 'after',
+      expectedHash: operation.afterHash,
+      actualHash: afterHash,
+      report: { ...report, world: undefined },
+    });
+  }
+  return item;
+}
+
+function completeReplayReport(world, tape, options, report) {
+  report.finalHash = hashSimulationState(world, tape.hashOptions || {});
+  report.integrity = validateWorldState(world, options.integrityOptions || {});
+  if (options.requireIntegrity !== false && !report.integrity.ok) {
+    throw createDivergence('Replay completed with invalid world state', {
+      report: { ...report, world: undefined },
+    });
+  }
+  for (const checkpoint of tape.checkpoints || []) {
+    if (checkpoint.index < 0) continue;
+    const operation = report.operations.find(item => item.index === checkpoint.index);
+    if (!operation) continue;
+    report.checkpoints.push({
+      index: checkpoint.index,
+      expectedHash: checkpoint.hash,
+      actualHash: operation.afterHash,
+      matched: checkpoint.hash === operation.afterHash,
+    });
+  }
+}
+
+function createReplayReport(tape, world, initialHash) {
+  return {
     tapeId: tape.id,
     world,
     operations: [],
@@ -150,127 +275,6 @@ function replayTape(tape, handlers, options = {}) {
     finalHash: null,
     integrity: null,
   };
-
-  for (const operation of tape.operations) {
-    const handler = resolveReplayHandler(handlers, operation.kind);
-    const beforeHash = hashSimulationState(world, tape.hashOptions || {});
-    if (options.verifyBefore !== false && operation.beforeHash && beforeHash !== operation.beforeHash) {
-      throw createDivergence(`Replay diverged before operation ${operation.index}`, {
-        operation,
-        index: operation.index,
-        phase: 'before',
-        expectedHash: operation.beforeHash,
-        actualHash: beforeHash,
-      });
-    }
-    const result = handler(world, cloneValue(operation.input), operation, options);
-    if (result && typeof result.then === 'function') throw new Error('Replay handler returned Promise; use replayTapeAsync');
-    const afterHash = hashSimulationState(world, tape.hashOptions || {});
-    const item = {
-      index: operation.index,
-      id: operation.id,
-      kind: operation.kind,
-      beforeHash,
-      afterHash,
-      expectedHash: operation.afterHash,
-      result: cloneValue(result),
-      matched: afterHash === operation.afterHash,
-    };
-    report.operations.push(item);
-    if (!item.matched && options.verifyAfter !== false) {
-      throw createDivergence(`Replay diverged after operation ${operation.index}`, {
-        operation,
-        index: operation.index,
-        phase: 'after',
-        expectedHash: operation.afterHash,
-        actualHash: afterHash,
-        report,
-      });
-    }
-    const checkpoint = tape.checkpoints.find(value => value.index === operation.index);
-    if (checkpoint) report.checkpoints.push({
-      index: operation.index,
-      expectedHash: checkpoint.hash,
-      actualHash: afterHash,
-      matched: checkpoint.hash === afterHash,
-    });
-  }
-
-  report.finalHash = hashSimulationState(world, tape.hashOptions || {});
-  report.integrity = validateWorldState(world, options.integrityOptions || {});
-  if (options.requireIntegrity !== false && !report.integrity.ok) {
-    throw createDivergence('Replay completed with invalid world state', { report });
-  }
-  updateReplaySummary(world, tape, report, null);
-  return report;
-}
-
-async function replayTapeAsync(tape, handlers, options = {}) {
-  validateTape(tape);
-  const world = tape.initialWorld
-    ? cloneValue(tape.initialWorld)
-    : await options.createWorld(cloneValue(tape));
-  const report = {
-    tapeId: tape.id,
-    world,
-    operations: [],
-    checkpoints: [],
-    initialHash: hashSimulationState(world, tape.hashOptions || {}),
-    finalHash: null,
-    integrity: null,
-  };
-  if (options.verifyInitial !== false && report.initialHash !== tape.initialHash) {
-    throw createDivergence('Initial replay state does not match tape', {
-      index: -1,
-      expectedHash: tape.initialHash,
-      actualHash: report.initialHash,
-    });
-  }
-
-  for (const operation of tape.operations) {
-    const handler = resolveReplayHandler(handlers, operation.kind);
-    const beforeHash = hashSimulationState(world, tape.hashOptions || {});
-    if (options.verifyBefore !== false && operation.beforeHash && beforeHash !== operation.beforeHash) {
-      throw createDivergence(`Replay diverged before operation ${operation.index}`, {
-        operation,
-        index: operation.index,
-        phase: 'before',
-        expectedHash: operation.beforeHash,
-        actualHash: beforeHash,
-      });
-    }
-    const result = await handler(world, cloneValue(operation.input), operation, options);
-    const afterHash = hashSimulationState(world, tape.hashOptions || {});
-    const item = {
-      index: operation.index,
-      id: operation.id,
-      kind: operation.kind,
-      beforeHash,
-      afterHash,
-      expectedHash: operation.afterHash,
-      result: cloneValue(result),
-      matched: afterHash === operation.afterHash,
-    };
-    report.operations.push(item);
-    if (!item.matched && options.verifyAfter !== false) {
-      throw createDivergence(`Replay diverged after operation ${operation.index}`, {
-        operation,
-        index: operation.index,
-        phase: 'after',
-        expectedHash: operation.afterHash,
-        actualHash: afterHash,
-        report,
-      });
-    }
-  }
-
-  report.finalHash = hashSimulationState(world, tape.hashOptions || {});
-  report.integrity = validateWorldState(world, options.integrityOptions || {});
-  if (options.requireIntegrity !== false && !report.integrity.ok) {
-    throw createDivergence('Replay completed with invalid world state', { report });
-  }
-  updateReplaySummary(world, tape, report, null);
-  return report;
 }
 
 function compareReplayWorlds(expectedWorld, actualWorld, options = {}) {
