@@ -39,6 +39,7 @@ function nextEngineId(world, namespace = 'id', options = {}) {
   const current = Math.max(0, Number(state.ids.byNamespace[key] || 0));
   const next = current + 1;
   state.ids.byNamespace[key] = next;
+  state.ids.total = Math.max(0, Number(state.ids.total || 0)) + 1;
   const tick = Math.max(0, Number(options.tick ?? world.tick ?? 0));
   const worldPart = options.includeWorld === false ? '' : `${sanitizeNamespace(world.id || 'world')}_`;
   return `${key}_${worldPart}${tick.toString(36)}_${next.toString(36)}`;
