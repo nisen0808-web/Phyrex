@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextTransientId } = require('./world-id-engine');
+
 const DEFAULT_WORLD_OPTIONS = {
   id: 'world',
   seed: 1,
@@ -123,7 +125,7 @@ function createFaction(input = {}) {
 function createEvent(input = {}) {
   if (!input.type) throw new Error('Event requires type');
   return {
-    id: input.id || `event_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    id: input.id || nextTransientId('event'),
     type: input.type,
     status: input.status || 'pending',
     tick: input.tick || 0,
@@ -140,7 +142,7 @@ function createEvent(input = {}) {
 function createAction(input = {}) {
   if (!input.type) throw new Error('Action requires type');
   return {
-    id: input.id || `action_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    id: input.id || nextTransientId('action'),
     type: input.type,
     actorId: input.actorId || null,
     targetId: input.targetId || null,
