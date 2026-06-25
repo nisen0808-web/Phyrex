@@ -3,6 +3,9 @@
 const fs = require('fs');
 const path = require('path');
 const { repairAccountSessionState } = require('./account-session-engine');
+const { ensureRandomState } = require('./random-engine');
+const { ensureWorldIdState } = require('./world-id-engine');
+const { ensureSchedulerState } = require('./system-scheduler-engine');
 
 const PERSISTENCE_SCHEMA_VERSION = 1;
 
@@ -14,7 +17,7 @@ const DEFAULT_PERSISTENCE_OPTIONS = {
 
 function createSaveEnvelope(world, options = {}) {
   if (!world) throw new Error('createSaveEnvelope requires world');
-  if (world.accounts) repairAccountSessionState(world);
+  repairEngineState(world);
   const now = new Date().toISOString();
   return {
     schemaVersion: PERSISTENCE_SCHEMA_VERSION,
@@ -144,8 +147,17 @@ function normalizeEnvelope(raw) {
 
 function repairLoadedWorld(world) {
   if (!world || typeof world !== 'object') return world;
-  if (world.accounts) repairAccountSessionState(world);
+  repairEngineState(world);
   deleteTransientSetCaches(world);
+  return world;
+}
+
+function repairEngineState(world) {
+  if (!world || typeof world !== 'object') return world;
+  if (world.accounts) repairAccountSessionState(world);
+  ensureRandomState(world);
+  ensureWorldIdState(world);
+  ensureSchedulerState(world);
   return world;
 }
 
@@ -186,4 +198,5 @@ module.exports = {
   listSaves,
   migrateSaveEnvelope,
   repairLoadedWorld,
+  repairEngineState,
 };
