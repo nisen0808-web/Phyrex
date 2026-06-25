@@ -1,6 +1,8 @@
 'use strict';
 
 const { createEvent } = require('./schema');
+const { nextEngineId, ensureEngineState } = require('./engine-state-engine');
+const { createRandomFunction } = require('./deterministic-rng-engine');
 const {
   applyEventRelationshipEffects,
   decayRelationships,
@@ -41,8 +43,13 @@ function processEvents(world, options = {}) {
     });
 
     for (const next of result.generatedEvents || []) {
-      const created = createEvent({ ...next, tick: world.tick, causeIds: [event.id, ...(next.causeIds || [])] });
-      world.events.push(created);
+      const created = emitGeneratedEvent(world, {
+        ...next,
+        tick: world.tick,
+        correlationId: next.correlationId || event.correlationId || options.correlationId || null,
+        causationId: next.causationId || event.id,
+        causeIds: [event.id, ...(next.causeIds || [])],
+      }, options);
       generated.push(created);
     }
   }
@@ -164,32 +171,49 @@ function handleDamageEvent(world, event, options = {}) {
 function scheduleRandomEvents(world, options = {}) {
   const generated = [];
   const chance = Number(options.chance || 0.03);
-  const random = options.random || Math.random;
+  const random = options.random || createRandomFunction(world, options.randomStream || 'events.random_incident');
 
   if (random() > chance) return generated;
 
-  const aliveEntities = Object.values(world.entities).filter(e => e.status === 'alive');
-  const locations = Object.values(world.locations);
+  const aliveEntities = Object.values(world.entities)
+    .filter(entity => entity.status === 'alive')
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const locations = Object.values(world.locations)
+    .sort((left, right) => left.id.localeCompare(right.id));
   if (!aliveEntities.length || !locations.length) return generated;
 
   const actor = aliveEntities[Math.floor(random() * aliveEntities.length)];
   const location = world.locations[actor.locationId] || locations[Math.floor(random() * locations.length)];
 
-  const event = createEvent({
+  const event = emitGeneratedEvent(world, {
     type: 'world.random_incident',
     tick: world.tick,
     actorIds: [actor.id],
     locationId: location.id,
+    correlationId: options.correlationId || null,
     payload: {
       danger: location.danger || 0,
       intensity: Math.round(random() * 100),
     },
     tags: ['random'],
-  });
+  }, options);
 
-  world.events.push(event);
   generated.push(event);
   return generated;
+}
+
+function emitGeneratedEvent(world, input, options = {}) {
+  if (typeof options.emitEvent === 'function') return options.emitEvent(world, input);
+  const id = input.id || nextEngineId(world, 'event');
+  const event = createEvent({
+    ...input,
+    id,
+    sequence: input.sequence ?? ensureEngineState(world).ids.total,
+    tick: input.tick ?? world.tick,
+    createdTick: input.createdTick ?? world.tick,
+  });
+  world.events.push(event);
+  return event;
 }
 
 function recordEventMemory(world, event, payload = {}) {
@@ -227,8 +251,8 @@ function recordCausalityFromEvent(world, event, type) {
 }
 
 function trimResolvedEvents(world, maxResolvedEvents) {
-  const pending = world.events.filter(e => e.status === 'pending');
-  const resolved = world.events.filter(e => e.status !== 'pending');
+  const pending = world.events.filter(event => event.status === 'pending');
+  const resolved = world.events.filter(event => event.status !== 'pending');
   const keptResolved = resolved.slice(Math.max(0, resolved.length - maxResolvedEvents));
   world.events = [...keptResolved, ...pending];
 }
@@ -237,6 +261,7 @@ module.exports = {
   DEFAULT_EVENT_HANDLERS,
   processEvents,
   scheduleRandomEvents,
+  emitGeneratedEvent,
   handleGenericEvent,
   handleEntityMoved,
   handleRelationshipEvent,
