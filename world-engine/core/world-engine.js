@@ -13,9 +13,19 @@ const {
 const { applyActionTick } = require('./action-engine');
 const { processEvents } = require('./event-engine');
 const { rebuildRelationshipIndexes } = require('./relationship-engine');
+const {
+  ensureEngineState,
+  nextEngineSequence,
+  nextEngineId,
+} = require('./engine-state-engine');
+const { ensureRandomState } = require('./deterministic-rng-engine');
+const { appendTrace } = require('./engine-trace-engine');
 
 function createWorld(options = {}) {
-  return createWorldState(options);
+  const world = createWorldState(options);
+  ensureEngineState(world);
+  ensureRandomState(world);
+  return world;
 }
 
 function registerEntity(world, input) {
@@ -45,6 +55,8 @@ function connectLocations(world, a, b) {
   if (!locA || !locB) throw new Error('Cannot connect missing locations');
   if (!locA.neighbors.includes(b)) locA.neighbors.push(b);
   if (!locB.neighbors.includes(a)) locB.neighbors.push(a);
+  locA.neighbors.sort();
+  locB.neighbors.sort();
 }
 
 function registerFaction(world, input) {
@@ -57,15 +69,49 @@ function registerFaction(world, input) {
 }
 
 function enqueueAction(world, input) {
-  const action = createAction(input);
+  const normalized = withDeterministicIdentity(world, input, 'action');
+  const action = createAction({
+    ...normalized,
+    createdTick: normalized.createdTick ?? world.tick,
+  });
   world.actionQueue.push(action);
-  world.actionQueue.sort((a, b) => b.priority - a.priority);
+  world.actionQueue.sort(compareActions);
+  appendTrace(world, {
+    type: 'action.enqueued',
+    phase: 'world',
+    correlationId: action.correlationId,
+    parentId: action.causationId,
+    payload: {
+      actionId: action.id,
+      actionType: action.type,
+      actorId: action.actorId,
+      priority: action.priority,
+      sequence: action.sequence,
+    },
+  });
   return action;
 }
 
 function emitEvent(world, input) {
-  const event = createEvent({ ...input, tick: input.tick ?? world.tick });
+  const normalized = withDeterministicIdentity(world, input, 'event');
+  const event = createEvent({
+    ...normalized,
+    tick: normalized.tick ?? world.tick,
+    createdTick: normalized.createdTick ?? world.tick,
+  });
   world.events.push(event);
+  appendTrace(world, {
+    type: 'event.emitted',
+    phase: 'world',
+    correlationId: event.correlationId,
+    parentId: event.causationId || event.actionId,
+    payload: {
+      eventId: event.id,
+      eventType: event.type,
+      actionId: event.actionId,
+      sequence: event.sequence,
+    },
+  });
   return event;
 }
 
@@ -78,16 +124,29 @@ function advanceWorld(world, ticks = 1, options = {}) {
 }
 
 function advanceOneTick(world, options = {}) {
+  ensureEngineState(world);
+  ensureRandomState(world);
+  const correlationId = options.correlationId || nextEngineId(world, 'tick');
   world.tick += 1;
   advanceCalendar(world);
 
-  const actionReport = processActionQueue(world, options);
-  const eventReport = processEvents(world, options);
+  appendTrace(world, {
+    type: 'world.tick.started',
+    phase: 'world',
+    correlationId,
+    tick: world.tick,
+    payload: { tick: world.tick },
+  });
+
+  const engineOptions = { ...options, emitEvent, correlationId };
+  const actionReport = processActionQueue(world, engineOptions);
+  const eventReport = processEvents(world, engineOptions);
   rebuildIndexes(world);
   rebuildRelationshipIndexes(world);
 
   const report = {
     tick: world.tick,
+    correlationId,
     calendar: clone(world.calendar),
     actions: actionReport,
     events: eventReport,
@@ -101,6 +160,20 @@ function advanceOneTick(world, options = {}) {
     });
   }
 
+  appendTrace(world, {
+    type: 'world.tick.completed',
+    phase: 'world',
+    correlationId,
+    tick: world.tick,
+    payload: {
+      tick: world.tick,
+      completedActions: actionReport.completed.length,
+      failedActions: actionReport.failed.length,
+      processedEvents: eventReport.processed.length,
+      generatedEvents: eventReport.generated.length,
+    },
+  });
+
   return report;
 }
 
@@ -110,6 +183,7 @@ function processActionQueue(world, options = {}) {
   const failed = [];
   const actionOptions = { ...options, emitEvent };
 
+  world.actionQueue.sort(compareActions);
   for (const action of world.actionQueue) {
     const result = applyActionTick(world, action, actionOptions);
     if (result.status === 'completed') completed.push(result);
@@ -117,7 +191,7 @@ function processActionQueue(world, options = {}) {
     else active.push(action);
   }
 
-  world.actionQueue = active;
+  world.actionQueue = active.sort(compareActions);
   return { completed, failed, activeCount: active.length };
 }
 
@@ -176,7 +250,7 @@ function changeEntityStat(world, entityId, statKey, delta) {
 
 function recordCausality(world, input) {
   const record = {
-    id: input.id || `cause_${world.tick}_${world.causality.length + 1}`,
+    id: input.id || nextEngineId(world, 'cause'),
     tick: world.tick,
     type: input.type,
     sourceId: input.sourceId || null,
@@ -192,7 +266,7 @@ function recordCausality(world, input) {
 
 function recordMemory(world, input) {
   const memory = {
-    id: input.id || `memory_${world.tick}_${world.memory.length + 1}`,
+    id: input.id || nextEngineId(world, 'memory'),
     tick: input.tick ?? world.tick,
     type: input.type,
     payload: input.payload || input,
@@ -209,6 +283,7 @@ function indexEntity(world, entity) {
     }
     if (!world.indexes.entitiesByLocation[entity.locationId].includes(entity.id)) {
       world.indexes.entitiesByLocation[entity.locationId].push(entity.id);
+      world.indexes.entitiesByLocation[entity.locationId].sort();
     }
   }
 
@@ -218,6 +293,7 @@ function indexEntity(world, entity) {
     }
     if (!world.indexes.entitiesByFaction[entity.factionId].includes(entity.id)) {
       world.indexes.entitiesByFaction[entity.factionId].push(entity.id);
+      world.indexes.entitiesByFaction[entity.factionId].sort();
     }
   }
 }
@@ -226,15 +302,15 @@ function rebuildIndexes(world) {
   world.indexes.entitiesByLocation = {};
   world.indexes.entitiesByFaction = {};
 
-  for (const locationId of Object.keys(world.locations)) {
+  for (const locationId of Object.keys(world.locations).sort()) {
     world.indexes.entitiesByLocation[locationId] = [];
   }
-  for (const factionId of Object.keys(world.factions)) {
+  for (const factionId of Object.keys(world.factions).sort()) {
     world.indexes.entitiesByFaction[factionId] = [];
   }
 
-  for (const entity of Object.values(world.entities)) {
-    indexEntity(world, entity);
+  for (const entityId of Object.keys(world.entities).sort()) {
+    indexEntity(world, world.entities[entityId]);
   }
 }
 
@@ -248,6 +324,25 @@ function getFactionMembers(world, factionId) {
   return (world.indexes.entitiesByFaction[factionId] || [])
     .map(id => world.entities[id])
     .filter(Boolean);
+}
+
+function withDeterministicIdentity(world, input, namespace) {
+  const value = { ...(input || {}) };
+  if (!value.id) {
+    value.id = nextEngineId(world, namespace);
+    value.sequence = value.sequence ?? ensureEngineState(world).ids.total;
+  } else if (value.sequence === undefined || value.sequence === null) {
+    value.sequence = nextEngineSequence(world);
+  }
+  return value;
+}
+
+function compareActions(left, right) {
+  const priority = Number(right.priority || 0) - Number(left.priority || 0);
+  if (priority) return priority;
+  const sequence = Number(left.sequence || 0) - Number(right.sequence || 0);
+  if (sequence) return sequence;
+  return String(left.id || '').localeCompare(String(right.id || ''));
 }
 
 module.exports = {
@@ -268,4 +363,5 @@ module.exports = {
   rebuildIndexes,
   getEntitiesAt,
   getFactionMembers,
+  compareActions,
 };
