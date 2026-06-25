@@ -43,6 +43,7 @@ const tests = [
   'session-token-hash-test.js',
   'request-throttle-test.js',
   'deterministic-random-engine-test.js',
+  'deterministic-purity-audit-test.js',
   'system-scheduler-engine-test.js',
   'modular-simulation-pipeline-test.js',
   'replay-determinism-test.js',
