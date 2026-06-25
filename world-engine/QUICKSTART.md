@@ -8,7 +8,7 @@ cd Phyrex
 npm test
 ```
 
-当前默认测试共 43 个：
+当前默认测试共 44 个：
 
 ```text
 smoke-test.js
@@ -51,6 +51,7 @@ session-token-hash-test.js
 request-throttle-test.js
 deterministic-random-engine-test.js
 system-scheduler-engine-test.js
+modular-simulation-pipeline-test.js
 replay-determinism-test.js
 world-template-test.js
 stability-100-test.js
@@ -242,6 +243,8 @@ runDeterministicSimulationTicks(world, 10, options, kernel);
 ```text
 命名随机流
 世界级确定性 ID
+28 个独立模拟子系统
+人口、社会、经济、智能体、知识和文明阶段
 阶段和依赖调度
 周期系统
 原子失败回滚
@@ -249,12 +252,14 @@ runDeterministicSimulationTicks(world, 10, options, kernel);
 规范化状态哈希
 确定性重放和分歧定位
 旧存档自动补齐内核状态
+旧单体管线兼容模式
 ```
 
 详细说明：
 
 ```text
 world-engine/DETERMINISTIC_KERNEL.md
+world-engine/SIMULATION_PIPELINE.md
 ```
 
 ## 6. 世界运行与持久化
@@ -269,9 +274,10 @@ npm run runtime
 random-engine.js             命名随机流和确定性兼容作用域
 world-id-engine.js           世界级单调 ID 序列
 system-scheduler-engine.js   系统阶段、依赖、周期与失败策略
+simulation-pipeline-engine.js 28 个模块化模拟子系统
 state-integrity-engine.js    规范序列化、SHA-256 与状态差异
 replay-engine.js             记录、重放和确定性验证
-deterministic-simulation-engine.js 现有完整模拟的确定性适配器
+deterministic-simulation-engine.js 模块化默认和旧单体兼容入口
 persistence-engine.js        save / load / autosave / list saves
 offline-command-engine.js    离线命令队列和确定性世界推进
 runtime-engine.js            tick batch、自动存档和 runtime snapshot
