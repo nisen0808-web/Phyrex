@@ -1,9 +1,12 @@
 'use strict';
 
-const { createEntity, clamp, createEvent } = require('./schema');
+const { createEntity, clamp } = require('./schema');
 const { recordLifeEvent, LIFE_EVENT_TYPES } = require('./history-engine');
 const { getRelationship, scoreRelationship } = require('./relationship-engine');
 const { areSpeciesCompatible, getSpeciesPopulationOptions, applySpeciesDefaultsToEntity } = require('./species-engine');
+const { randomChance } = require('./random-engine');
+const { nextWorldId } = require('./world-id-engine');
+const { emitEvent } = require('./world-engine');
 
 const DEFAULT_POPULATION_OPTIONS = {
   ticksPerYear: 720,
@@ -138,7 +141,7 @@ function shouldDieNaturally(world, entity, options) {
   if (age >= options.elderAge) chance *= options.elderMortalityMultiplier + (age - options.elderAge) * 0.15;
   if (age > expectancy) chance += (age - expectancy) * 0.015;
   if (age > options.maxNaturalAge) chance = 1;
-  return Math.random() < clamp(chance, 0, 1);
+  return randomChance(world, clamp(chance, 0, 1), `population.mortality:${entity.id}`);
 }
 
 function markNaturalDeath(world, entity) {
@@ -154,14 +157,14 @@ function markNaturalDeath(world, entity) {
     tags: ['death', 'population'],
     payload: { age: entity.demographics.age, reason: 'natural' },
   });
-  world.events.push(createEvent({
+  emitEvent(world, {
     type: 'population.death',
     tick: world.tick,
     actorIds: [entity.id],
     locationId: entity.locationId,
     payload: { reason: 'natural', age: entity.demographics.age },
     tags: ['population', 'death'],
-  }));
+  });
   return entity;
 }
 
@@ -171,7 +174,7 @@ function shouldAttemptBirth(world, parent, options) {
   let chance = options.baseBirthChance * fertility * (options.birthChanceMultiplier || 1);
   if (age < options.minAdultAge || age > 45) chance *= 0.2;
   if (age >= 25 && age <= 35) chance *= 1.4;
-  return Math.random() < clamp(chance, 0, 0.2);
+  return randomChance(world, clamp(chance, 0, 0.2), `population.birth:${parent.id}`);
 }
 
 function findCompatibleParent(world, parent, pool) {
@@ -182,7 +185,10 @@ function findCompatibleParent(world, parent, pool) {
     return areSpeciesCompatible(world, parent.species || 'human', other.species || 'human');
   });
   if (!candidates.length) return null;
-  candidates.sort((a, b) => relationshipAffinity(world, parent.id, b.id) - relationshipAffinity(world, parent.id, a.id));
+  candidates.sort((a, b) => {
+    const affinity = relationshipAffinity(world, parent.id, b.id) - relationshipAffinity(world, parent.id, a.id);
+    return affinity || String(a.id).localeCompare(String(b.id));
+  });
   const best = candidates[0];
   return relationshipAffinity(world, parent.id, best.id) >= -20 ? best : null;
 }
@@ -198,7 +204,7 @@ function createChild(world, parentA, parentB, childInput = {}) {
   const familyId = parentA.demographics?.familyId || parentB.demographics?.familyId || null;
   const species = childInput.species || parentA.species || parentB.species || 'human';
   const child = createEntity({
-    id: childInput.id || `entity_${world.tick}_${Math.random().toString(16).slice(2)}`,
+    id: childInput.id || nextWorldId(world, 'entity', 'population.child'),
     name: childInput.name || `Child ${world.tick}`,
     type: childInput.type || 'agent',
     locationId: childInput.locationId || parentA.locationId || parentB.locationId,
@@ -241,14 +247,14 @@ function createChild(world, parentA, parentB, childInput = {}) {
     payload: { fatherId: child.demographics.fatherId, motherId: child.demographics.motherId, generation, familyId, species },
   });
 
-  world.events.push(createEvent({
+  emitEvent(world, {
     type: 'population.birth',
     tick: world.tick,
     actorIds: [child.id, parentA.id, parentB.id],
     locationId: child.locationId,
     payload: { childId: child.id, parentIds: [parentA.id, parentB.id], generation, familyId, species },
     tags: ['population', 'birth'],
-  }));
+  });
 
   return child;
 }
