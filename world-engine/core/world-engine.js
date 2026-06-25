@@ -13,9 +13,16 @@ const {
 const { applyActionTick } = require('./action-engine');
 const { processEvents } = require('./event-engine');
 const { rebuildRelationshipIndexes } = require('./relationship-engine');
+const { ensureRandomState } = require('./random-engine');
+const { ensureWorldIdState, nextWorldId } = require('./world-id-engine');
+const { ensureSchedulerState } = require('./system-scheduler-engine');
 
 function createWorld(options = {}) {
-  return createWorldState(options);
+  const world = createWorldState(options);
+  ensureRandomState(world);
+  ensureWorldIdState(world);
+  ensureSchedulerState(world);
+  return world;
 }
 
 function registerEntity(world, input) {
@@ -57,14 +64,24 @@ function registerFaction(world, input) {
 }
 
 function enqueueAction(world, input) {
-  const action = createAction(input);
+  const action = createAction({
+    ...input,
+    id: input.id || nextWorldId(world, 'action', 'action'),
+  });
   world.actionQueue.push(action);
-  world.actionQueue.sort((a, b) => b.priority - a.priority);
+  world.actionQueue.sort((a, b) => {
+    const priority = Number(b.priority || 0) - Number(a.priority || 0);
+    return priority || String(a.id).localeCompare(String(b.id));
+  });
   return action;
 }
 
 function emitEvent(world, input) {
-  const event = createEvent({ ...input, tick: input.tick ?? world.tick });
+  const event = createEvent({
+    ...input,
+    id: input.id || nextWorldId(world, 'event', 'event'),
+    tick: input.tick ?? world.tick,
+  });
   world.events.push(event);
   return event;
 }
@@ -78,6 +95,9 @@ function advanceWorld(world, ticks = 1, options = {}) {
 }
 
 function advanceOneTick(world, options = {}) {
+  ensureRandomState(world);
+  ensureWorldIdState(world);
+  ensureSchedulerState(world);
   world.tick += 1;
   advanceCalendar(world);
 
@@ -176,7 +196,7 @@ function changeEntityStat(world, entityId, statKey, delta) {
 
 function recordCausality(world, input) {
   const record = {
-    id: input.id || `cause_${world.tick}_${world.causality.length + 1}`,
+    id: input.id || nextWorldId(world, 'cause', 'causality'),
     tick: world.tick,
     type: input.type,
     sourceId: input.sourceId || null,
@@ -192,7 +212,7 @@ function recordCausality(world, input) {
 
 function recordMemory(world, input) {
   const memory = {
-    id: input.id || `memory_${world.tick}_${world.memory.length + 1}`,
+    id: input.id || nextWorldId(world, 'memory', 'memory'),
     tick: input.tick ?? world.tick,
     type: input.type,
     payload: input.payload || input,
