@@ -47,6 +47,12 @@ jobs:
         with:
           name: determinism-audit
           path: determinism-audit.txt
+      - name: Upload core source bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-source-bundle
+          path: world-engine/core
+          include-hidden-files: true
 
   stress:
     runs-on: ubuntu-latest
