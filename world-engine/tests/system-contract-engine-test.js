@@ -44,11 +44,25 @@ function testSchemaValidation() {
   validateSchema({ id: 'ok', values: [1, 2], mode: 'active' }, schema, '$value', valid, 'output');
   assert.deepStrictEqual(valid, []);
 
+  const optional = [];
+  validateSchema({ id: 'ok', values: [1] }, schema, '$value', optional, 'output');
+  assert.deepStrictEqual(optional, [], 'undeclared optional properties should not become required');
+
   const invalid = [];
   validateSchema({ id: 'x', values: ['bad'], extra: true }, schema, '$value', invalid, 'output');
   assert.ok(invalid.some(item => item.code === 'string_too_short'));
   assert.ok(invalid.some(item => item.code === 'type_mismatch'));
   assert.ok(invalid.some(item => item.code === 'additional_property'));
+
+  const oneOfValid = [];
+  validateSchema('value', { oneOf: ['integer', 'string'] }, '$oneOf', oneOfValid, 'output');
+  assert.deepStrictEqual(oneOfValid, []);
+  const oneOfInvalid = [];
+  validateSchema(true, { oneOf: ['integer', 'string'] }, '$oneOf', oneOfInvalid, 'output');
+  assert.ok(oneOfInvalid.some(item => item.code === 'one_of_mismatch'));
+  const oneOfAmbiguous = [];
+  validateSchema(2, { oneOf: ['number', 'integer'] }, '$oneOf', oneOfAmbiguous, 'output');
+  assert.ok(oneOfAmbiguous.some(item => item.code === 'one_of_ambiguous'));
 
   const context = { world: { tick: 3 }, shared: { ready: true } };
   const result = validateSystemContract({
