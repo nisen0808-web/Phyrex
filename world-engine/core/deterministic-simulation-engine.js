@@ -18,6 +18,9 @@ const {
   getSimulationPipelineSummary,
 } = require('./simulation-pipeline-engine');
 const {
+  applySimulationSystemContracts,
+} = require('./simulation-system-contracts');
+const {
   ensureRandomState,
   withDeterministicGlobals,
   getRandomSummary,
@@ -36,14 +39,21 @@ function createDeterministicSimulationKernel(options = {}) {
   const registry = pipeline === KERNEL_PIPELINES.LEGACY
     ? createLegacySimulationRegistry(options)
     : createSimulationPipelineRegistry({ phases: options.phases });
+  const contractsEnabled = options.contracts !== false;
+  if (pipeline === KERNEL_PIPELINES.MODULAR && contractsEnabled) {
+    applySimulationSystemContracts(registry);
+  }
   return {
     version: DETERMINISTIC_KERNEL_VERSION,
     pipeline,
     registry,
+    contractsEnabled,
     options: {
       failurePolicy: options.failurePolicy || 'halt',
       atomic: Boolean(options.atomic),
       recordResults: Boolean(options.recordResults),
+      contractPolicy: options.contractPolicy || 'error',
+      implicitGlobalPolicy: options.implicitGlobalPolicy || 'track',
     },
   };
 }
@@ -59,6 +69,15 @@ function createLegacySimulationRegistry(options = {}) {
     reads: ['*'],
     writes: ['*'],
     tags: ['simulation', 'legacy'],
+    determinism: {
+      allowMathRandom: true,
+      allowDateNow: true,
+      reason: 'Legacy monolithic simulation remains inside deterministic compatibility globals',
+    },
+    contract: options.contracts === false ? null : {
+      input: context => Boolean(context?.world && context?.shared?.simulationOptions) || 'Legacy simulation requires world and options',
+      output: { type: 'object', required: ['tickBefore', 'tickAfter'] },
+    },
     run: context => {
       const report = runSimulationTick(context.world, context.shared.simulationOptions || {});
       context.shared.simulationReport = report;
@@ -105,10 +124,16 @@ function runDeterministicSimulationTick(world, options = {}, kernel = null) {
   shared.simulationReport.kernel = {
     version: activeKernel.version,
     pipeline: activeKernel.pipeline,
+    contractsEnabled: activeKernel.contractsEnabled,
     scheduleId: schedule.id,
     completed: schedule.completed,
     skipped: schedule.skipped,
     failed: schedule.failed,
+    contractViolations: schedule.contractViolations,
+    contractWarnings: schedule.contractWarnings,
+    implicitRandomCalls: schedule.implicitRandomCalls,
+    implicitNowCalls: schedule.implicitNowCalls,
+    implicitGlobalWarnings: schedule.implicitGlobalWarnings,
     order: schedule.systems.map(system => system.id),
     worldDigest: hashWorldState(world, options.hashOptions || {}),
   };
@@ -131,6 +156,7 @@ function getDeterministicSimulationSummary(world, kernel = null) {
     random: getRandomSummary(world),
     scheduler: getSchedulerSummary(world),
     pipeline: kernel?.pipeline || null,
+    contractsEnabled: kernel?.contractsEnabled ?? null,
     registry: kernel ? analyzeSystemRegistry(kernel.registry) : null,
     modularPipeline: kernel?.pipeline === KERNEL_PIPELINES.MODULAR
       ? getSimulationPipelineSummary(kernel.registry)
@@ -159,6 +185,7 @@ function validateKernel(kernel) {
     throw new Error('Invalid deterministic simulation kernel');
   }
   kernel.pipeline = normalizePipeline(kernel.pipeline || KERNEL_PIPELINES.LEGACY);
+  if (kernel.contractsEnabled === undefined) kernel.contractsEnabled = false;
   return kernel;
 }
 
