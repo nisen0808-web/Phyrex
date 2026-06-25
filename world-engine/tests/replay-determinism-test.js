@@ -75,7 +75,10 @@ function main() {
   const summary = getDeterministicSimulationSummary(world, kernel);
   assert.ok(summary.random.draws > 0, 'simulation should consume deterministic random streams');
   assert.ok(summary.scheduler.runs >= 6, 'scheduler should record deterministic ticks');
-  assert.strictEqual(summary.registry.order.includes('world.simulation'), true);
+  assert.strictEqual(summary.pipeline, 'modular');
+  assert.strictEqual(summary.registry.order.includes('world.advance'), true);
+  assert.strictEqual(summary.registry.order.includes('finalize.report'), true);
+  assert.strictEqual(summary.modularPipeline.systems, 28);
   assert.strictEqual(summary.worldDigest, expectedDigest);
 
   console.log('replay determinism integration test passed');
