@@ -8,7 +8,7 @@ cd Phyrex
 npm test
 ```
 
-当前默认测试共 44 个：
+当前默认测试共 46 个：
 
 ```text
 smoke-test.js
@@ -51,6 +51,8 @@ session-token-hash-test.js
 request-throttle-test.js
 deterministic-random-engine-test.js
 system-scheduler-engine-test.js
+system-contract-engine-test.js
+determinism-audit-engine-test.js
 modular-simulation-pipeline-test.js
 replay-determinism-test.js
 world-template-test.js
@@ -244,11 +246,15 @@ runDeterministicSimulationTicks(world, 10, options, kernel);
 命名随机流
 世界级确定性 ID
 28 个独立模拟子系统
+28 个输入、输出和后置状态 Contract
 人口、社会、经济、智能体、知识和文明阶段
 阶段和依赖调度
 周期系统
 原子失败回滚
 系统写冲突诊断
+strict / warn / off Contract 策略
+compat / audit / strict 确定性策略
+Math.random / Date.now 隐式调用计数
 规范化状态哈希
 确定性重放和分歧定位
 旧存档自动补齐内核状态
@@ -260,6 +266,7 @@ runDeterministicSimulationTicks(world, 10, options, kernel);
 ```text
 world-engine/DETERMINISTIC_KERNEL.md
 world-engine/SIMULATION_PIPELINE.md
+world-engine/SYSTEM_CONTRACTS.md
 ```
 
 ## 6. 世界运行与持久化
@@ -272,8 +279,11 @@ npm run runtime
 
 ```text
 random-engine.js             命名随机流和确定性兼容作用域
+determinism-audit-engine.js  隐式随机源和时钟源审计
 world-id-engine.js           世界级单调 ID 序列
-system-scheduler-engine.js   系统阶段、依赖、周期与失败策略
+system-contract-engine.js    Schema、路径和不变量 Contract
+simulation-contract-catalog-engine.js 28 个内置模拟 Contract
+system-scheduler-engine.js   系统阶段、依赖、周期、Contract 与失败策略
 simulation-pipeline-engine.js 28 个模块化模拟子系统
 state-integrity-engine.js    规范序列化、SHA-256 与状态差异
 replay-engine.js             记录、重放和确定性验证
