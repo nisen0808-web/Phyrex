@@ -28,6 +28,18 @@ jobs:
       - name: Run complete test suite
         run: npm test
 
+  determinism-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+      - name: Audit implicit time and random calls
+        run: node world-engine/tests/determinism-source-audit-test.js
+
   stress:
     runs-on: ubuntu-latest
     steps:
