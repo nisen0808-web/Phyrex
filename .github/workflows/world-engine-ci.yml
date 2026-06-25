@@ -38,7 +38,15 @@ jobs:
         with:
           node-version: 22.x
       - name: Audit implicit time and random calls
-        run: node world-engine/tests/determinism-source-audit-test.js
+        run: |
+          set -o pipefail
+          node world-engine/tests/determinism-source-audit-test.js 2>&1 | tee determinism-audit.txt
+      - name: Upload determinism audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: determinism-audit
+          path: determinism-audit.txt
 
   stress:
     runs-on: ubuntu-latest
