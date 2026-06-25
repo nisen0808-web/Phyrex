@@ -163,7 +163,7 @@ function runSystemSchedule(world, registry, options = {}) {
     report.systems.push(entry);
 
     const context = createSystemContext(world, system, report, config, shared);
-    if (!isSystemDue(system, context)) {
+    if (!isSystemScheduledForTick(system, context)) {
       entry.status = 'skipped';
       if (entry.contract.status === 'pending') entry.contract.status = 'skipped';
       report.skipped += 1;
@@ -172,24 +172,45 @@ function runSystemSchedule(world, registry, options = {}) {
     }
 
     try {
-      validateContractStage(system, 'input', context, undefined, contractPolicy, entry, report);
-      let result;
+      let execution;
       try {
-        result = runWithDeterminismAudit(
+        execution = runWithDeterminismAudit(
           world,
           `system:${system.id}`,
-          () => system.run(context),
+          () => {
+            if (typeof system.when === 'function') {
+              const decision = system.when(context);
+              if (decision && typeof decision.then === 'function') {
+                throw new Error(`System ${system.id} when predicate returned a Promise; predicates must be synchronous`);
+              }
+              if (decision === false) return { skipped: true, result: undefined };
+            }
+
+            validateContractStage(system, 'input', context, undefined, contractPolicy, entry, report);
+            const result = system.run(context);
+            if (result && typeof result.then === 'function') {
+              throw new Error(`System ${system.id} returned a Promise; scheduler systems must be synchronous`);
+            }
+            validateContractStage(system, 'output', context, result, contractPolicy, entry, report);
+            validateContractStage(system, 'post', context, result, contractPolicy, entry, report);
+            return { skipped: false, result };
+          },
           { policy: determinismPolicy, audit },
         );
       } finally {
         entry.determinism = compactDeterminismAudit(audit);
         applyDeterminismReport(entry, report);
       }
-      if (result && typeof result.then === 'function') {
-        throw new Error(`System ${system.id} returned a Promise; scheduler systems must be synchronous`);
+
+      if (execution.skipped) {
+        entry.status = 'skipped';
+        if (entry.contract.status === 'pending') entry.contract.status = 'skipped';
+        report.skipped += 1;
+        recordSystemRun(scheduler, system, entry, tick);
+        continue;
       }
-      validateContractStage(system, 'output', context, result, contractPolicy, entry, report);
-      validateContractStage(system, 'post', context, result, contractPolicy, entry, report);
+
+      const result = execution.result;
       finalizeContractEntry(entry.contract);
       entry.status = 'completed';
       entry.resultDigest = hashState(result);
@@ -332,13 +353,11 @@ function createSystemContext(world, system, report, options, shared) {
   };
 }
 
-function isSystemDue(system, context) {
+function isSystemScheduledForTick(system, context) {
   if (system.enabled === false) return false;
   const every = Math.max(1, Number(system.everyTicks || 1));
   const offset = normalizeModulo(Number(system.offsetTicks || 0), every);
-  if (normalizeModulo(context.targetTick, every) !== offset) return false;
-  if (typeof system.when === 'function' && system.when(context) === false) return false;
-  return true;
+  return normalizeModulo(context.targetTick, every) === offset;
 }
 
 function normalizeSystemDefinition(definition, phases) {
