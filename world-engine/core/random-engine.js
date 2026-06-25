@@ -126,13 +126,25 @@ function deterministicNow(world, namespace = 'clock') {
   return Number(state.clock.epochMs) + tick * 100000 + namespaceOffset * 100 + sequence;
 }
 
-function withDeterministicGlobals(world, namespace, callback) {
+function withDeterministicGlobals(world, namespace, callback, options = {}) {
   if (typeof callback !== 'function') throw new Error('withDeterministicGlobals requires callback');
   const streamId = `compat:${String(namespace || DEFAULT_RANDOM_STREAM)}`;
   const originalRandom = Math.random;
   const originalNow = Date.now;
-  Math.random = () => randomFloat(world, streamId);
-  Date.now = () => deterministicNow(world, streamId);
+  const onRandom = typeof options.onRandom === 'function' ? options.onRandom : null;
+  const onNow = typeof options.onNow === 'function' ? options.onNow : null;
+
+  Math.random = () => {
+    if (onRandom) onRandom({ namespace: streamId });
+    if (options.forbidRandom) throw createImplicitGlobalError('Math.random', namespace);
+    return randomFloat(world, streamId);
+  };
+  Date.now = () => {
+    if (onNow) onNow({ namespace: streamId });
+    if (options.forbidNow) throw createImplicitGlobalError('Date.now', namespace);
+    return deterministicNow(world, streamId);
+  };
+
   try {
     const result = callback();
     if (result && typeof result.then === 'function') {
@@ -143,6 +155,15 @@ function withDeterministicGlobals(world, namespace, callback) {
     Math.random = originalRandom;
     Date.now = originalNow;
   }
+}
+
+function createImplicitGlobalError(globalName, namespace) {
+  const error = new Error(`${globalName} is forbidden in deterministic scope ${String(namespace || DEFAULT_RANDOM_STREAM)}`);
+  error.name = 'ImplicitDeterministicGlobalError';
+  error.code = 'implicit_deterministic_global';
+  error.globalName = globalName;
+  error.namespace = String(namespace || DEFAULT_RANDOM_STREAM);
+  return error;
 }
 
 function createRandomContext(world, namespace = DEFAULT_RANDOM_STREAM) {
@@ -246,6 +267,7 @@ module.exports = {
   shuffleDeterministic,
   deterministicNow,
   withDeterministicGlobals,
+  createImplicitGlobalError,
   createRandomContext,
   snapshotRandomState,
   restoreRandomState,

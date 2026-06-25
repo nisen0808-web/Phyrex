@@ -27,6 +27,19 @@ jobs:
           npm --version
       - name: Run complete test suite
         run: npm test
+      - name: Upload deterministic purity findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deterministic-purity-findings-${{ matrix.node-version }}
+          path: /tmp/deterministic-purity-findings.json
+          if-no-files-found: ignore
+      - name: Upload core source snapshot
+        if: matrix.node-version == '22.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-source-snapshot
+          path: world-engine/core
 
   stress:
     runs-on: ubuntu-latest

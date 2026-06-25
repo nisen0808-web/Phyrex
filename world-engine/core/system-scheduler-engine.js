@@ -3,14 +3,32 @@
 const { createRandomContext, withDeterministicGlobals } = require('./random-engine');
 const { nextWorldId } = require('./world-id-engine');
 const { hashState, cloneCanonical } = require('./state-integrity-engine');
+const {
+  CONTRACT_POLICIES,
+  normalizeSystemContract,
+  validateSystemInput,
+  validateSystemOutput,
+  validateSystemInvariants,
+  createContractViolation,
+  summarizeContract,
+  normalizeContractPolicy,
+} = require('./system-contract-engine');
 
 const SCHEDULER_STATE_VERSION = 1;
 const DEFAULT_PHASES = ['bootstrap', 'pre', 'core', 'post', 'finalize'];
+const IMPLICIT_GLOBAL_POLICIES = {
+  IGNORE: 'ignore',
+  TRACK: 'track',
+  WARN: 'warn',
+  ERROR: 'error',
+};
 const DEFAULT_SCHEDULER_OPTIONS = {
   failurePolicy: 'halt',
   atomic: false,
   strictDependencies: true,
   recordResults: false,
+  contractPolicy: CONTRACT_POLICIES.ERROR,
+  implicitGlobalPolicy: IMPLICIT_GLOBAL_POLICIES.TRACK,
 };
 
 function createSystemRegistry(options = {}) {
@@ -34,6 +52,14 @@ function unregisterSystem(registry, systemId) {
   validateRegistry(registry);
   const system = registry.systems[systemId] || null;
   if (system) delete registry.systems[systemId];
+  return system;
+}
+
+function attachSystemContract(registry, systemId, contract) {
+  validateRegistry(registry);
+  const system = registry.systems[systemId];
+  if (!system) throw new Error(`Missing system ${systemId}`);
+  system.contract = normalizeSystemContract(contract);
   return system;
 }
 
@@ -107,7 +133,7 @@ function resolveSystemOrder(registry, options = {}) {
 
 function runSystemSchedule(world, registry, options = {}) {
   if (!world || typeof world !== 'object') throw new Error('runSystemSchedule requires world');
-  const config = { ...DEFAULT_SCHEDULER_OPTIONS, ...(options || {}) };
+  const config = normalizeSchedulerOptions(options);
   if (config.atomic && config.failurePolicy === 'continue') {
     throw new Error('Atomic schedule cannot continue after failure');
   }
@@ -125,17 +151,15 @@ function runSystemSchedule(world, registry, options = {}) {
     skipped: 0,
     failed: 0,
     halted: false,
+    contractViolations: 0,
+    contractWarnings: 0,
+    implicitRandomCalls: 0,
+    implicitNowCalls: 0,
+    implicitGlobalWarnings: 0,
   };
 
   for (const system of plan) {
-    const entry = {
-      id: system.id,
-      phase: system.phase,
-      status: 'pending',
-      resultDigest: null,
-      result: null,
-      error: null,
-    };
+    const entry = createScheduleEntry(system, config);
     report.systems.push(entry);
 
     const context = createSystemContext(world, system, report, config, shared);
@@ -146,34 +170,72 @@ function runSystemSchedule(world, registry, options = {}) {
       continue;
     }
 
+    const usage = { randomCalls: 0, nowCalls: 0 };
+    let caughtError = null;
+
     try {
-      const result = withDeterministicGlobals(world, `system:${system.id}`, () => system.run(context));
+      if (config.contractPolicy !== CONTRACT_POLICIES.OFF) {
+        applyContractValidation(
+          validateSystemInput(system.contract, context),
+          entry,
+          report,
+          scheduler,
+          config,
+        );
+      }
+
+      const result = withDeterministicGlobals(
+        world,
+        `system:${system.id}`,
+        () => system.run(context),
+        createImplicitGlobalOptions(system, config, usage),
+      );
       if (result && typeof result.then === 'function') {
         throw new Error(`System ${system.id} returned a Promise; scheduler systems must be synchronous`);
       }
+
+      if (config.contractPolicy !== CONTRACT_POLICIES.OFF) {
+        applyContractValidation(
+          validateSystemOutput(system.contract, context, result),
+          entry,
+          report,
+          scheduler,
+          config,
+        );
+        applyContractValidation(
+          validateSystemInvariants(system.contract, context, result),
+          entry,
+          report,
+          scheduler,
+          config,
+        );
+      }
+
       entry.status = 'completed';
       entry.resultDigest = hashState(result);
       if (config.recordResults) entry.result = cloneResult(result);
       report.completed += 1;
-      recordSystemRun(scheduler, system, entry, tick);
     } catch (error) {
+      caughtError = error;
       entry.status = 'failed';
       entry.error = serializeError(error);
       report.failed += 1;
       scheduler.failures += 1;
-      recordSystemRun(scheduler, system, entry, tick);
-
       if (config.atomic && snapshot) restoreWorldFromRollback(world, snapshot);
-      if (config.failurePolicy !== 'continue') {
-        report.halted = true;
-        scheduler.lastReport = compactScheduleReport(report);
-        const schedulerError = new Error(`System ${system.id} failed: ${error.message}`);
-        schedulerError.code = 'system_schedule_failed';
-        schedulerError.systemId = system.id;
-        schedulerError.cause = error;
-        schedulerError.report = report;
-        throw schedulerError;
-      }
+    } finally {
+      recordImplicitGlobalUsage(scheduler, system, entry, report, config, usage);
+      recordSystemRun(scheduler, system, entry, tick);
+    }
+
+    if (caughtError && config.failurePolicy !== 'continue') {
+      report.halted = true;
+      scheduler.lastReport = compactScheduleReport(report);
+      const schedulerError = new Error(`System ${system.id} failed: ${caughtError.message}`);
+      schedulerError.code = 'system_schedule_failed';
+      schedulerError.systemId = system.id;
+      schedulerError.cause = caughtError;
+      schedulerError.report = report;
+      throw schedulerError;
     }
   }
 
@@ -191,6 +253,11 @@ function ensureSchedulerState(world) {
       version: SCHEDULER_STATE_VERSION,
       runs: 0,
       failures: 0,
+      contractViolations: 0,
+      contractWarnings: 0,
+      implicitRandomCalls: 0,
+      implicitNowCalls: 0,
+      implicitGlobalWarnings: 0,
       lastRunAtTick: null,
       systems: {},
       lastReport: null,
@@ -203,8 +270,17 @@ function ensureSchedulerState(world) {
   }
   if (!state.systems || typeof state.systems !== 'object') state.systems = {};
   if (!Array.isArray(state.history)) state.history = [];
-  if (!Number.isInteger(state.runs) || state.runs < 0) state.runs = 0;
-  if (!Number.isInteger(state.failures) || state.failures < 0) state.failures = 0;
+  for (const key of [
+    'runs',
+    'failures',
+    'contractViolations',
+    'contractWarnings',
+    'implicitRandomCalls',
+    'implicitNowCalls',
+    'implicitGlobalWarnings',
+  ]) {
+    if (!Number.isInteger(state[key]) || state[key] < 0) state[key] = 0;
+  }
   return state;
 }
 
@@ -214,6 +290,11 @@ function getSchedulerSummary(world) {
     version: state.version,
     runs: state.runs,
     failures: state.failures,
+    contractViolations: state.contractViolations,
+    contractWarnings: state.contractWarnings,
+    implicitRandomCalls: state.implicitRandomCalls,
+    implicitNowCalls: state.implicitNowCalls,
+    implicitGlobalWarnings: state.implicitGlobalWarnings,
     lastRunAtTick: state.lastRunAtTick,
     lastReport: state.lastReport ? cloneCanonical(state.lastReport) : null,
     systems: Object.values(state.systems)
@@ -245,10 +326,44 @@ function analyzeSystemRegistry(registry) {
       }
     }
   }
+
+  for (const system of order) {
+    const purity = analyzeSystemFunctionPurity(system.run);
+    const globals = [];
+    if (purity.mathRandom && !system.determinism.allowMathRandom) globals.push('Math.random');
+    if (purity.dateNow && !system.determinism.allowDateNow) globals.push('Date.now');
+    if (globals.length) {
+      warnings.push({
+        type: 'implicit_global_reference',
+        system: system.id,
+        globals,
+      });
+    }
+  }
+
   return {
     phases: [...registry.phases],
     order: order.map(system => system.id),
     warnings,
+    contracts: auditSystemContracts(registry),
+  };
+}
+
+function auditSystemContracts(registry) {
+  validateRegistry(registry);
+  const systems = Object.values(registry.systems).sort((left, right) => left.id.localeCompare(right.id));
+  const details = systems.map(system => ({
+    id: system.id,
+    ...summarizeContract(system.contract),
+  }));
+  return {
+    systems: systems.length,
+    contracted: details.filter(item => item.input || item.output || item.invariants > 0).length,
+    inputContracts: details.filter(item => item.input).length,
+    outputContracts: details.filter(item => item.output).length,
+    invariants: details.reduce((sum, item) => sum + item.invariants, 0),
+    missing: details.filter(item => !item.input && !item.output && item.invariants === 0).map(item => item.id),
+    details,
   };
 }
 
@@ -296,6 +411,8 @@ function normalizeSystemDefinition(definition, phases) {
     writes: normalizeStringList(definition.writes),
     tags: normalizeStringList(definition.tags),
     when: typeof definition.when === 'function' ? definition.when : null,
+    contract: normalizeSystemContract(definition.contract),
+    determinism: normalizeDeterminism(definition.determinism),
     run: definition.run,
   };
 }
@@ -304,6 +421,30 @@ function validateRegistry(registry) {
   if (!registry || registry.version !== SCHEDULER_STATE_VERSION || !registry.systems) {
     throw new Error('Invalid system registry');
   }
+}
+
+function normalizeSchedulerOptions(options) {
+  const config = { ...DEFAULT_SCHEDULER_OPTIONS, ...(options || {}) };
+  config.contractPolicy = normalizeContractPolicy(config.contractPolicy);
+  config.implicitGlobalPolicy = normalizeImplicitGlobalPolicy(config.implicitGlobalPolicy);
+  return config;
+}
+
+function normalizeImplicitGlobalPolicy(value) {
+  const policy = String(value || IMPLICIT_GLOBAL_POLICIES.TRACK).toLowerCase();
+  if (!Object.values(IMPLICIT_GLOBAL_POLICIES).includes(policy)) {
+    throw new Error(`Unsupported implicit global policy ${policy}`);
+  }
+  return policy;
+}
+
+function normalizeDeterminism(value) {
+  const input = value && typeof value === 'object' ? value : {};
+  return {
+    allowMathRandom: Boolean(input.allowMathRandom),
+    allowDateNow: Boolean(input.allowDateNow),
+    reason: input.reason ? String(input.reason) : null,
+  };
 }
 
 function normalizePhases(phases) {
@@ -333,6 +474,73 @@ function normalizeModulo(value, divisor) {
   return ((value % divisor) + divisor) % divisor;
 }
 
+function createScheduleEntry(system, config) {
+  return {
+    id: system.id,
+    phase: system.phase,
+    status: 'pending',
+    resultDigest: null,
+    result: null,
+    error: null,
+    contract: {
+      policy: config.contractPolicy,
+      input: null,
+      output: null,
+      invariant: null,
+      issues: [],
+    },
+    implicitGlobals: {
+      policy: config.implicitGlobalPolicy,
+      randomCalls: 0,
+      nowCalls: 0,
+      warnings: 0,
+    },
+  };
+}
+
+function applyContractValidation(validation, entry, report, scheduler, config) {
+  const stage = validation.stage === 'invariant' ? 'invariant' : validation.stage;
+  entry.contract[stage] = cloneCanonical(validation);
+  if (validation.ok) return;
+  entry.contract.issues.push(...validation.issues.map(issue => ({ ...issue })));
+  const count = validation.issues.length;
+  if (config.contractPolicy === CONTRACT_POLICIES.WARN) {
+    report.contractWarnings += count;
+    scheduler.contractWarnings += count;
+    return;
+  }
+  report.contractViolations += count;
+  scheduler.contractViolations += count;
+  throw createContractViolation(entry.id, [validation]);
+}
+
+function createImplicitGlobalOptions(system, config, usage) {
+  const policy = config.implicitGlobalPolicy;
+  return {
+    onRandom: () => { usage.randomCalls += 1; },
+    onNow: () => { usage.nowCalls += 1; },
+    forbidRandom: policy === IMPLICIT_GLOBAL_POLICIES.ERROR && !system.determinism.allowMathRandom,
+    forbidNow: policy === IMPLICIT_GLOBAL_POLICIES.ERROR && !system.determinism.allowDateNow,
+  };
+}
+
+function recordImplicitGlobalUsage(scheduler, system, entry, report, config, usage) {
+  entry.implicitGlobals.randomCalls = usage.randomCalls;
+  entry.implicitGlobals.nowCalls = usage.nowCalls;
+  report.implicitRandomCalls += usage.randomCalls;
+  report.implicitNowCalls += usage.nowCalls;
+  scheduler.implicitRandomCalls += usage.randomCalls;
+  scheduler.implicitNowCalls += usage.nowCalls;
+
+  if (config.implicitGlobalPolicy !== IMPLICIT_GLOBAL_POLICIES.WARN) return;
+  let warnings = 0;
+  if (usage.randomCalls && !system.determinism.allowMathRandom) warnings += usage.randomCalls;
+  if (usage.nowCalls && !system.determinism.allowDateNow) warnings += usage.nowCalls;
+  entry.implicitGlobals.warnings = warnings;
+  report.implicitGlobalWarnings += warnings;
+  scheduler.implicitGlobalWarnings += warnings;
+}
+
 function recordSystemRun(scheduler, system, entry, tick) {
   if (!scheduler.systems[system.id]) {
     scheduler.systems[system.id] = {
@@ -341,13 +549,31 @@ function recordSystemRun(scheduler, system, entry, tick) {
       runs: 0,
       skips: 0,
       failures: 0,
+      contractViolations: 0,
+      contractWarnings: 0,
+      implicitRandomCalls: 0,
+      implicitNowCalls: 0,
+      implicitGlobalWarnings: 0,
       lastStatus: null,
       lastRunAtTick: null,
       lastResultDigest: null,
       lastError: null,
+      lastContractIssues: [],
     };
   }
   const state = scheduler.systems[system.id];
+  for (const key of [
+    'runs',
+    'skips',
+    'failures',
+    'contractViolations',
+    'contractWarnings',
+    'implicitRandomCalls',
+    'implicitNowCalls',
+    'implicitGlobalWarnings',
+  ]) {
+    if (!Number.isInteger(state[key]) || state[key] < 0) state[key] = 0;
+  }
   if (entry.status === 'completed') state.runs += 1;
   if (entry.status === 'skipped') state.skips += 1;
   if (entry.status === 'failed') state.failures += 1;
@@ -356,6 +582,16 @@ function recordSystemRun(scheduler, system, entry, tick) {
   state.lastRunAtTick = tick;
   state.lastResultDigest = entry.resultDigest;
   state.lastError = entry.error;
+  state.contractViolations += entry.contract.policy === CONTRACT_POLICIES.ERROR
+    ? entry.contract.issues.length
+    : 0;
+  state.contractWarnings += entry.contract.policy === CONTRACT_POLICIES.WARN
+    ? entry.contract.issues.length
+    : 0;
+  state.implicitRandomCalls += entry.implicitGlobals.randomCalls;
+  state.implicitNowCalls += entry.implicitGlobals.nowCalls;
+  state.implicitGlobalWarnings += entry.implicitGlobals.warnings;
+  state.lastContractIssues = entry.contract.issues.map(issue => ({ ...issue }));
 }
 
 function compactScheduleReport(report) {
@@ -367,12 +603,19 @@ function compactScheduleReport(report) {
     skipped: report.skipped,
     failed: report.failed,
     halted: report.halted,
+    contractViolations: report.contractViolations,
+    contractWarnings: report.contractWarnings,
+    implicitRandomCalls: report.implicitRandomCalls,
+    implicitNowCalls: report.implicitNowCalls,
+    implicitGlobalWarnings: report.implicitGlobalWarnings,
     systems: report.systems.map(entry => ({
       id: entry.id,
       phase: entry.phase,
       status: entry.status,
       resultDigest: entry.resultDigest,
       error: entry.error,
+      contractIssues: entry.contract.issues,
+      implicitGlobals: entry.implicitGlobals,
     })),
   };
 }
@@ -415,17 +658,30 @@ function pathsOverlap(left, right) {
   return left === right || left.startsWith(`${right}.`) || right.startsWith(`${left}.`);
 }
 
+function analyzeSystemFunctionPurity(run) {
+  const source = typeof run === 'function' ? Function.prototype.toString.call(run) : '';
+  return {
+    mathRandom: /\bMath\.random\s*\(/.test(source),
+    dateNow: /\bDate\.now\s*\(/.test(source),
+  };
+}
+
 module.exports = {
   SCHEDULER_STATE_VERSION,
   DEFAULT_PHASES,
+  IMPLICIT_GLOBAL_POLICIES,
   DEFAULT_SCHEDULER_OPTIONS,
   createSystemRegistry,
   registerSystem,
   unregisterSystem,
+  attachSystemContract,
   resolveSystemOrder,
   runSystemSchedule,
   ensureSchedulerState,
   getSchedulerSummary,
   analyzeSystemRegistry,
+  auditSystemContracts,
+  analyzeSystemFunctionPurity,
+  normalizeImplicitGlobalPolicy,
   pathsOverlap,
 };

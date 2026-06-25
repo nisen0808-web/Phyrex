@@ -1,6 +1,7 @@
 'use strict';
 
 const WORLD_ID_STATE_VERSION = 1;
+let transientSequence = 0;
 
 function ensureWorldIdState(world) {
   if (!world || typeof world !== 'object') throw new Error('ensureWorldIdState requires world');
@@ -32,6 +33,11 @@ function nextWorldId(world, prefix, key = prefix) {
   const sequence = nextWorldSequence(world, key || safePrefix);
   const tick = Math.max(0, Number(world.tick || 0));
   return `${safePrefix}_${tick.toString(36)}_${sequence.toString(36)}`;
+}
+
+function nextTransientId(prefix = 'transient') {
+  transientSequence += 1;
+  return `${sanitizeKey(prefix)}_transient_${transientSequence.toString(36)}`;
 }
 
 function reserveWorldSequence(world, key, minimumValue) {
@@ -68,6 +74,7 @@ module.exports = {
   ensureWorldIdState,
   nextWorldSequence,
   nextWorldId,
+  nextTransientId,
   reserveWorldSequence,
   getWorldIdSummary,
 };
