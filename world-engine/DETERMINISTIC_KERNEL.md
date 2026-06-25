@@ -1,6 +1,6 @@
 # Deterministic Simulation Kernel
 
-这一批把开发主线重新收束到世界引擎本体，建立后续生态、经济、政治和智能体系统共同依赖的确定性内核。
+开发主线已经重新收束到世界引擎本体。本内核为后续生态、经济、政治、文明和智能体系统提供可重复、可调试、可扩展的运行基础。
 
 ## 核心目标
 
@@ -14,9 +14,10 @@
 random-engine.js                    命名随机流和确定性兼容作用域
 world-id-engine.js                  世界级单调 ID 序列
 system-scheduler-engine.js          阶段、依赖、周期和失败策略
+simulation-pipeline-engine.js       28 个独立模拟子系统
 state-integrity-engine.js           规范化序列化、SHA-256 和状态差异
 replay-engine.js                    输入记录、重放和分歧定位
-deterministic-simulation-engine.js  现有完整模拟系统的确定性适配层
+deterministic-simulation-engine.js  内核入口和管线兼容层
 ```
 
 ## 命名随机流
@@ -70,7 +71,7 @@ cause_<tick>_<sequence>
 ```js
 registerSystem(registry, {
   id: 'economy.market',
-  phase: 'post',
+  phase: 'economy',
   after: ['economy.production'],
   everyTicks: 2,
   reads: ['economy.inventory'],
@@ -97,7 +98,88 @@ halt / continue 失败策略
 未排序写冲突诊断
 ```
 
-默认确定性适配器把现有完整模拟作为 `world.simulation` 系统运行，并允许扩展系统加入 before 和 after 阶段。后续会逐步把各子系统拆成独立注册项。
+## 模块化模拟管线
+
+默认确定性内核已经不再把完整模拟包装为单一 `world.simulation` 系统，而是运行 28 个独立系统。
+
+默认阶段：
+
+```text
+before
+population
+social
+economy
+agency
+advance
+knowledge
+civilization
+finalize
+after
+```
+
+核心顺序：
+
+```text
+population.lifecycle
+population.families
+population.legacy
+social.contracts
+social.organizations
+economy.production
+economy.cities
+agency.identity
+agency.desire
+agency.opportunity
+agency.planning
+world.advance
+knowledge.information
+knowledge.memory
+knowledge.culture
+knowledge.religion
+civilization.civilization
+civilization.technology
+civilization.infrastructure
+civilization.governance
+civilization.processes
+civilization.emergence
+civilization.conflict
+civilization.players
+finalize.history
+finalize.narrative
+finalize.novel
+finalize.report
+```
+
+优点：
+
+```text
+每个子系统拥有独立随机流
+每个子系统拥有单独运行、跳过和失败统计
+可按 auto* 选项关闭单个系统
+模组可以注册 before / after 系统
+依赖和读写范围可以检查
+失败定位精确到具体子系统
+```
+
+默认入口：
+
+```js
+const kernel = createDeterministicSimulationKernel();
+```
+
+旧单体管线仍可用于兼容和对照：
+
+```js
+const legacyKernel = createDeterministicSimulationKernel({
+  pipeline: 'legacy',
+});
+```
+
+详细说明见：
+
+```text
+world-engine/SIMULATION_PIPELINE.md
+```
 
 ## 状态完整性
 
@@ -165,14 +247,16 @@ Action / Event / Memory / Causality ID
 人口出生、死亡和子代 ID
 离线命令 ID
 运行时世界推进
-完整模拟确定性适配器
+28 个模块化模拟系统
+模块化与旧单体管线兼容切换
+完整模拟重放验证
 ```
 
 后续引擎批次将按顺序继续：
 
 ```text
-1. 将现有模拟子系统拆成独立调度项
-2. 清除核心模块剩余的隐式 Math.random / Date.now
+1. 清除核心模块剩余的隐式 Math.random / Date.now
+2. 为系统输入与输出增加 schema / contract 校验
 3. 输入事件日志与因果回放
 4. 世界一致性约束和自动修复
 5. 性能预算、系统级采样和长周期确定性压测
