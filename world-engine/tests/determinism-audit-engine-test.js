@@ -18,6 +18,7 @@ const {
 function main() {
   testDirectAudit();
   testSchedulerAudit();
+  testWhenPredicateAudit();
   testCompatibilityPolicy();
   testStrictPolicy();
   testExplicitStrictSystem();
@@ -81,6 +82,47 @@ function testSchedulerAudit() {
   assert.strictEqual(summary.implicitRandomCalls, 1);
   assert.strictEqual(summary.implicitClockCalls, 1);
   assert.strictEqual(summary.systems[0].determinismWarnings, 2);
+}
+
+function testWhenPredicateAudit() {
+  const auditRegistry = createSystemRegistry({ phases: ['core'] });
+  let ran = false;
+  registerSystem(auditRegistry, {
+    id: 'audit.when-skip',
+    phase: 'core',
+    when: () => {
+      Math.random();
+      return false;
+    },
+    run: () => { ran = true; },
+  });
+  const auditReport = runSystemSchedule(
+    createWorld({ id: 'when-audit', seed: 'when-audit' }),
+    auditRegistry,
+    { determinismPolicy: 'audit' },
+  );
+  assert.strictEqual(ran, false);
+  assert.strictEqual(auditReport.skipped, 1);
+  assert.strictEqual(auditReport.systems[0].determinism.implicitRandomCalls, 1);
+  assert.strictEqual(auditReport.determinismWarnings, 1);
+
+  const strictRegistry = createSystemRegistry({ phases: ['core'] });
+  registerSystem(strictRegistry, {
+    id: 'audit.when-strict',
+    phase: 'core',
+    when: () => Math.random() < 0.5,
+    run: () => true,
+  });
+  assert.throws(
+    () => runSystemSchedule(
+      createWorld({ id: 'when-strict', seed: 'when-strict' }),
+      strictRegistry,
+      { determinismPolicy: 'strict' },
+    ),
+    error => error.code === 'system_schedule_failed'
+      && error.cause.code === 'implicit_determinism_source'
+      && error.report.systems[0].determinism.implicitRandomCalls === 1,
+  );
 }
 
 function testCompatibilityPolicy() {
