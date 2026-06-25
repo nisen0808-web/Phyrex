@@ -18,6 +18,15 @@ const {
   getSimulationPipelineSummary,
 } = require('./simulation-pipeline-engine');
 const {
+  attachSimulationSystemContracts,
+  getSimulationContractSummary,
+} = require('./simulation-contracts-engine');
+const {
+  instrumentSystemContract,
+  ensureSystemContractState,
+  getSystemContractSummary,
+} = require('./system-contract-runtime-engine');
+const {
   ensureRandomState,
   withDeterministicGlobals,
   getRandomSummary,
@@ -33,17 +42,29 @@ const KERNEL_PIPELINES = {
 
 function createDeterministicSimulationKernel(options = {}) {
   const pipeline = normalizePipeline(options.pipeline);
+  const contractOptions = {
+    contractPolicy: options.contractPolicy || 'error',
+    contractMaxIssues: options.contractMaxIssues,
+    contractIncludeValues: options.contractIncludeValues,
+  };
   const registry = pipeline === KERNEL_PIPELINES.LEGACY
     ? createLegacySimulationRegistry(options)
-    : createSimulationPipelineRegistry({ phases: options.phases });
+    : attachSimulationSystemContracts(
+      createSimulationPipelineRegistry({ phases: options.phases }),
+      contractOptions,
+    );
   return {
     version: DETERMINISTIC_KERNEL_VERSION,
     pipeline,
     registry,
+    contractOptions,
     options: {
       failurePolicy: options.failurePolicy || 'halt',
       atomic: Boolean(options.atomic),
       recordResults: Boolean(options.recordResults),
+      contractPolicy: contractOptions.contractPolicy,
+      contractMaxIssues: contractOptions.contractMaxIssues,
+      contractIncludeValues: contractOptions.contractIncludeValues,
     },
   };
 }
@@ -70,7 +91,9 @@ function createLegacySimulationRegistry(options = {}) {
 
 function registerKernelSystem(kernel, definition) {
   validateKernel(kernel);
-  return registerSystem(kernel.registry, definition);
+  const system = registerSystem(kernel.registry, definition);
+  if (definition?.contracts) instrumentSystemContract(system, kernel.contractOptions || {});
+  return system;
 }
 
 function initializeDeterministicSimulation(world, options = {}) {
@@ -109,6 +132,7 @@ function runDeterministicSimulationTick(world, options = {}, kernel = null) {
     completed: schedule.completed,
     skipped: schedule.skipped,
     failed: schedule.failed,
+    contracts: schedule.contracts ? { ...schedule.contracts } : null,
     order: schedule.systems.map(system => system.id),
     worldDigest: hashWorldState(world, options.hashOptions || {}),
   };
@@ -130,10 +154,14 @@ function getDeterministicSimulationSummary(world, kernel = null) {
     simulation: getSimulationSummary(world),
     random: getRandomSummary(world),
     scheduler: getSchedulerSummary(world),
+    contracts: getSystemContractSummary(world),
     pipeline: kernel?.pipeline || null,
     registry: kernel ? analyzeSystemRegistry(kernel.registry) : null,
     modularPipeline: kernel?.pipeline === KERNEL_PIPELINES.MODULAR
       ? getSimulationPipelineSummary(kernel.registry)
+      : null,
+    simulationContracts: kernel?.pipeline === KERNEL_PIPELINES.MODULAR
+      ? getSimulationContractSummary(kernel.registry)
       : null,
     worldDigest: hashWorldState(world),
   };
@@ -142,6 +170,7 @@ function getDeterministicSimulationSummary(world, kernel = null) {
 function ensureDeterministicWorldState(world) {
   ensureRandomState(world);
   ensureWorldIdState(world);
+  ensureSystemContractState(world);
   return world;
 }
 

@@ -73,10 +73,32 @@ function main() {
   assert.strictEqual(report.kernel.skipped, 26, 'disabled simulation systems should be skipped');
   assert.ok(report.kernel.order.indexOf('test.before') < report.kernel.order.indexOf('world.advance'));
   assert.ok(report.kernel.order.indexOf('finalize.report') < report.kernel.order.indexOf('test.after'));
+  assert.deepStrictEqual(report.kernel.contracts, {
+    systems: 2,
+    checks: 15,
+    warnings: 0,
+    violations: 0,
+    failures: 0,
+  });
 
   const summary = getDeterministicSimulationSummary(world, kernel);
   assert.strictEqual(summary.pipeline, 'modular');
   assert.strictEqual(summary.modularPipeline.systems, 30, 'summary should include custom systems');
+  assert.strictEqual(summary.simulationContracts.systems, 28);
+  assert.strictEqual(summary.simulationContracts.contracts, 214);
+  assert.deepStrictEqual(summary.simulationContracts.byStage, {
+    before: 140,
+    result: 71,
+    after: 3,
+  });
+  assert.strictEqual(summary.contracts.runs, 2);
+  assert.strictEqual(summary.contracts.checks, 15);
+  assert.strictEqual(summary.contracts.violations, 0);
+  assert.strictEqual(summary.contracts.failures, 0);
+  const advanceContractStats = summary.contracts.systems.find(system => system.id === 'world.advance');
+  const finalizeContractStats = summary.contracts.systems.find(system => system.id === 'finalize.report');
+  assert.strictEqual(advanceContractStats.checks, 7);
+  assert.strictEqual(finalizeContractStats.checks, 8);
   const advanceStats = summary.scheduler.systems.find(system => system.id === 'world.advance');
   const populationStats = summary.scheduler.systems.find(system => system.id === 'population.lifecycle');
   assert.strictEqual(advanceStats.runs, 1);
@@ -93,6 +115,7 @@ function main() {
   assert.strictEqual(legacyWorld.tick, 1);
   assert.strictEqual(legacyReport.kernel.order.includes('world.simulation'), true);
   assert.strictEqual(legacyReport.kernel.pipeline, 'legacy');
+  assert.strictEqual(legacyReport.kernel.contracts, null);
 
   assert.throws(
     () => createDeterministicSimulationKernel({ pipeline: 'unknown' }),

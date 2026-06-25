@@ -26,7 +26,15 @@ jobs:
           node --version
           npm --version
       - name: Run complete test suite
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee system-contract-test-output.txt
+      - name: Upload contract test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-contract-test-output-${{ matrix.node-version }}
+          path: system-contract-test-output.txt
 
   stress:
     runs-on: ubuntu-latest
