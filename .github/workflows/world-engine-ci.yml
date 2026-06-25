@@ -28,6 +28,34 @@ jobs:
       - name: Run complete test suite
         run: npm test
 
+  determinism-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+      - name: Audit implicit time and random calls
+        run: |
+          set -o pipefail
+          node world-engine/tests/determinism-source-audit-test.js 2>&1 | tee determinism-audit.txt
+      - name: Upload determinism audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: determinism-audit
+          path: determinism-audit.txt
+      - name: Upload repository source bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: repository-source-bundle
+          path: |
+            package.json
+            world-engine
+          include-hidden-files: true
+
   stress:
     runs-on: ubuntu-latest
     steps:
