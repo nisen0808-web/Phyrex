@@ -18,6 +18,10 @@ const {
   getSimulationPipelineSummary,
 } = require('./simulation-pipeline-engine');
 const {
+  applySimulationContracts,
+  getSimulationContractCatalogSummary,
+} = require('./simulation-contract-catalog-engine');
+const {
   ensureRandomState,
   withDeterministicGlobals,
   getRandomSummary,
@@ -36,6 +40,12 @@ function createDeterministicSimulationKernel(options = {}) {
   const registry = pipeline === KERNEL_PIPELINES.LEGACY
     ? createLegacySimulationRegistry(options)
     : createSimulationPipelineRegistry({ phases: options.phases });
+  if (pipeline === KERNEL_PIPELINES.MODULAR && options.contracts !== false) {
+    applySimulationContracts(registry, {
+      overwrite: Boolean(options.overwriteContracts),
+      contractPolicy: options.contractPolicy,
+    });
+  }
   return {
     version: DETERMINISTIC_KERNEL_VERSION,
     pipeline,
@@ -44,6 +54,8 @@ function createDeterministicSimulationKernel(options = {}) {
       failurePolicy: options.failurePolicy || 'halt',
       atomic: Boolean(options.atomic),
       recordResults: Boolean(options.recordResults),
+      contractPolicy: options.contractPolicy || 'strict',
+      determinismPolicy: options.determinismPolicy || 'audit',
     },
   };
 }
@@ -109,6 +121,10 @@ function runDeterministicSimulationTick(world, options = {}, kernel = null) {
     completed: schedule.completed,
     skipped: schedule.skipped,
     failed: schedule.failed,
+    contractViolations: schedule.contractViolations,
+    determinismWarnings: schedule.determinismWarnings,
+    implicitRandomCalls: schedule.implicitRandomCalls,
+    implicitClockCalls: schedule.implicitClockCalls,
     order: schedule.systems.map(system => system.id),
     worldDigest: hashWorldState(world, options.hashOptions || {}),
   };
@@ -134,6 +150,9 @@ function getDeterministicSimulationSummary(world, kernel = null) {
     registry: kernel ? analyzeSystemRegistry(kernel.registry) : null,
     modularPipeline: kernel?.pipeline === KERNEL_PIPELINES.MODULAR
       ? getSimulationPipelineSummary(kernel.registry)
+      : null,
+    contracts: kernel?.pipeline === KERNEL_PIPELINES.MODULAR
+      ? getSimulationContractCatalogSummary(kernel.registry)
       : null,
     worldDigest: hashWorldState(world),
   };

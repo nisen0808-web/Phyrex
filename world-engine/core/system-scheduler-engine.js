@@ -1,6 +1,19 @@
 'use strict';
 
-const { createRandomContext, withDeterministicGlobals } = require('./random-engine');
+const { createRandomContext } = require('./random-engine');
+const {
+  createDeterminismAuditRecord,
+  runWithDeterminismAudit,
+  normalizeDeterminismPolicy,
+  compactDeterminismAudit,
+} = require('./determinism-audit-engine');
+const {
+  CONTRACT_POLICIES,
+  normalizeContractPolicy,
+  normalizeSystemContract,
+  validateSystemContract,
+  createSystemContractError,
+} = require('./system-contract-engine');
 const { nextWorldId } = require('./world-id-engine');
 const { hashState, cloneCanonical } = require('./state-integrity-engine');
 
@@ -11,6 +24,8 @@ const DEFAULT_SCHEDULER_OPTIONS = {
   atomic: false,
   strictDependencies: true,
   recordResults: false,
+  contractPolicy: CONTRACT_POLICIES.STRICT,
+  determinismPolicy: 'audit',
 };
 
 function createSystemRegistry(options = {}) {
@@ -107,7 +122,7 @@ function resolveSystemOrder(registry, options = {}) {
 
 function runSystemSchedule(world, registry, options = {}) {
   if (!world || typeof world !== 'object') throw new Error('runSystemSchedule requires world');
-  const config = { ...DEFAULT_SCHEDULER_OPTIONS, ...(options || {}) };
+  const config = normalizeSchedulerOptions(options);
   if (config.atomic && config.failurePolicy === 'continue') {
     throw new Error('Atomic schedule cannot continue after failure');
   }
@@ -125,9 +140,16 @@ function runSystemSchedule(world, registry, options = {}) {
     skipped: 0,
     failed: 0,
     halted: false,
+    contractViolations: 0,
+    determinismWarnings: 0,
+    implicitRandomCalls: 0,
+    implicitClockCalls: 0,
   };
 
   for (const system of plan) {
+    const contractPolicy = normalizeContractPolicy(system.contractPolicy || config.contractPolicy);
+    const determinismPolicy = normalizeDeterminismPolicy(system.determinismPolicy || config.determinismPolicy);
+    const audit = createDeterminismAuditRecord(`system:${system.id}`, determinismPolicy);
     const entry = {
       id: system.id,
       phase: system.phase,
@@ -135,28 +157,72 @@ function runSystemSchedule(world, registry, options = {}) {
       resultDigest: null,
       result: null,
       error: null,
+      contract: createContractEntry(system.contract, contractPolicy),
+      determinism: compactDeterminismAudit(audit),
     };
     report.systems.push(entry);
 
     const context = createSystemContext(world, system, report, config, shared);
-    if (!isSystemDue(system, context)) {
+    if (!isSystemScheduledForTick(system, context)) {
       entry.status = 'skipped';
+      if (entry.contract.status === 'pending') entry.contract.status = 'skipped';
       report.skipped += 1;
       recordSystemRun(scheduler, system, entry, tick);
       continue;
     }
 
     try {
-      const result = withDeterministicGlobals(world, `system:${system.id}`, () => system.run(context));
-      if (result && typeof result.then === 'function') {
-        throw new Error(`System ${system.id} returned a Promise; scheduler systems must be synchronous`);
+      let execution;
+      try {
+        execution = runWithDeterminismAudit(
+          world,
+          `system:${system.id}`,
+          () => {
+            if (typeof system.when === 'function') {
+              const decision = system.when(context);
+              if (decision && typeof decision.then === 'function') {
+                throw new Error(`System ${system.id} when predicate returned a Promise; predicates must be synchronous`);
+              }
+              if (decision === false) return { skipped: true, result: undefined };
+            }
+
+            validateContractStage(system, 'input', context, undefined, contractPolicy, entry, report);
+            const result = system.run(context);
+            if (result && typeof result.then === 'function') {
+              throw new Error(`System ${system.id} returned a Promise; scheduler systems must be synchronous`);
+            }
+            validateContractStage(system, 'output', context, result, contractPolicy, entry, report);
+            validateContractStage(system, 'post', context, result, contractPolicy, entry, report);
+            return { skipped: false, result };
+          },
+          { policy: determinismPolicy, audit },
+        );
+      } finally {
+        entry.determinism = compactDeterminismAudit(audit);
+        applyDeterminismReport(entry, report);
       }
+
+      if (execution.skipped) {
+        entry.status = 'skipped';
+        if (entry.contract.status === 'pending') entry.contract.status = 'skipped';
+        report.skipped += 1;
+        recordSystemRun(scheduler, system, entry, tick);
+        continue;
+      }
+
+      const result = execution.result;
+      finalizeContractEntry(entry.contract);
       entry.status = 'completed';
       entry.resultDigest = hashState(result);
       if (config.recordResults) entry.result = cloneResult(result);
       report.completed += 1;
       recordSystemRun(scheduler, system, entry, tick);
     } catch (error) {
+      if (!entry.determinism || entry.determinism.policy !== audit.policy) {
+        entry.determinism = compactDeterminismAudit(audit);
+        applyDeterminismReport(entry, report);
+      }
+      if (error?.code === 'system_contract_violation') entry.contract.status = 'failed';
       entry.status = 'failed';
       entry.error = serializeError(error);
       report.failed += 1;
@@ -191,6 +257,10 @@ function ensureSchedulerState(world) {
       version: SCHEDULER_STATE_VERSION,
       runs: 0,
       failures: 0,
+      contractViolations: 0,
+      determinismWarnings: 0,
+      implicitRandomCalls: 0,
+      implicitClockCalls: 0,
       lastRunAtTick: null,
       systems: {},
       lastReport: null,
@@ -205,6 +275,9 @@ function ensureSchedulerState(world) {
   if (!Array.isArray(state.history)) state.history = [];
   if (!Number.isInteger(state.runs) || state.runs < 0) state.runs = 0;
   if (!Number.isInteger(state.failures) || state.failures < 0) state.failures = 0;
+  for (const key of ['contractViolations', 'determinismWarnings', 'implicitRandomCalls', 'implicitClockCalls']) {
+    if (!Number.isInteger(state[key]) || state[key] < 0) state[key] = 0;
+  }
   return state;
 }
 
@@ -214,6 +287,10 @@ function getSchedulerSummary(world) {
     version: state.version,
     runs: state.runs,
     failures: state.failures,
+    contractViolations: state.contractViolations,
+    determinismWarnings: state.determinismWarnings,
+    implicitRandomCalls: state.implicitRandomCalls,
+    implicitClockCalls: state.implicitClockCalls,
     lastRunAtTick: state.lastRunAtTick,
     lastReport: state.lastReport ? cloneCanonical(state.lastReport) : null,
     systems: Object.values(state.systems)
@@ -249,6 +326,15 @@ function analyzeSystemRegistry(registry) {
     phases: [...registry.phases],
     order: order.map(system => system.id),
     warnings,
+    contracts: order.map(system => ({
+      id: system.id,
+      declared: Boolean(system.contract),
+      policy: system.contractPolicy,
+    })),
+    determinism: order.map(system => ({
+      id: system.id,
+      policy: system.determinismPolicy,
+    })),
   };
 }
 
@@ -267,13 +353,11 @@ function createSystemContext(world, system, report, options, shared) {
   };
 }
 
-function isSystemDue(system, context) {
+function isSystemScheduledForTick(system, context) {
   if (system.enabled === false) return false;
   const every = Math.max(1, Number(system.everyTicks || 1));
   const offset = normalizeModulo(Number(system.offsetTicks || 0), every);
-  if (normalizeModulo(context.targetTick, every) !== offset) return false;
-  if (typeof system.when === 'function' && system.when(context) === false) return false;
-  return true;
+  return normalizeModulo(context.targetTick, every) === offset;
 }
 
 function normalizeSystemDefinition(definition, phases) {
@@ -295,6 +379,13 @@ function normalizeSystemDefinition(definition, phases) {
     reads: normalizeStringList(definition.reads),
     writes: normalizeStringList(definition.writes),
     tags: normalizeStringList(definition.tags),
+    contract: normalizeSystemContract(definition.contract),
+    contractPolicy: definition.contractPolicy
+      ? normalizeContractPolicy(definition.contractPolicy)
+      : null,
+    determinismPolicy: definition.determinismPolicy
+      ? normalizeDeterminismPolicy(definition.determinismPolicy)
+      : null,
     when: typeof definition.when === 'function' ? definition.when : null,
     run: definition.run,
   };
@@ -317,6 +408,13 @@ function normalizeStringList(value) {
   return [...new Set(values.map(item => String(item || '').trim()).filter(Boolean))];
 }
 
+function normalizeSchedulerOptions(options) {
+  const config = { ...DEFAULT_SCHEDULER_OPTIONS, ...(options || {}) };
+  config.contractPolicy = normalizeContractPolicy(config.contractPolicy);
+  config.determinismPolicy = normalizeDeterminismPolicy(config.determinismPolicy);
+  return config;
+}
+
 function addGraphEdge(graph, indegree, sourceId, targetId) {
   const targets = graph.get(sourceId);
   if (!targets || targets.has(targetId)) return;
@@ -333,6 +431,45 @@ function normalizeModulo(value, divisor) {
   return ((value % divisor) + divisor) % divisor;
 }
 
+function createContractEntry(contract, policy) {
+  return {
+    policy,
+    status: !contract ? 'undeclared' : policy === CONTRACT_POLICIES.OFF ? 'disabled' : 'pending',
+    violations: [],
+    stages: {},
+  };
+}
+
+function validateContractStage(system, stage, context, result, policy, entry, report) {
+  if (!system.contract || policy === CONTRACT_POLICIES.OFF) return;
+  const validation = validateSystemContract(system.contract, stage, context, result);
+  entry.contract.stages[stage] = {
+    ok: validation.ok,
+    violations: validation.violations.map(violation => ({ ...violation })),
+  };
+  if (validation.ok) return;
+  entry.contract.violations.push(...validation.violations.map(violation => ({ ...violation })));
+  report.contractViolations += validation.violations.length;
+  entry.contract.status = policy === CONTRACT_POLICIES.WARN ? 'warned' : 'failed';
+  if (policy === CONTRACT_POLICIES.STRICT) {
+    throw createSystemContractError(system.id, stage, validation.violations);
+  }
+}
+
+function finalizeContractEntry(contract) {
+  if (!contract || !['pending', 'warned'].includes(contract.status)) return;
+  if (contract.status === 'pending') contract.status = 'passed';
+}
+
+function applyDeterminismReport(entry, report) {
+  if (!entry.determinism || entry.determinism.applied === true) return;
+  const warnings = entry.determinism.warnings || [];
+  report.determinismWarnings += warnings.length;
+  report.implicitRandomCalls += Number(entry.determinism.implicitRandomCalls || 0);
+  report.implicitClockCalls += Number(entry.determinism.implicitClockCalls || 0);
+  entry.determinism.applied = true;
+}
+
 function recordSystemRun(scheduler, system, entry, tick) {
   if (!scheduler.systems[system.id]) {
     scheduler.systems[system.id] = {
@@ -341,21 +478,41 @@ function recordSystemRun(scheduler, system, entry, tick) {
       runs: 0,
       skips: 0,
       failures: 0,
+      contractViolations: 0,
+      determinismWarnings: 0,
+      implicitRandomCalls: 0,
+      implicitClockCalls: 0,
       lastStatus: null,
       lastRunAtTick: null,
       lastResultDigest: null,
       lastError: null,
+      lastContractStatus: null,
+      lastDeterminism: null,
     };
   }
   const state = scheduler.systems[system.id];
   if (entry.status === 'completed') state.runs += 1;
   if (entry.status === 'skipped') state.skips += 1;
   if (entry.status === 'failed') state.failures += 1;
+  const contractViolations = Number(entry.contract?.violations?.length || 0);
+  const determinismWarnings = Number(entry.determinism?.warnings?.length || 0);
+  const implicitRandomCalls = Number(entry.determinism?.implicitRandomCalls || 0);
+  const implicitClockCalls = Number(entry.determinism?.implicitClockCalls || 0);
+  state.contractViolations += contractViolations;
+  state.determinismWarnings += determinismWarnings;
+  state.implicitRandomCalls += implicitRandomCalls;
+  state.implicitClockCalls += implicitClockCalls;
+  scheduler.contractViolations += contractViolations;
+  scheduler.determinismWarnings += determinismWarnings;
+  scheduler.implicitRandomCalls += implicitRandomCalls;
+  scheduler.implicitClockCalls += implicitClockCalls;
   state.phase = system.phase;
   state.lastStatus = entry.status;
   state.lastRunAtTick = tick;
   state.lastResultDigest = entry.resultDigest;
   state.lastError = entry.error;
+  state.lastContractStatus = entry.contract?.status || null;
+  state.lastDeterminism = entry.determinism ? compactDeterminismEntry(entry.determinism) : null;
 }
 
 function compactScheduleReport(report) {
@@ -367,14 +524,36 @@ function compactScheduleReport(report) {
     skipped: report.skipped,
     failed: report.failed,
     halted: report.halted,
+    contractViolations: report.contractViolations,
+    determinismWarnings: report.determinismWarnings,
+    implicitRandomCalls: report.implicitRandomCalls,
+    implicitClockCalls: report.implicitClockCalls,
     systems: report.systems.map(entry => ({
       id: entry.id,
       phase: entry.phase,
       status: entry.status,
       resultDigest: entry.resultDigest,
       error: entry.error,
+      contract: compactContractEntry(entry.contract),
+      determinism: compactDeterminismEntry(entry.determinism),
     })),
   };
+}
+
+function compactContractEntry(contract) {
+  if (!contract) return null;
+  return {
+    policy: contract.policy,
+    status: contract.status,
+    violations: (contract.violations || []).map(violation => ({ ...violation })),
+  };
+}
+
+function compactDeterminismEntry(determinism) {
+  if (!determinism) return null;
+  const compact = { ...determinism };
+  delete compact.applied;
+  return compact;
 }
 
 function serializeError(error) {
@@ -427,5 +606,8 @@ module.exports = {
   ensureSchedulerState,
   getSchedulerSummary,
   analyzeSystemRegistry,
+  createSystemContext,
+  normalizeSystemDefinition,
+  normalizeSchedulerOptions,
   pathsOverlap,
 };
