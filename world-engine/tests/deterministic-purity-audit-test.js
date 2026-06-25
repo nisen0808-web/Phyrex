@@ -35,10 +35,7 @@ function main() {
     });
   }
 
-  const reportPath = path.join(
-    process.env.RUNNER_TEMP || os.tmpdir(),
-    'deterministic-purity-findings.json',
-  );
+  const reportPath = path.join(os.tmpdir(), 'deterministic-purity-findings.json');
   fs.writeFileSync(reportPath, JSON.stringify({ findings }, null, 2), 'utf8');
 
   if (findings.length) {
