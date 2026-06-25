@@ -19,6 +19,7 @@ const {
 } = require('../core/system-contract-engine');
 
 function main() {
+  testSummaryInitializesSchedulerState();
   testValidContract();
   testOutputFailure();
   testWarningPolicy();
@@ -26,6 +27,28 @@ function main() {
   testRegistryCoverage();
   testSchemaFeatures();
   console.log('system contract engine test passed');
+}
+
+function testSummaryInitializesSchedulerState() {
+  const world = createWorld({ id: 'contract-summary-world', seed: 0 });
+  delete world.kernel;
+  const summary = getSystemContractSummary(world);
+  assert.strictEqual(summary.version, 1);
+  assert.strictEqual(world.kernel.version, 1, 'contract state should preserve scheduler version');
+  assert.ok(world.kernel.contracts, 'contract state should live under scheduler state');
+
+  const registry = createSystemRegistry({ phases: ['core'] });
+  registerSystem(registry, {
+    id: 'scheduler.after-summary',
+    phase: 'core',
+    run(context) {
+      context.world.resources.afterSummary = true;
+      return true;
+    },
+  });
+  const report = runSystemSchedule(world, registry);
+  assert.strictEqual(report.completed, 1, 'summary lookup must not make the world unrunnable');
+  assert.strictEqual(world.resources.afterSummary, true);
 }
 
 function testValidContract() {
