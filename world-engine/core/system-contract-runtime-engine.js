@@ -32,7 +32,6 @@ function instrumentSystemContracts(registry, options = {}) {
 function instrumentSystemContract(system, options = {}) {
   if (!system || typeof system.run !== 'function') throw new Error('instrumentSystemContract requires system');
   const contracts = normalizeSystemContracts(system.contracts || {});
-  system.contracts = contracts;
   const total = Object.values(contracts).reduce((sum, entries) => sum + entries.length, 0);
   if (!total) return system;
 
