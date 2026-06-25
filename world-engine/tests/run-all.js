@@ -45,6 +45,7 @@ const tests = [
   'deterministic-random-engine-test.js',
   'system-scheduler-engine-test.js',
   'modular-simulation-pipeline-test.js',
+  'determinism-source-audit-test.js',
   'replay-determinism-test.js',
   'world-template-test.js',
   'stability-100-test.js',
@@ -60,6 +61,7 @@ for (const test of tests) {
 
   if (passed) {
     console.log(`PASS ${test}`);
+    if (result.stdout && test === 'determinism-source-audit-test.js') console.log(result.stdout.trim());
   } else {
     console.error(`FAIL ${test}`);
     if (result.stdout) console.error(result.stdout);
