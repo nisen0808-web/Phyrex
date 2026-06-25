@@ -8,7 +8,7 @@ cd Phyrex
 npm test
 ```
 
-当前默认测试共 37 个：
+当前默认测试共 43 个：
 
 ```text
 smoke-test.js
@@ -46,6 +46,12 @@ browser-command-palette-test.js
 world-template-api-test.js
 browser-world-insights-test.js
 browser-workspace-layout-test.js
+password-credential-engine-test.js
+session-token-hash-test.js
+request-throttle-test.js
+deterministic-random-engine-test.js
+system-scheduler-engine-test.js
+replay-determinism-test.js
 world-template-test.js
 stability-100-test.js
 ```
@@ -215,7 +221,43 @@ GET  /admin/errors
 world-engine/API.md
 ```
 
-## 5. 世界运行与持久化
+## 5. 确定性模拟内核
+
+推荐的新引擎入口：
+
+```js
+const {
+  createDeterministicSimulationKernel,
+  initializeDeterministicSimulation,
+  runDeterministicSimulationTicks,
+} = require('./world-engine/core/deterministic-simulation-engine');
+
+const kernel = createDeterministicSimulationKernel();
+initializeDeterministicSimulation(world, options);
+runDeterministicSimulationTicks(world, 10, options, kernel);
+```
+
+当前内核能力：
+
+```text
+命名随机流
+世界级确定性 ID
+阶段和依赖调度
+周期系统
+原子失败回滚
+系统写冲突诊断
+规范化状态哈希
+确定性重放和分歧定位
+旧存档自动补齐内核状态
+```
+
+详细说明：
+
+```text
+world-engine/DETERMINISTIC_KERNEL.md
+```
+
+## 6. 世界运行与持久化
 
 ```bash
 npm run runtime
@@ -224,8 +266,14 @@ npm run runtime
 当前服务层：
 
 ```text
+random-engine.js             命名随机流和确定性兼容作用域
+world-id-engine.js           世界级单调 ID 序列
+system-scheduler-engine.js   系统阶段、依赖、周期与失败策略
+state-integrity-engine.js    规范序列化、SHA-256 与状态差异
+replay-engine.js             记录、重放和确定性验证
+deterministic-simulation-engine.js 现有完整模拟的确定性适配器
 persistence-engine.js        save / load / autosave / list saves
-offline-command-engine.js    离线命令队列和长时间动作
+offline-command-engine.js    离线命令队列和确定性世界推进
 runtime-engine.js            tick batch、自动存档和 runtime snapshot
 runtime-loop-engine.js       定时持续运行、暂停、停止、单步和自动存档
 api-server-engine.js         HTTP、SSE、WebSocket 和客户端托管
@@ -233,7 +281,7 @@ world-template-api-engine.js 世界模板权限、备份、重置和循环同步
 browser-client-engine.js     浏览器 dashboard 和统一玩法动作
 ```
 
-## 6. 命令行试玩
+## 7. 命令行试玩
 
 ```bash
 npm run play
@@ -260,7 +308,7 @@ Shell 支持中英文命令，包括：
 领取 / claim
 ```
 
-## 7. Snapshot 和 Viewer
+## 8. Snapshot 和 Viewer
 
 ```bash
 npm run snapshot
@@ -275,17 +323,18 @@ http://127.0.0.1:8787/viewer/index.html
 
 浏览器客户端中的“世界洞察”也直接使用 `/snapshot`，可查看人口分布、排行榜、最近活动和诊断，并可复制摘要或导出 JSON。
 
-## 8. 1000 tick 压测
+## 9. 1000 tick 压测
 
 ```bash
 npm run stress
 ```
 
-## 9. 当前关键上限
+## 10. 当前关键上限
 
 ```text
 world.memory <= 1000
 simulation.reports <= 200
+kernel.history <= 100
 processes.byId <= 500
 information.items <= 1000
 memories.byId <= 3000
@@ -301,7 +350,7 @@ API audit log <= 1000
 API errors <= 200
 ```
 
-## 10. 常见命令
+## 11. 常见命令
 
 ```bash
 npm test

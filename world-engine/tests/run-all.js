@@ -42,6 +42,9 @@ const tests = [
   'password-credential-engine-test.js',
   'session-token-hash-test.js',
   'request-throttle-test.js',
+  'deterministic-random-engine-test.js',
+  'system-scheduler-engine-test.js',
+  'replay-determinism-test.js',
   'world-template-test.js',
   'stability-100-test.js',
 ];

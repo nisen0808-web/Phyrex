@@ -4,8 +4,10 @@ const { executePlayerCommand } = require('./command-engine');
 const { processPlayersTick } = require('./player-engine');
 const { processQuestsTick } = require('./quest-engine');
 const { processTutorialTick } = require('./tutorial-engine');
-const { runSimulationTicks } = require('./simulation-engine');
+const { runDeterministicSimulationTicks } = require('./deterministic-simulation-engine');
 const { recordPlayerJournal, JOURNAL_TYPES } = require('./player-journal-engine');
+const { nextWorldId } = require('./world-id-engine');
+const { withDeterministicGlobals } = require('./random-engine');
 
 const OFFLINE_COMMAND_STATUS = {
   QUEUED: 'queued',
@@ -42,7 +44,7 @@ function scheduleOfflineCommand(world, playerId, input = {}, options = {}) {
   if (!playerId) throw new Error('scheduleOfflineCommand requires playerId');
   if (!input.type) throw new Error('scheduleOfflineCommand requires command type');
   const state = ensureOfflineCommandState(world);
-  const id = input.id || `offline_${world.tick}_${playerId}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'offline', 'offline.command');
   const durationTicks = Math.max(1, Number(input.durationTicks || input.ticks || 1));
   const item = {
     id,
@@ -124,12 +126,15 @@ function runOfflineCommand(world, command, options = {}) {
 function advanceWorldWithOfflineCommands(world, ticks = 1, options = {}) {
   const reports = [];
   for (let i = 0; i < ticks; i += 1) {
-    runSimulationTicks(world, 1, options.simulation || {});
-    const offline = processOfflineCommandsTick(world, options);
-    processPlayersTick(world);
-    processTutorialTick(world, { autoStart: true, claimCompleted: false });
-    processQuestsTick(world);
-    reports.push({ tick: world.tick, offline });
+    const report = withDeterministicGlobals(world, 'runtime.offline', () => {
+      const simulation = runDeterministicSimulationTicks(world, 1, options.simulation || {});
+      const offline = processOfflineCommandsTick(world, options);
+      processPlayersTick(world);
+      processTutorialTick(world, { autoStart: true, claimCompleted: false });
+      processQuestsTick(world);
+      return { tick: world.tick, simulation, offline };
+    });
+    reports.push(report);
   }
   return reports;
 }
