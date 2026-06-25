@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 function main() {
@@ -33,6 +34,12 @@ function main() {
       }
     });
   }
+
+  const reportPath = path.join(
+    process.env.RUNNER_TEMP || os.tmpdir(),
+    'deterministic-purity-findings.json',
+  );
+  fs.writeFileSync(reportPath, JSON.stringify({ findings }, null, 2), 'utf8');
 
   if (findings.length) {
     console.error('Implicit deterministic globals remain in core modules:');
