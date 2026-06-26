@@ -111,9 +111,9 @@ function processClimateTick(world, options = {}, random = null) {
   const zones = {};
   for (const location of Object.values(world.locations || {})) {
     const locationId = location.id;
-    const biome = normalizeBiome(location.biome || location.terrain || location.type || inferBiome(location));
-    const altitude = clamp(Number(location.altitude || location.elevation || 0), -500, 9000);
-    const latitude = clamp(Number(location.latitude || location.lat || biomeLatitude(biome)), -90, 90);
+    const biome = resolveLocationBiome(location, config);
+    const altitude = clamp(Number(location.altitude || location.elevation || location.meta?.altitude || location.meta?.elevation || 0), -500, 9000);
+    const latitude = clamp(Number(location.latitude || location.lat || location.meta?.latitude || location.meta?.lat || biomeLatitude(biome)), -90, 90);
     const seasonal = seasonalProfile(state.calendar.season);
     const humidityNoise = climateRandom.float(`climate:${locationId}:humidity`) - 0.5;
     const temperatureNoise = climateRandom.float(`climate:${locationId}:temperature`) - 0.5;
@@ -192,7 +192,7 @@ function processResourceRegenerationTick(world, options = {}, random = null) {
   for (const location of Object.values(world.locations || {})) {
     const locationId = location.id;
     if (!location.resources) location.resources = {};
-    const zone = state.climate.zones[locationId] || { biome: normalizeBiome(location.biome || location.type), fertility: 0.5 };
+    const zone = state.climate.zones[locationId] || { biome: resolveLocationBiome(location, config), fertility: 0.5 };
     const weather = state.weather.byLocation[locationId] || { type: 'clear', severity: 0 };
     const profile = config.biomeResourceProfiles[zone.biome] || config.biomeResourceProfiles.plains;
     if (!state.resources.capacities[locationId]) state.resources.capacities[locationId] = {};
@@ -416,6 +416,21 @@ function normalizeBiome(value) {
   return DEFAULT_NATURAL_OPTIONS.biomeResourceProfiles[text] ? text : 'plains';
 }
 
+function resolveLocationBiome(location, config = DEFAULT_NATURAL_OPTIONS) {
+  const candidates = [
+    location?.biome,
+    location?.terrain,
+    location?.meta?.biome,
+    location?.meta?.terrain,
+    location?.type,
+  ];
+  for (const candidate of candidates) {
+    const text = String(candidate || '').trim().toLowerCase();
+    if (text && config.biomeResourceProfiles[text]) return text;
+  }
+  return inferBiome(location);
+}
+
 function inferBiome(location) {
   const name = String(location?.name || location?.id || '').toLowerCase();
   if (name.includes('forest')) return 'forest';
@@ -493,5 +508,6 @@ module.exports = {
   getNaturalWorldSummary,
   seasonForMonth,
   normalizeBiome,
+  resolveLocationBiome,
   mergeNaturalOptions,
 };
