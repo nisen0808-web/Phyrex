@@ -16,21 +16,13 @@ jobs:
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.x'
       - name: Show environment
         run: |
           node --version
           npm --version
       - name: Run complete test suite
-        run: |
-          mkdir -p world-engine/output/ci
-          npm test 2>&1 | tee world-engine/output/ci/node20.log
-      - name: Upload Node 20 logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: world-engine-ci-node20-logs
-          path: world-engine/output/ci/node20.log
+        run: npm test
 
   test-node-22:
     runs-on: ubuntu-latest
@@ -40,21 +32,13 @@ jobs:
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.x'
       - name: Show environment
         run: |
           node --version
           npm --version
       - name: Run complete test suite
-        run: |
-          mkdir -p world-engine/output/ci
-          npm test 2>&1 | tee world-engine/output/ci/node22.log
-      - name: Upload Node 22 logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: world-engine-ci-node22-logs
-          path: world-engine/output/ci/node22.log
+        run: npm test
 
   stress:
     runs-on: ubuntu-latest
@@ -64,6 +48,6 @@ jobs:
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.x'
       - name: Run 1000 tick stability test
         run: npm run stress
