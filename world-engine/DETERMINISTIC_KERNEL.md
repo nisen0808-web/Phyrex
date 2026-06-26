@@ -11,13 +11,15 @@
 内核由以下模块组成：
 
 ```text
-random-engine.js                    命名随机流和确定性兼容作用域
-world-id-engine.js                  世界级单调 ID 序列
-system-scheduler-engine.js          阶段、依赖、周期和失败策略
-simulation-pipeline-engine.js       28 个独立模拟子系统
-state-integrity-engine.js           规范化序列化、SHA-256 和状态差异
-replay-engine.js                    输入记录、重放和分歧定位
-deterministic-simulation-engine.js  内核入口和管线兼容层
+random-engine.js                         命名随机流和确定性兼容作用域
+world-id-engine.js                       世界级单调 ID 序列
+system-scheduler-engine.js               阶段、依赖、周期和失败策略
+simulation-pipeline-engine.js            28 个独立模拟子系统
+system-contract-engine.js                通用输入、输出与后置条件校验
+simulation-system-contracts-engine.js    内置模拟系统 Contract 集合
+state-integrity-engine.js                规范化序列化、SHA-256 和状态差异
+replay-engine.js                         输入记录、重放和分歧定位
+deterministic-simulation-engine.js       内核入口和管线兼容层
 ```
 
 ## 命名随机流
@@ -100,7 +102,7 @@ halt / continue 失败策略
 
 ## 模块化模拟管线
 
-默认确定性内核已经不再把完整模拟包装为单一 `world.simulation` 系统，而是运行 28 个独立系统。
+默认确定性内核不再把完整模拟包装为单一 `world.simulation` 系统，而是运行 28 个独立系统。
 
 默认阶段：
 
@@ -181,6 +183,84 @@ const legacyKernel = createDeterministicSimulationKernel({
 world-engine/SIMULATION_PIPELINE.md
 ```
 
+## 系统 Contract
+
+模块化管线默认启用严格 Contract：
+
+```js
+const kernel = createDeterministicSimulationKernel({
+  contractPolicy: 'error',
+});
+```
+
+支持三种策略：
+
+```text
+error   Contract 违规令系统失败
+warn    记录违规并继续运行
+off     跳过 Contract 校验
+```
+
+每个 Contract 可以定义：
+
+```text
+输入路径和 Schema
+系统结果 Schema
+执行后世界状态条件
+自定义输入验证器
+自定义输出验证器
+```
+
+内置 28 个模拟系统均有 Contract。验证结果会写入当前调度报告，累计统计保存在：
+
+```text
+world.kernel.contracts
+```
+
+统计包括：
+
+```text
+validations
+violations
+warnings
+failures
+inputFailures
+outputFailures
+postconditionFailures
+每个系统的验证与违规信息
+最近 100 次违规
+```
+
+模组系统可以直接声明：
+
+```js
+registerKernelSystem(kernel, {
+  id: 'mod.climate.weather',
+  phase: 'before',
+  contract: {
+    inputs: [
+      { path: 'world.climate', schema: { type: 'object' } },
+    ],
+    output: {
+      type: 'object',
+      required: ['temperature'],
+      properties: {
+        temperature: { type: 'number' },
+      },
+    },
+  },
+  run(context) {
+    return updateWeather(context.world, context.random);
+  },
+});
+```
+
+完整 Schema 子集、违规格式和覆盖率说明见：
+
+```text
+world-engine/SYSTEM_CONTRACTS.md
+```
+
 ## 状态完整性
 
 `state-integrity-engine.js` 会：
@@ -225,6 +305,8 @@ const result = replayTape(tape, (replayWorld, input) => (
 
 摘要不一致时返回第一处分歧步骤。`verifyDeterministicExecution` 还可以从同一初始状态并行运行两份模拟，直接检查系统是否可重复。
 
+Contract 验证统计只使用确定性世界状态和调度 tick，因此同样参与世界摘要和重放比较。
+
 ## 持久化
 
 旧存档没有确定性字段时，读取会自动补充：
@@ -233,9 +315,10 @@ const result = replayTape(tape, (replayWorld, input) => (
 world.random
 world.engineIds
 world.kernel
+world.kernel.contracts
 ```
 
-随机流位置、ID 序列和调度统计会随世界一起保存。
+随机流位置、ID 序列、调度统计和 Contract 统计会随世界一起保存。
 
 ## 当前迁移状态
 
@@ -248,6 +331,7 @@ Action / Event / Memory / Causality ID
 离线命令 ID
 运行时世界推进
 28 个模块化模拟系统
+28 个内置系统输入、输出和后置条件 Contract
 模块化与旧单体管线兼容切换
 完整模拟重放验证
 ```
@@ -256,8 +340,8 @@ Action / Event / Memory / Causality ID
 
 ```text
 1. 清除核心模块剩余的隐式 Math.random / Date.now
-2. 为系统输入与输出增加 schema / contract 校验
-3. 输入事件日志与因果回放
-4. 世界一致性约束和自动修复
-5. 性能预算、系统级采样和长周期确定性压测
+2. 输入事件日志与因果回放
+3. 世界一致性约束和自动修复
+4. 性能预算、系统级采样和长周期确定性压测
+5. 自然、气候与生态系统
 ```

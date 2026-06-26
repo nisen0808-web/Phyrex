@@ -8,7 +8,7 @@ cd Phyrex
 npm test
 ```
 
-当前默认测试共 44 个：
+当前默认测试共 46 个：
 
 ```text
 smoke-test.js
@@ -51,7 +51,9 @@ session-token-hash-test.js
 request-throttle-test.js
 deterministic-random-engine-test.js
 system-scheduler-engine-test.js
+system-contract-engine-test.js
 modular-simulation-pipeline-test.js
+simulation-pipeline-contracts-test.js
 replay-determinism-test.js
 world-template-test.js
 stability-100-test.js
@@ -249,6 +251,7 @@ runDeterministicSimulationTicks(world, 10, options, kernel);
 周期系统
 原子失败回滚
 系统写冲突诊断
+系统输入、输出与后置条件 Contract 校验
 规范化状态哈希
 确定性重放和分歧定位
 旧存档自动补齐内核状态
@@ -260,6 +263,7 @@ runDeterministicSimulationTicks(world, 10, options, kernel);
 ```text
 world-engine/DETERMINISTIC_KERNEL.md
 world-engine/SIMULATION_PIPELINE.md
+world-engine/SYSTEM_CONTRACTS.md
 ```
 
 ## 6. 世界运行与持久化
@@ -274,7 +278,9 @@ npm run runtime
 random-engine.js             命名随机流和确定性兼容作用域
 world-id-engine.js           世界级单调 ID 序列
 system-scheduler-engine.js   系统阶段、依赖、周期与失败策略
+system-contract-engine.js    输入、输出和执行后状态校验
 simulation-pipeline-engine.js 28 个模块化模拟子系统
+simulation-system-contracts-engine.js 内置模拟系统 Contract 集合
 state-integrity-engine.js    规范序列化、SHA-256 与状态差异
 replay-engine.js             记录、重放和确定性验证
 deterministic-simulation-engine.js 模块化默认和旧单体兼容入口
@@ -341,6 +347,7 @@ npm run stress
 world.memory <= 1000
 simulation.reports <= 200
 kernel.history <= 100
+kernel.contracts.recentViolations <= 100
 processes.byId <= 500
 information.items <= 1000
 memories.byId <= 3000

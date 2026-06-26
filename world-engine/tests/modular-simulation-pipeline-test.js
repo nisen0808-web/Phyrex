@@ -38,11 +38,28 @@ function main() {
   const world = buildPipelineWorld('modular-world');
   const kernel = createDeterministicSimulationKernel();
   assert.strictEqual(kernel.pipeline, KERNEL_PIPELINES.MODULAR);
+  assert.strictEqual(kernel.options.contractPolicy, 'error');
+  assert.strictEqual(kernel.contractAttachment.attached.length, 28);
+  assert.deepStrictEqual(kernel.contractAttachment.missingContracts, []);
+  assert.strictEqual(kernel.contractAttachment.coverage, 1);
 
   registerKernelSystem(kernel, {
     id: 'test.before',
     phase: 'before',
     writes: ['test.before'],
+    contract: {
+      inputs: [
+        { path: 'world.tick', schema: { type: 'integer', minimum: 0 } },
+      ],
+      output: {
+        type: 'object',
+        required: ['tick'],
+        properties: { tick: { type: 'integer', minimum: 0 } },
+      },
+      postconditions: [
+        { path: 'world.test.order', schema: { type: 'array', minItems: 1 } },
+      ],
+    },
     run(context) {
       if (!context.world.test) context.world.test = { order: [] };
       context.world.test.order.push('before');
@@ -73,16 +90,38 @@ function main() {
   assert.strictEqual(report.kernel.skipped, 26, 'disabled simulation systems should be skipped');
   assert.ok(report.kernel.order.indexOf('test.before') < report.kernel.order.indexOf('world.advance'));
   assert.ok(report.kernel.order.indexOf('finalize.report') < report.kernel.order.indexOf('test.after'));
+  assert.deepStrictEqual(report.kernel.contracts, {
+    policy: 'error',
+    validations: 9,
+    violations: 0,
+    warnings: 0,
+    failures: 0,
+  });
 
   const summary = getDeterministicSimulationSummary(world, kernel);
   assert.strictEqual(summary.pipeline, 'modular');
   assert.strictEqual(summary.modularPipeline.systems, 30, 'summary should include custom systems');
+  assert.strictEqual(summary.contractCoverage.systems, 30);
+  assert.strictEqual(summary.contractCoverage.contracted, 29);
+  assert.strictEqual(summary.contractCoverage.uncontracted, 1);
+  assert.deepStrictEqual(summary.contractCoverage.uncontractedIds, ['test.after']);
+  assert.strictEqual(summary.contracts.validations, 9);
+  assert.strictEqual(summary.contracts.violations, 0);
   const advanceStats = summary.scheduler.systems.find(system => system.id === 'world.advance');
   const populationStats = summary.scheduler.systems.find(system => system.id === 'population.lifecycle');
   assert.strictEqual(advanceStats.runs, 1);
   assert.strictEqual(populationStats.skips, 1);
   assert.strictEqual(world.simulation.counters.ticks, 1);
   assert.strictEqual(world.simulation.lastTickReport.tickAfter, 1);
+
+  const warningWorld = buildPipelineWorld('warning-world');
+  const warningKernel = createDeterministicSimulationKernel({ contractPolicy: 'warn' });
+  assert.strictEqual(warningKernel.options.contractPolicy, 'warn');
+  const warningReport = runDeterministicSimulationTick(warningWorld, {
+    simulation: disabledSimulationOptions(),
+  }, warningKernel);
+  assert.strictEqual(warningReport.kernel.contracts.policy, 'warn');
+  assert.strictEqual(warningReport.kernel.contracts.violations, 0);
 
   const legacyWorld = buildPipelineWorld('legacy-world');
   const legacyKernel = createDeterministicSimulationKernel({ pipeline: 'legacy' });
@@ -93,10 +132,15 @@ function main() {
   assert.strictEqual(legacyWorld.tick, 1);
   assert.strictEqual(legacyReport.kernel.order.includes('world.simulation'), true);
   assert.strictEqual(legacyReport.kernel.pipeline, 'legacy');
+  assert.strictEqual(legacyReport.kernel.contracts, null);
 
   assert.throws(
     () => createDeterministicSimulationKernel({ pipeline: 'unknown' }),
     /Unsupported deterministic simulation pipeline/,
+  );
+  assert.throws(
+    () => createDeterministicSimulationKernel({ contractPolicy: 'unknown' }),
+    /Unsupported system contract policy/,
   );
 
   console.log('modular simulation pipeline test passed');
