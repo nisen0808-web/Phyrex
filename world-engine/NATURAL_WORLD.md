@@ -96,6 +96,10 @@ runDeterministicSimulationTick(world, {
 }, kernel);
 ```
 
+## 生物群系解析
+
+自然世界会先读取地点上的 `biome` 和 `terrain`，再读取 `meta` 里的同名字段。若通用地点 schema 没保留这些字段，就用地点名称和 ID 推断，例如 `Old Forest`、`Red Desert`、`West Coast` 会分别识别为森林、沙漠和海岸。最终兜底为 `plains`。
+
 ## 下一步
 
 ```text
