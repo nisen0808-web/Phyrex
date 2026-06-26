@@ -10,6 +10,13 @@ const SIMULATION_CONTRACT_SET_VERSION = 1;
 
 function createSimulationSystemContracts() {
   const contracts = {
+    'natural.world': outputObject({
+      calendar: objectSchema(),
+      climate: objectSchema(),
+      weather: objectSchema(),
+      resources: objectSchema(),
+      disasters: objectSchema(),
+    }, ['calendar', 'climate', 'weather', 'resources', 'disasters']),
     'population.lifecycle': outputObject({
       births: arraySchema(),
       deaths: arraySchema(),
