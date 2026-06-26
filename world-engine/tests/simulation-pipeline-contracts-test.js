@@ -27,7 +27,8 @@ function main() {
   const kernel = createDeterministicSimulationKernel();
   const contracts = createSimulationSystemContracts();
 
-  assert.strictEqual(Object.keys(contracts).length, 28, 'every built-in pipeline system should receive a contract');
+  assert.strictEqual(Object.keys(contracts).length, 29, 'every built-in and default natural system should receive a contract');
+  assert.ok(contracts['natural.world']);
   assert.ok(contracts['population.lifecycle']);
   assert.ok(contracts['world.advance']);
   assert.ok(contracts['finalize.report']);
@@ -35,15 +36,15 @@ function main() {
   assert.ok(contracts['finalize.report'].postconditions.some(rule => rule.path === 'world.simulation.lastTickReport'));
 
   const coverage = getSimulationContractCoverage(kernel.registry);
-  assert.strictEqual(coverage.systems, 28);
-  assert.strictEqual(coverage.contracted, 28, 'kernel should attach contracts by default');
+  assert.strictEqual(coverage.systems, 29);
+  assert.strictEqual(coverage.contracted, 29, 'kernel should attach contracts by default');
   assert.strictEqual(coverage.uncontracted, 0);
   assert.strictEqual(coverage.coverage, 1);
   assert.strictEqual(analyzeContractCoverage(kernel.registry).uncontracted, 0);
 
   const attachment = attachSimulationSystemContracts(kernel.registry, { policy: 'error' });
   assert.strictEqual(attachment.version, 1);
-  assert.strictEqual(attachment.attached.length, 28);
+  assert.strictEqual(attachment.attached.length, 29);
   assert.strictEqual(attachment.missingContracts.length, 0);
 
   const report = runDeterministicSimulationTick(world, {
@@ -53,22 +54,27 @@ function main() {
 
   assert.strictEqual(report.kernel.pipeline, 'modular');
   assert.strictEqual(report.tickAfter, 1);
+  assert.ok(report.natural);
   assert.strictEqual(report.kernel.contracts.policy, 'error');
   assert.strictEqual(report.kernel.contracts.violations, 0);
+  const naturalEntry = report.kernel.order.indexOf('natural.world');
   const advanceEntry = report.kernel.order.indexOf('world.advance');
   const finalizeEntry = report.kernel.order.indexOf('finalize.report');
-  assert.ok(advanceEntry >= 0);
+  assert.ok(naturalEntry >= 0);
+  assert.ok(advanceEntry > naturalEntry);
   assert.ok(finalizeEntry > advanceEntry);
 
   const completedContracts = world.kernel.lastReport.systems
     .filter(entry => entry.status === 'completed')
     .map(entry => entry.id);
+  assert.ok(completedContracts.includes('natural.world'));
   assert.ok(completedContracts.includes('world.advance'));
   assert.ok(completedContracts.includes('finalize.report'));
 
   const summary = getSystemContractSummary(world);
-  assert.ok(summary.validations >= 6, 'completed systems should validate input, output and postconditions');
+  assert.ok(summary.validations >= 8, 'completed systems should validate input, output and postconditions');
   assert.strictEqual(summary.violations, 0);
+  assert.ok(summary.systems.some(system => system.id === 'natural.world'));
   assert.ok(summary.systems.some(system => system.id === 'world.advance'));
   assert.ok(summary.systems.some(system => system.id === 'finalize.report'));
 
