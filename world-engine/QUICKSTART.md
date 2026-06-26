@@ -8,7 +8,7 @@ cd Phyrex
 npm test
 ```
 
-当前默认测试共 47 个：
+当前默认测试共 49 个：
 
 ```text
 smoke-test.js
@@ -55,6 +55,8 @@ system-contract-engine-test.js
 modular-simulation-pipeline-test.js
 simulation-pipeline-contracts-test.js
 source-purity-engine-test.js
+natural-world-basic-test.js
+natural-world-pipeline-test.js
 replay-determinism-test.js
 world-template-test.js
 stability-100-test.js
@@ -246,8 +248,9 @@ runDeterministicSimulationTicks(world, 10, options, kernel);
 ```text
 命名随机流
 世界级确定性 ID
-28 个独立模拟子系统
-人口、社会、经济、智能体、知识和文明阶段
+28 个基础模拟子系统
+natural.world 自然世界系统
+人口、社会、经济、智能体、知识、文明和自然阶段
 阶段和依赖调度
 周期系统
 原子失败回滚
@@ -267,6 +270,7 @@ world-engine/DETERMINISTIC_KERNEL.md
 world-engine/SIMULATION_PIPELINE.md
 world-engine/SYSTEM_CONTRACTS.md
 world-engine/DETERMINISTIC_PURITY.md
+world-engine/NATURAL_WORLD.md
 ```
 
 ## 6. 世界运行与持久化
@@ -283,6 +287,8 @@ world-id-engine.js           世界级单调 ID 序列
 system-scheduler-engine.js   系统阶段、依赖、周期与失败策略
 system-contract-engine.js    输入、输出和执行后状态校验
 source-purity-engine.js      源码随机数与系统时间审计
+natural-world-engine.js      历法、季节、气候、天气、资源再生和灾害
+natural-world-system-engine.js 默认确定性管线 natural.world 系统
 simulation-pipeline-engine.js 28 个模块化模拟子系统
 simulation-system-contracts-engine.js 内置模拟系统 Contract 集合
 state-integrity-engine.js    规范序列化、SHA-256 与状态差异
@@ -352,6 +358,8 @@ world.memory <= 1000
 simulation.reports <= 200
 kernel.history <= 100
 kernel.contracts.recentViolations <= 100
+natural.weather.history <= 120
+natural.disasters.history <= 100
 processes.byId <= 500
 information.items <= 1000
 memories.byId <= 3000

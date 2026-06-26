@@ -49,6 +49,7 @@ const tests = [
   'simulation-pipeline-contracts-test.js',
   'source-purity-engine-test.js',
   'natural-world-basic-test.js',
+  'natural-world-pipeline-test.js',
   'replay-determinism-test.js',
   'world-template-test.js',
   'stability-100-test.js',
