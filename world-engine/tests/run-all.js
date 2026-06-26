@@ -46,6 +46,7 @@ const tests = [
   'system-scheduler-engine-test.js',
   'system-contract-engine-test.js',
   'modular-simulation-pipeline-test.js',
+  'simulation-pipeline-contracts-test.js',
   'replay-determinism-test.js',
   'world-template-test.js',
   'stability-100-test.js',
