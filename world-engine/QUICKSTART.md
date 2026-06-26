@@ -8,7 +8,7 @@ cd Phyrex
 npm test
 ```
 
-当前默认测试共 46 个：
+当前默认测试共 47 个：
 
 ```text
 smoke-test.js
@@ -54,6 +54,7 @@ system-scheduler-engine-test.js
 system-contract-engine-test.js
 modular-simulation-pipeline-test.js
 simulation-pipeline-contracts-test.js
+source-purity-engine-test.js
 replay-determinism-test.js
 world-template-test.js
 stability-100-test.js
@@ -252,6 +253,7 @@ runDeterministicSimulationTicks(world, 10, options, kernel);
 原子失败回滚
 系统写冲突诊断
 系统输入、输出与后置条件 Contract 校验
+源码确定性纯度审计
 规范化状态哈希
 确定性重放和分歧定位
 旧存档自动补齐内核状态
@@ -264,6 +266,7 @@ runDeterministicSimulationTicks(world, 10, options, kernel);
 world-engine/DETERMINISTIC_KERNEL.md
 world-engine/SIMULATION_PIPELINE.md
 world-engine/SYSTEM_CONTRACTS.md
+world-engine/DETERMINISTIC_PURITY.md
 ```
 
 ## 6. 世界运行与持久化
@@ -279,6 +282,7 @@ random-engine.js             命名随机流和确定性兼容作用域
 world-id-engine.js           世界级单调 ID 序列
 system-scheduler-engine.js   系统阶段、依赖、周期与失败策略
 system-contract-engine.js    输入、输出和执行后状态校验
+source-purity-engine.js      源码随机数与系统时间审计
 simulation-pipeline-engine.js 28 个模块化模拟子系统
 simulation-system-contracts-engine.js 内置模拟系统 Contract 集合
 state-integrity-engine.js    规范序列化、SHA-256 与状态差异
