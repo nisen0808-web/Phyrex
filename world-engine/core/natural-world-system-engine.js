@@ -11,7 +11,7 @@ function registerNaturalWorldSystem(registry, options = {}) {
   return registerSystem(registry, {
     id: NATURAL_WORLD_SYSTEM_ID,
     phase: options.phase || 'before',
-    priority: Number(options.priority ?? -100),
+    priority: Number(options.priority ?? 100),
     reads: ['locations', 'natural'],
     writes: ['natural', 'locations', 'memory'],
     tags: ['simulation', 'natural', 'world'],
