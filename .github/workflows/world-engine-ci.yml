@@ -16,7 +16,7 @@ jobs:
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '20'
       - name: Show environment
         run: |
           node --version
@@ -32,7 +32,7 @@ jobs:
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '22.x'
+          node-version: '22'
       - name: Show environment
         run: |
           node --version
@@ -48,6 +48,6 @@ jobs:
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '22.x'
+          node-version: '22'
       - name: Run 1000 tick stability test
         run: npm run stress
