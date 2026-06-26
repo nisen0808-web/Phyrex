@@ -2,13 +2,13 @@
 
 本文件记录当前引擎优先阶段的完成度。浏览器客户端、账号和部署相关能力只作为参考客户端与运维外壳，不作为本阶段主线。
 
-## 当前阶段：确定性内核、系统 Contract 与源码纯度审计
+## 当前阶段：确定性内核、系统 Contract、源码纯度审计与自然世界基础
 
 | 引擎层 | 状态 | 说明 |
 |---|---:|---|
 | 世界状态与实体模型 | 70% | 实体、地点、资源、玩家和多类社会状态已建立；仍需统一 schema。 |
 | Tick 与系统调度器 | 90% | 已支持阶段、依赖、周期、失败策略、原子回滚和统计。 |
-| 确定性随机数 | 80% | 已有命名随机流和兼容作用域；本批次新增源码审计门禁。 |
+| 确定性随机数 | 80% | 已有命名随机流和兼容作用域；源码审计门禁已建立。 |
 | 世界级确定性 ID | 85% | Action、Event、Memory、Causality 等已接入；仍需覆盖新系统。 |
 | 模块化模拟管线 | 85% | 28 个内置模拟系统已拆分并作为默认管线。 |
 | 系统 Contract 校验 | 75% | 已有输入、输出、后置条件、warn、error、off 策略和内置系统覆盖。 |
@@ -22,24 +22,23 @@
 | 信息、记忆、文化、宗教 | 55% | 已接入管线；仍需传播网络和文化变迁细化。 |
 | 文明、科技、基础设施 | 50% | 已接入管线；仍需时代、扩散和依赖网络。 |
 | 治理、过程、冲突 | 45% | 已接入管线；仍需外交、战争、法律系统。 |
-| 自然、气候、生态 | 15% | 仍是主要缺口。 |
+| 自然、气候、生态 | 15% -> 30% | 已新增自然世界基础：历法、季节、气候、天气、资源再生和灾害状态；下一步接入默认管线并扩展生态。 |
 | 世界一致性检查与自动修复 | 20% | 有基础状态校验能力；尚未形成独立 repair pipeline。 |
 | 性能预算与采样 | 10% | 尚未形成系统级 profiling。 |
 
 ## 本批次新增
 
 ```text
-source-purity-engine.js
-source-purity-engine-test.js
-DETERMINISTIC_PURITY.md
+natural-world-engine.js
+natural-world-basic-test.js
 ```
 
 ## 下一批建议
 
 ```text
-1. 基于 source-purity-engine 扫描核心目录并生成首个 baseline
-2. 逐个迁移核心模块中的 Math.random / Date.now 到 context.random 和 deterministicNow
-3. 把 Contract 覆盖从宽结构校验收紧为系统级语义校验
-4. 引入输入事件日志和因果 replay
-5. 增加世界一致性检查与自动修复系统
+1. 将 natural.world 作为默认模拟管线系统接入 before/natural 阶段
+2. 为自然世界系统补内置 Contract 和重放测试
+3. 扩展生态系统：物种栖息地、食物链、疾病和承载力
+4. 基于 source-purity-engine 扫描核心目录并生成首个 baseline
+5. 逐个迁移核心模块中的 Math.random / Date.now 到 context.random 和 deterministicNow
 ```
