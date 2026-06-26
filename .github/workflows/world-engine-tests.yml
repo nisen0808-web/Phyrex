@@ -28,23 +28,11 @@ jobs:
           node-version: '20'
 
       - name: Root npm test
-        run: |
-          mkdir -p world-engine/output/ci
-          npm test 2>&1 | tee world-engine/output/ci/root-npm-test.log
+        run: npm test
 
       - name: World engine npm test
         working-directory: world-engine
-        run: |
-          mkdir -p output/ci
-          npm test 2>&1 | tee output/ci/world-engine-npm-test.log
+        run: npm test
 
       - name: Direct fast stability test
-        run: |
-          node world-engine/tests/stability-100-test.js 2>&1 | tee world-engine/output/ci/stability-100.log
-
-      - name: Upload test logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: world-engine-test-logs
-          path: world-engine/output/ci/*.log
+        run: node world-engine/tests/stability-100-test.js
