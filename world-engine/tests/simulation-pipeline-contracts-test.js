@@ -13,11 +13,10 @@ const {
   runDeterministicSimulationTick,
 } = require('../core/deterministic-simulation-engine');
 const {
-  createSimulationPipelineContracts,
-  attachSimulationPipelineContracts,
-  createContractForSystem,
-  SYSTEM_OUTPUT_SCHEMAS,
-} = require('../core/simulation-pipeline-contracts-engine');
+  createSimulationSystemContracts,
+  attachSimulationSystemContracts,
+  getSimulationContractCoverage,
+} = require('../core/simulation-system-contracts-engine');
 const {
   analyzeContractCoverage,
   getSystemContractSummary,
@@ -26,24 +25,26 @@ const {
 function main() {
   const world = buildWorld();
   const kernel = createDeterministicSimulationKernel();
-  const contracts = createSimulationPipelineContracts(kernel.registry);
+  const contracts = createSimulationSystemContracts();
 
   assert.strictEqual(Object.keys(contracts).length, 28, 'every built-in pipeline system should receive a contract');
   assert.ok(contracts['population.lifecycle']);
   assert.ok(contracts['world.advance']);
   assert.ok(contracts['finalize.report']);
-  assert.strictEqual(SYSTEM_OUTPUT_SCHEMAS['agency.planning'].type, 'array');
+  assert.ok(contracts['world.advance'].postconditions.some(rule => rule.path === 'world.tick'));
+  assert.ok(contracts['finalize.report'].postconditions.some(rule => rule.path === 'world.simulation.lastTickReport'));
 
-  const advanceContract = createContractForSystem(kernel.registry.systems['world.advance']);
-  assert.ok(advanceContract.inputs.some(rule => rule.path === 'world.actions'));
-  assert.ok(advanceContract.postconditions.some(rule => rule.path === 'world.tick'));
+  const coverage = getSimulationContractCoverage(kernel.registry);
+  assert.strictEqual(coverage.systems, 28);
+  assert.strictEqual(coverage.contracted, 28, 'kernel should attach contracts by default');
+  assert.strictEqual(coverage.uncontracted, 0);
+  assert.strictEqual(coverage.coverage, 1);
+  assert.strictEqual(analyzeContractCoverage(kernel.registry).uncontracted, 0);
 
-  const attachment = attachSimulationPipelineContracts(kernel.registry, { policy: 'error' });
+  const attachment = attachSimulationSystemContracts(kernel.registry, { policy: 'error' });
   assert.strictEqual(attachment.version, 1);
   assert.strictEqual(attachment.attached.length, 28);
   assert.strictEqual(attachment.missingContracts.length, 0);
-  assert.strictEqual(attachment.summary.coverage, 1);
-  assert.strictEqual(analyzeContractCoverage(kernel.registry).uncontracted, 0);
 
   const report = runDeterministicSimulationTick(world, {
     simulation: disabledSimulationOptions(),
@@ -52,13 +53,14 @@ function main() {
 
   assert.strictEqual(report.kernel.pipeline, 'modular');
   assert.strictEqual(report.tickAfter, 1);
+  assert.strictEqual(report.kernel.contracts.policy, 'error');
+  assert.strictEqual(report.kernel.contracts.violations, 0);
   const advanceEntry = report.kernel.order.indexOf('world.advance');
   const finalizeEntry = report.kernel.order.indexOf('finalize.report');
   assert.ok(advanceEntry >= 0);
   assert.ok(finalizeEntry > advanceEntry);
 
-  const schedule = world.kernel.lastReport;
-  const completedContracts = schedule.systems
+  const completedContracts = world.kernel.lastReport.systems
     .filter(entry => entry.status === 'completed')
     .map(entry => entry.id);
   assert.ok(completedContracts.includes('world.advance'));
@@ -70,23 +72,13 @@ function main() {
   assert.ok(summary.systems.some(system => system.id === 'world.advance'));
   assert.ok(summary.systems.some(system => system.id === 'finalize.report'));
 
-  const warningWorld = buildWorld('warning-world');
-  const warningKernel = createDeterministicSimulationKernel();
-  attachSimulationPipelineContracts(warningKernel.registry, {
-    policy: 'warn',
-    contracts: {
-      ...createSimulationPipelineContracts(warningKernel.registry),
-      'finalize.report': {
-        output: { type: 'object', required: ['missingField'] },
-      },
-    },
-  });
-  runDeterministicSimulationTick(warningWorld, {
+  const disabledWorld = buildWorld('disabled-contract-world');
+  const disabledKernel = createDeterministicSimulationKernel({ contractPolicy: 'off' });
+  runDeterministicSimulationTick(disabledWorld, {
     simulation: disabledSimulationOptions(),
-  }, warningKernel);
-  const warningSummary = getSystemContractSummary(warningWorld);
-  assert.ok(warningSummary.warnings >= 1, 'warn policy should record contract warnings');
-  assert.strictEqual(warningSummary.failures, 0, 'warn policy should not fail the schedule');
+  }, disabledKernel);
+  const disabledSummary = getSystemContractSummary(disabledWorld);
+  assert.strictEqual(disabledSummary.validations, 0, 'off policy should skip contract validation bookkeeping');
 
   console.log('simulation pipeline contracts test passed');
 }
