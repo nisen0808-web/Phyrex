@@ -34,6 +34,7 @@ const {
 const { ensureWorldIdState } = require('./world-id-engine');
 const { hashWorldState } = require('./state-integrity-engine');
 const { registerNaturalWorldSystem } = require('./natural-world-system-engine');
+const { registerEcologyWorldSystem } = require('./ecology-system-engine');
 
 const DETERMINISTIC_KERNEL_VERSION = 1;
 const KERNEL_PIPELINES = {
@@ -49,6 +50,9 @@ function createDeterministicSimulationKernel(options = {}) {
     : createSimulationPipelineRegistry({ phases: options.phases });
   if (pipeline === KERNEL_PIPELINES.MODULAR && options.includeNaturalWorld !== false) {
     registerNaturalWorldSystem(registry, options.naturalWorldSystem || {});
+  }
+  if (pipeline === KERNEL_PIPELINES.MODULAR && options.includeEcologyWorld !== false) {
+    registerEcologyWorldSystem(registry, options.ecologyWorldSystem || {});
   }
   const contractAttachment = pipeline === KERNEL_PIPELINES.MODULAR
     ? attachSimulationSystemContracts(registry, {
