@@ -77,10 +77,11 @@ function main() {
   assert.ok(summary.scheduler.runs >= 6, 'scheduler should record deterministic ticks');
   assert.strictEqual(summary.pipeline, 'modular');
   assert.strictEqual(summary.registry.order.includes('natural.world'), true);
+  assert.strictEqual(summary.registry.order.includes('ecology.world'), true);
   assert.strictEqual(summary.registry.order.includes('world.advance'), true);
   assert.strictEqual(summary.registry.order.includes('finalize.report'), true);
-  assert.strictEqual(summary.modularPipeline.systems, 29);
-  assert.strictEqual(summary.contractCoverage.systems, 29);
+  assert.strictEqual(summary.modularPipeline.systems, 30);
+  assert.strictEqual(summary.contractCoverage.systems, 30);
   assert.strictEqual(summary.contractCoverage.uncontracted, 0);
   assert.strictEqual(summary.worldDigest, expectedDigest);
 
@@ -92,7 +93,7 @@ function buildReplayWorld() {
   registerLocation(world, {
     id: 'origin',
     name: 'Origin',
-    resources: { food: 500, wood: 500 },
+    resources: { food: 500, water: 500, wood: 500 },
   });
   const first = registerEntity(world, {
     id: 'replay_alice',
@@ -147,6 +148,7 @@ function simulationOptions() {
     },
     city: { minPopulationForSettlement: 1 },
     seedIndustriesEveryTicks: 1,
+    ecology: { baseDiseaseRisk: 0.02 },
   };
 }
 
