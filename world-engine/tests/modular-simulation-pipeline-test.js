@@ -26,7 +26,7 @@ function main() {
   const pipeline = getSimulationPipelineSummary(registry);
   assert.strictEqual(pipeline.version, 1);
   assert.deepStrictEqual(pipeline.phases, SIMULATION_PIPELINE_PHASES);
-  assert.strictEqual(pipeline.systems, 28, 'pipeline should expose every simulation subsystem');
+  assert.strictEqual(pipeline.systems, 28, 'pipeline should expose every built-in simulation subsystem before kernel extensions');
   assert.strictEqual(pipeline.order[0], 'population.lifecycle');
   assert.ok(pipeline.order.includes('world.advance'));
   assert.ok(pipeline.order.includes('finalize.report'));
@@ -39,9 +39,10 @@ function main() {
   const kernel = createDeterministicSimulationKernel();
   assert.strictEqual(kernel.pipeline, KERNEL_PIPELINES.MODULAR);
   assert.strictEqual(kernel.options.contractPolicy, 'error');
-  assert.strictEqual(kernel.contractAttachment.attached.length, 28);
+  assert.strictEqual(kernel.contractAttachment.attached.length, 29);
   assert.deepStrictEqual(kernel.contractAttachment.missingContracts, []);
   assert.strictEqual(kernel.contractAttachment.coverage, 1);
+  assert.ok(kernel.registry.systems['natural.world'], 'kernel should register the natural world system by default');
 
   registerKernelSystem(kernel, {
     id: 'test.before',
@@ -82,17 +83,19 @@ function main() {
   assert.strictEqual(world.tick, 1);
   assert.strictEqual(report.tickBefore, 0);
   assert.strictEqual(report.tickAfter, 1);
+  assert.ok(report.natural, 'natural world system should produce a report');
   assert.ok(report.world, 'world advance system should produce a report');
   assert.strictEqual(report.population, null, 'disabled subsystem should remain absent');
   assert.deepStrictEqual(world.test.order, ['before', 'after']);
   assert.strictEqual(report.kernel.pipeline, 'modular');
-  assert.strictEqual(report.kernel.completed, 4, 'before, advance, finalize and after should complete');
+  assert.strictEqual(report.kernel.completed, 5, 'natural, before, advance, finalize and after should complete');
   assert.strictEqual(report.kernel.skipped, 26, 'disabled simulation systems should be skipped');
+  assert.ok(report.kernel.order.indexOf('natural.world') < report.kernel.order.indexOf('test.before'));
   assert.ok(report.kernel.order.indexOf('test.before') < report.kernel.order.indexOf('world.advance'));
   assert.ok(report.kernel.order.indexOf('finalize.report') < report.kernel.order.indexOf('test.after'));
   assert.deepStrictEqual(report.kernel.contracts, {
     policy: 'error',
-    validations: 9,
+    validations: 11,
     violations: 0,
     warnings: 0,
     failures: 0,
@@ -100,19 +103,30 @@ function main() {
 
   const summary = getDeterministicSimulationSummary(world, kernel);
   assert.strictEqual(summary.pipeline, 'modular');
-  assert.strictEqual(summary.modularPipeline.systems, 30, 'summary should include custom systems');
-  assert.strictEqual(summary.contractCoverage.systems, 30);
-  assert.strictEqual(summary.contractCoverage.contracted, 29);
+  assert.strictEqual(summary.modularPipeline.systems, 31, 'summary should include natural and custom systems');
+  assert.strictEqual(summary.contractCoverage.systems, 31);
+  assert.strictEqual(summary.contractCoverage.contracted, 30);
   assert.strictEqual(summary.contractCoverage.uncontracted, 1);
   assert.deepStrictEqual(summary.contractCoverage.uncontractedIds, ['test.after']);
-  assert.strictEqual(summary.contracts.validations, 9);
+  assert.strictEqual(summary.contracts.validations, 11);
   assert.strictEqual(summary.contracts.violations, 0);
+  const naturalStats = summary.scheduler.systems.find(system => system.id === 'natural.world');
   const advanceStats = summary.scheduler.systems.find(system => system.id === 'world.advance');
   const populationStats = summary.scheduler.systems.find(system => system.id === 'population.lifecycle');
+  assert.strictEqual(naturalStats.runs, 1);
   assert.strictEqual(advanceStats.runs, 1);
   assert.strictEqual(populationStats.skips, 1);
   assert.strictEqual(world.simulation.counters.ticks, 1);
+  assert.strictEqual(world.simulation.counters.naturalTicks, 1);
   assert.strictEqual(world.simulation.lastTickReport.tickAfter, 1);
+
+  const noNaturalWorld = buildPipelineWorld('no-natural-world');
+  const noNaturalKernel = createDeterministicSimulationKernel({ includeNaturalWorld: false });
+  const noNaturalReport = runDeterministicSimulationTick(noNaturalWorld, {
+    simulation: disabledSimulationOptions(),
+  }, noNaturalKernel);
+  assert.strictEqual(noNaturalKernel.registry.systems['natural.world'], undefined);
+  assert.strictEqual(noNaturalReport.natural, undefined);
 
   const warningWorld = buildPipelineWorld('warning-world');
   const warningKernel = createDeterministicSimulationKernel({ contractPolicy: 'warn' });
