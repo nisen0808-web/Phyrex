@@ -95,7 +95,7 @@ function main() {
   assert.ok(report.kernel.order.indexOf('finalize.report') < report.kernel.order.indexOf('test.after'));
   assert.deepStrictEqual(report.kernel.contracts, {
     policy: 'error',
-    validations: 11,
+    validations: 12,
     violations: 0,
     warnings: 0,
     failures: 0,
@@ -108,7 +108,7 @@ function main() {
   assert.strictEqual(summary.contractCoverage.contracted, 30);
   assert.strictEqual(summary.contractCoverage.uncontracted, 1);
   assert.deepStrictEqual(summary.contractCoverage.uncontractedIds, ['test.after']);
-  assert.strictEqual(summary.contracts.validations, 11);
+  assert.strictEqual(summary.contracts.validations, 12);
   assert.strictEqual(summary.contracts.violations, 0);
   const naturalStats = summary.scheduler.systems.find(system => system.id === 'natural.world');
   const advanceStats = summary.scheduler.systems.find(system => system.id === 'world.advance');
