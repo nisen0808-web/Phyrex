@@ -17,6 +17,14 @@ function createSimulationSystemContracts() {
       resources: objectSchema(),
       disasters: objectSchema(),
     }, ['calendar', 'climate', 'weather', 'resources', 'disasters']),
+    'ecology.world': outputObject({
+      habitats: objectSchema(),
+      seeded: arraySchema(),
+      populations: objectSchema(),
+      foodWeb: objectSchema(),
+      disease: objectSchema(),
+      migration: objectSchema(),
+    }, ['habitats', 'seeded', 'populations', 'foodWeb', 'disease', 'migration']),
     'population.lifecycle': outputObject({
       births: arraySchema(),
       deaths: arraySchema(),

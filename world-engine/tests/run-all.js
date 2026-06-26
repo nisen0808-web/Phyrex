@@ -50,6 +50,8 @@ const tests = [
   'source-purity-engine-test.js',
   'natural-world-basic-test.js',
   'natural-world-pipeline-test.js',
+  'ecology-engine-test.js',
+  'ecology-pipeline-test.js',
   'replay-determinism-test.js',
   'world-template-test.js',
   'stability-100-test.js',
