@@ -39,10 +39,11 @@ function main() {
   const kernel = createDeterministicSimulationKernel();
   assert.strictEqual(kernel.pipeline, KERNEL_PIPELINES.MODULAR);
   assert.strictEqual(kernel.options.contractPolicy, 'error');
-  assert.strictEqual(kernel.contractAttachment.attached.length, 29);
+  assert.strictEqual(kernel.contractAttachment.attached.length, 30);
   assert.deepStrictEqual(kernel.contractAttachment.missingContracts, []);
   assert.strictEqual(kernel.contractAttachment.coverage, 1);
   assert.ok(kernel.registry.systems['natural.world'], 'kernel should register the natural world system by default');
+  assert.ok(kernel.registry.systems['ecology.world'], 'kernel should register the ecology system by default');
 
   registerKernelSystem(kernel, {
     id: 'test.before',
@@ -84,18 +85,20 @@ function main() {
   assert.strictEqual(report.tickBefore, 0);
   assert.strictEqual(report.tickAfter, 1);
   assert.ok(report.natural, 'natural world system should produce a report');
+  assert.ok(report.ecology, 'ecology system should produce a report');
   assert.ok(report.world, 'world advance system should produce a report');
   assert.strictEqual(report.population, null, 'disabled subsystem should remain absent');
   assert.deepStrictEqual(world.test.order, ['before', 'after']);
   assert.strictEqual(report.kernel.pipeline, 'modular');
-  assert.strictEqual(report.kernel.completed, 5, 'natural, before, advance, finalize and after should complete');
+  assert.strictEqual(report.kernel.completed, 6, 'natural, ecology, before, advance, finalize and after should complete');
   assert.strictEqual(report.kernel.skipped, 26, 'disabled simulation systems should be skipped');
-  assert.ok(report.kernel.order.indexOf('natural.world') < report.kernel.order.indexOf('test.before'));
+  assert.ok(report.kernel.order.indexOf('natural.world') < report.kernel.order.indexOf('ecology.world'));
+  assert.ok(report.kernel.order.indexOf('ecology.world') < report.kernel.order.indexOf('test.before'));
   assert.ok(report.kernel.order.indexOf('test.before') < report.kernel.order.indexOf('world.advance'));
   assert.ok(report.kernel.order.indexOf('finalize.report') < report.kernel.order.indexOf('test.after'));
   assert.deepStrictEqual(report.kernel.contracts, {
     policy: 'error',
-    validations: 12,
+    validations: 15,
     violations: 0,
     warnings: 0,
     failures: 0,
@@ -103,21 +106,24 @@ function main() {
 
   const summary = getDeterministicSimulationSummary(world, kernel);
   assert.strictEqual(summary.pipeline, 'modular');
-  assert.strictEqual(summary.modularPipeline.systems, 31, 'summary should include natural and custom systems');
-  assert.strictEqual(summary.contractCoverage.systems, 31);
-  assert.strictEqual(summary.contractCoverage.contracted, 30);
+  assert.strictEqual(summary.modularPipeline.systems, 32, 'summary should include natural, ecology and custom systems');
+  assert.strictEqual(summary.contractCoverage.systems, 32);
+  assert.strictEqual(summary.contractCoverage.contracted, 31);
   assert.strictEqual(summary.contractCoverage.uncontracted, 1);
   assert.deepStrictEqual(summary.contractCoverage.uncontractedIds, ['test.after']);
-  assert.strictEqual(summary.contracts.validations, 12);
+  assert.strictEqual(summary.contracts.validations, 15);
   assert.strictEqual(summary.contracts.violations, 0);
   const naturalStats = summary.scheduler.systems.find(system => system.id === 'natural.world');
+  const ecologyStats = summary.scheduler.systems.find(system => system.id === 'ecology.world');
   const advanceStats = summary.scheduler.systems.find(system => system.id === 'world.advance');
   const populationStats = summary.scheduler.systems.find(system => system.id === 'population.lifecycle');
   assert.strictEqual(naturalStats.runs, 1);
+  assert.strictEqual(ecologyStats.runs, 1);
   assert.strictEqual(advanceStats.runs, 1);
   assert.strictEqual(populationStats.skips, 1);
   assert.strictEqual(world.simulation.counters.ticks, 1);
   assert.strictEqual(world.simulation.counters.naturalTicks, 1);
+  assert.strictEqual(world.simulation.counters.ecologyTicks, 1);
   assert.strictEqual(world.simulation.lastTickReport.tickAfter, 1);
 
   const noNaturalWorld = buildPipelineWorld('no-natural-world');
@@ -127,6 +133,15 @@ function main() {
   }, noNaturalKernel);
   assert.strictEqual(noNaturalKernel.registry.systems['natural.world'], undefined);
   assert.strictEqual(noNaturalReport.natural, undefined);
+  assert.ok(noNaturalReport.ecology, 'ecology can run with fallback habitat data when natural is disabled');
+
+  const noEcologyWorld = buildPipelineWorld('no-ecology-world');
+  const noEcologyKernel = createDeterministicSimulationKernel({ includeEcologyWorld: false });
+  const noEcologyReport = runDeterministicSimulationTick(noEcologyWorld, {
+    simulation: disabledSimulationOptions(),
+  }, noEcologyKernel);
+  assert.strictEqual(noEcologyKernel.registry.systems['ecology.world'], undefined);
+  assert.strictEqual(noEcologyReport.ecology, undefined);
 
   const warningWorld = buildPipelineWorld('warning-world');
   const warningKernel = createDeterministicSimulationKernel({ contractPolicy: 'warn' });
@@ -165,7 +180,7 @@ function buildPipelineWorld(id) {
   registerLocation(world, {
     id: 'origin',
     name: 'Origin',
-    resources: { food: 500, wood: 500 },
+    resources: { food: 500, water: 500, wood: 500 },
   });
   const entity = registerEntity(world, {
     id: `${id}_entity`,
@@ -222,6 +237,8 @@ function disabledSimulationOptions() {
     autoHistory: false,
     autoNarrative: false,
     autoNovel: false,
+    natural: { disasterChance: 0 },
+    ecology: { baseDiseaseRisk: 0 },
   };
 }
 
