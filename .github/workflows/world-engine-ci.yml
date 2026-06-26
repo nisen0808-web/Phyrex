@@ -22,7 +22,15 @@ jobs:
           node --version
           npm --version
       - name: Run complete test suite
-        run: npm test
+        run: |
+          mkdir -p world-engine/output/ci
+          npm test 2>&1 | tee world-engine/output/ci/node20.log
+      - name: Upload Node 20 logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-engine-ci-node20-logs
+          path: world-engine/output/ci/node20.log
 
   test-node-22:
     runs-on: ubuntu-latest
@@ -38,7 +46,15 @@ jobs:
           node --version
           npm --version
       - name: Run complete test suite
-        run: npm test
+        run: |
+          mkdir -p world-engine/output/ci
+          npm test 2>&1 | tee world-engine/output/ci/node22.log
+      - name: Upload Node 22 logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-engine-ci-node22-logs
+          path: world-engine/output/ci/node22.log
 
   stress:
     runs-on: ubuntu-latest
