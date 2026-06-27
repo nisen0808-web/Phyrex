@@ -52,6 +52,7 @@ const tests = [
   'natural-world-pipeline-test.js',
   'ecology-engine-test.js',
   'ecology-pipeline-test.js',
+  'population-environment-pressure-test.js',
   'replay-determinism-test.js',
   'world-template-test.js',
   'stability-100-test.js',
