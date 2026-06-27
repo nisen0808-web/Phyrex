@@ -31,6 +31,7 @@ function main() {
     assert.strictEqual(secondReport.kernel.order[1], 'ecology.world');
     assert.ok(firstReport.natural.calendar);
     assert.ok(firstReport.ecology.habitats);
+    assert.ok(firstReport.consistency);
     assert.strictEqual(hashWorldState(first), hashWorldState(second));
   }
 
@@ -39,11 +40,13 @@ function main() {
   assert.ok(summary.resources.regenerated.food >= 0);
   assert.strictEqual(first.simulation.counters.naturalTicks, 8);
   assert.strictEqual(first.simulation.counters.ecologyTicks, 8);
+  assert.strictEqual(first.simulation.counters.consistencyChecks, 8);
 
   const kernelSummary = getDeterministicSimulationSummary(first, firstKernel);
   assert.ok(kernelSummary.registry.order.includes('natural.world'));
   assert.ok(kernelSummary.registry.order.includes('ecology.world'));
-  assert.strictEqual(kernelSummary.contractCoverage.systems, 30);
+  assert.ok(kernelSummary.registry.order.includes('world.consistency'));
+  assert.strictEqual(kernelSummary.contractCoverage.systems, 31);
   assert.strictEqual(kernelSummary.contractCoverage.uncontracted, 0);
 
   console.log('natural world pipeline test passed');
@@ -95,6 +98,7 @@ function disabledOptions() {
     autoNovel: false,
     natural: { disasterChance: 0.05 },
     ecology: { baseDiseaseRisk: 0.02 },
+    consistency: { repair: true },
   };
 }
 

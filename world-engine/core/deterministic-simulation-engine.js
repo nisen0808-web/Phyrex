@@ -35,6 +35,8 @@ const { ensureWorldIdState } = require('./world-id-engine');
 const { hashWorldState } = require('./state-integrity-engine');
 const { registerNaturalWorldSystem } = require('./natural-world-system-engine');
 const { registerEcologyWorldSystem } = require('./ecology-system-engine');
+const { registerWorldConsistencySystem } = require('./world-consistency-system-engine');
+const { getWorldConsistencySummary } = require('./world-consistency-engine');
 
 const DETERMINISTIC_KERNEL_VERSION = 1;
 const KERNEL_PIPELINES = {
@@ -53,6 +55,9 @@ function createDeterministicSimulationKernel(options = {}) {
   }
   if (pipeline === KERNEL_PIPELINES.MODULAR && options.includeEcologyWorld !== false) {
     registerEcologyWorldSystem(registry, options.ecologyWorldSystem || {});
+  }
+  if (pipeline === KERNEL_PIPELINES.MODULAR && options.includeConsistencyWorld !== false) {
+    registerWorldConsistencySystem(registry, options.consistencyWorldSystem || {});
   }
   const contractAttachment = pipeline === KERNEL_PIPELINES.MODULAR
     ? attachSimulationSystemContracts(registry, {
@@ -176,6 +181,7 @@ function getDeterministicSimulationSummary(world, kernel = null) {
     random: getRandomSummary(world),
     scheduler: getSchedulerSummary(world),
     contracts: getSystemContractSummary(world),
+    consistency: getWorldConsistencySummary(world),
     pipeline: kernel?.pipeline || null,
     registry: kernel ? analyzeSystemRegistry(kernel.registry) : null,
     contractCoverage: kernel ? getSimulationContractCoverage(kernel.registry) : null,

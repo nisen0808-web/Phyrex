@@ -26,7 +26,9 @@ function main() {
     const secondReport = runDeterministicSimulationTick(second, options, secondKernel);
     assert.ok(firstReport.kernel.order.indexOf('natural.world') < firstReport.kernel.order.indexOf('ecology.world'));
     assert.ok(firstReport.kernel.order.indexOf('ecology.world') < firstReport.kernel.order.indexOf('world.advance'));
+    assert.ok(firstReport.kernel.order.indexOf('world.advance') < firstReport.kernel.order.indexOf('world.consistency'));
     assert.ok(firstReport.ecology.habitats);
+    assert.ok(firstReport.consistency);
     assert.ok(secondReport.ecology.habitats);
     assert.strictEqual(hashWorldState(first), hashWorldState(second));
   }
@@ -35,9 +37,11 @@ function main() {
   assert.ok(summary.habitats.locations >= 3);
   assert.ok(summary.populations.populations > 0);
   assert.strictEqual(first.simulation.counters.ecologyTicks, 6);
+  assert.strictEqual(first.simulation.counters.consistencyChecks, 6);
 
   const kernelSummary = getDeterministicSimulationSummary(first, firstKernel);
   assert.ok(kernelSummary.registry.order.includes('ecology.world'));
+  assert.ok(kernelSummary.registry.order.includes('world.consistency'));
   assert.strictEqual(kernelSummary.contractCoverage.uncontracted, 0);
 
   const noEcologyWorld = buildWorld('no-ecology-world');
@@ -45,6 +49,7 @@ function main() {
   initializeDeterministicSimulation(noEcologyWorld, disabledOptions());
   const report = runDeterministicSimulationTick(noEcologyWorld, options, noEcologyKernel);
   assert.strictEqual(report.ecology, undefined);
+  assert.ok(report.consistency);
   assert.strictEqual(noEcologyKernel.registry.systems['ecology.world'], undefined);
 
   console.log('ecology pipeline test passed');
@@ -97,6 +102,7 @@ function disabledOptions() {
     autoNovel: false,
     ecology: { baseDiseaseRisk: 0.02 },
     natural: { disasterChance: 0 },
+    consistency: { repair: true },
   };
 }
 

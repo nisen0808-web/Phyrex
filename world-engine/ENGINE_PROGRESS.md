@@ -2,20 +2,20 @@
 
 本文件记录当前引擎优先阶段的完成度。浏览器客户端、账号和部署相关能力只作为参考客户端与运维外壳，不作为本阶段主线。
 
-## 当前阶段：自然世界、生态系统与人口环境压力
+## 当前阶段：世界一致性检查与自动修复层
 
 | 引擎层 | 状态 | 说明 |
 |---|---:|---|
-| 世界状态与实体模型 | 70% | 实体、地点、资源、玩家和多类社会状态已建立；仍需统一 schema。 |
-| Tick 与系统调度器 | 90% | 已支持阶段、依赖、周期、失败策略、原子回滚和统计。 |
+| 世界状态与实体模型 | 75% | 本批次新增结构一致性审计和修复，实体、地点、资源和引用更安全。 |
+| Tick 与系统调度器 | 92% | 默认确定性内核新增 world.consistency，finalize.report 前自动运行。 |
 | 确定性随机数 | 80% | 已有命名随机流和兼容作用域；源码审计门禁已建立。 |
 | 世界级确定性 ID | 85% | Action、Event、Memory、Causality 等已接入；仍需覆盖新系统。 |
-| 模块化模拟管线 | 90% | 28 个内置模拟系统已拆分，默认确定性内核额外接入 natural.world 和 ecology.world。 |
-| 系统 Contract 校验 | 80% | 已有输入、输出、后置条件、warn、error、off 策略，自然和生态系统已纳入覆盖。 |
+| 模块化模拟管线 | 92% | 28 个内置模拟系统已拆分，默认额外接入 natural.world、ecology.world、world.consistency。 |
+| 系统 Contract 校验 | 82% | world.consistency 已纳入 Contract 覆盖。 |
 | 源码确定性纯度审计 | 35% | 已有扫描器、baseline、allowlist 和测试；下一步接入核心目录 baseline。 |
-| 状态哈希与差异定位 | 80% | 规范化哈希和状态比较可用于回放校验。 |
-| 重放与确定性验证 | 75% | 已支持 replay tape 和分歧定位；自然和生态系统已加入重放测试。 |
-| 人口、家庭、遗产 | 60% -> 68% | 人口生命周期开始读取天气、灾害、资源、疾病、承载力和栖息地压力。 |
+| 状态哈希与差异定位 | 82% | 一致性层可在重放前后修复结构性坏状态，减少无意义漂移。 |
+| 重放与确定性验证 | 78% | 自然、生态和一致性系统均加入重放路径。 |
+| 人口、家庭、遗产 | 68% | 人口生命周期已读取天气、灾害、资源、疾病、承载力和栖息地压力。 |
 | 组织、契约、城市 | 55% | 已接入管线；还需组织生命周期和城市治理深化。 |
 | 经济系统 | 40% | 有生产与城市经济基础；仍需市场、价格、贸易和产业链。 |
 | 智能体目标规划 | 45% | 已有欲望、机会、行动规划；仍需长期计划和知识边界。 |
@@ -23,16 +23,19 @@
 | 文明、科技、基础设施 | 50% | 已接入管线；仍需时代、扩散和依赖网络。 |
 | 治理、过程、冲突 | 45% | 已接入管线；仍需外交、战争、法律系统。 |
 | 自然、气候、生态 | 55% | 自然世界和生态主模块已完成基础版，并能向人口系统提供压力数据。 |
-| 世界一致性检查与自动修复 | 20% | 有基础状态校验能力；尚未形成独立 repair pipeline。 |
+| 世界一致性检查与自动修复 | 20% -> 100% | 已完成审计、修复计划、自动修复、报告记录、默认管线接入、Contract 和回归测试。 |
 | 性能预算与采样 | 10% | 尚未形成系统级 profiling。 |
 
 ## 本批次新增
 
 ```text
-population environment pressure
-population-environment-pressure-test.js
-POPULATION_ENVIRONMENT.md
-world.population.environment 摘要
+world-consistency-engine.js
+world-consistency-system-engine.js
+world-consistency-engine-test.js
+world-consistency-pipeline-test.js
+WORLD_CONSISTENCY.md
+world.consistency 默认确定性内核接入
+world.consistency Contract 覆盖
 ```
 
 ## 下一批建议
@@ -42,5 +45,5 @@ world.population.environment 摘要
 2. 让经济系统读取资源再生、灾害损耗和生态压力
 3. 让 AI 目标系统读取环境压力，触发迁徙、避灾、求助和囤积行为
 4. 基于 source-purity-engine 扫描核心目录并生成首个 baseline
-5. 增加世界一致性检查与自动修复系统
+5. 增加系统级性能预算与采样
 ```
