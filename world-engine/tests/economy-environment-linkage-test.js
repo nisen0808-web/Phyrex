@@ -3,6 +3,7 @@
 const assert = require('assert');
 const { createWorld, registerLocation, registerEntity } = require('../core/world-engine');
 const { assignSpecies } = require('../core/species-engine');
+const { createSettlement, processCityTick } = require('../core/city-engine');
 const {
   INDUSTRY_STATUS,
   createIndustry,
@@ -15,7 +16,9 @@ const {
 function main() {
   testEnvironmentRiskCalculation();
   testEconomyTickAppliesEnvironment();
+  testLocalZeroPopulationRiskIsPreserved();
   testDeterministicEconomyIds();
+  testConstrainedIndustryRemainsVisibleToCity();
   console.log('economy environment linkage test passed');
 }
 
@@ -80,14 +83,41 @@ function testEconomyTickAppliesEnvironment() {
   assert.ok(food.history[0].environmentPressure >= 0);
 }
 
+function testLocalZeroPopulationRiskIsPreserved() {
+  const world = buildEconomyWorld('local-zero-risk');
+  applyCalmEnvironment(world);
+  world.population.environment.averageRisk = 0.9;
+  world.population.environment.byLocation.origin.averageRisk = 0;
+  const industry = createIndustry(world, {
+    type: 'service',
+    ownerType: 'entity',
+    ownerId: 'worker_0',
+    locationId: 'origin',
+  });
+  const environment = calculateIndustryEnvironment(world, industry);
+  assert.strictEqual(environment.populationRisk, 0, 'explicit local zero risk should not fall back to global risk');
+}
+
 function testDeterministicEconomyIds() {
   const world = buildEconomyWorld('economy-ids');
-  const first = createIndustry(world, { type: 'service', ownerType: 'entity', ownerId: 'worker_0', locationId: 'origin' });
-  const second = createIndustry(world, { type: 'service', ownerType: 'entity', ownerId: 'worker_1', locationId: 'origin' });
-  assert.ok(first.id.startsWith('industry_'));
-  assert.ok(second.id.startsWith('industry_'));
-  assert.notStrictEqual(first.id, second.id);
-  assert.ok(!first.id.includes('0.'));
+  const explicit = createIndustry(world, { id: 'industry_c_1', type: 'service', ownerType: 'entity', ownerId: 'worker_0', locationId: 'origin' });
+  const generated = createIndustry(world, { type: 'service', ownerType: 'entity', ownerId: 'worker_1', locationId: 'origin' });
+  assert.ok(explicit.id.startsWith('industry_'));
+  assert.ok(generated.id.startsWith('industry_'));
+  assert.notStrictEqual(explicit.id, generated.id, 'generated id should avoid existing explicit deterministic ids');
+  assert.ok(!generated.id.includes('0.'));
+}
+
+function testConstrainedIndustryRemainsVisibleToCity() {
+  const world = buildEconomyWorld('city-visible-industry');
+  createSettlement(world, { id: 'city_1', locationId: 'origin', population: 4, wealth: 100, infrastructure: 20, security: 70 });
+  const industry = createIndustry(world, { type: 'service', ownerType: 'entity', ownerId: 'worker_0', locationId: 'origin' });
+  industry.status = INDUSTRY_STATUS.CONSTRAINED;
+  processCityTick(world, { minPopulationForSettlement: 1 });
+  assert.ok(world.cities.byId.city_1.industryIds.includes(industry.id), 'constrained industry should remain visible to city sync');
+  industry.status = INDUSTRY_STATUS.STALLED;
+  processCityTick(world, { minPopulationForSettlement: 1 });
+  assert.ok(!world.cities.byId.city_1.industryIds.includes(industry.id), 'stalled industry should be excluded from city sync');
 }
 
 function buildEconomyWorld(id) {
