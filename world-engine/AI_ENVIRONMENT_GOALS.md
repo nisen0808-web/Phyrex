@@ -51,7 +51,8 @@ migrate             迁徙，离开高风险城市
 stockpile_resource  囤积资源，例如食物
 gather_resources    采集资源
 find_work           找工作，缓解经济压力
-support_city        支援城市，降低城市风险\```
+support_city        支援城市，降低城市风险
+```
 
 ## 行动映射
 
