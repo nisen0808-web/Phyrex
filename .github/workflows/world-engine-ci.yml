@@ -66,4 +66,12 @@ jobs:
         with:
           node-version: '22'
       - name: Run 1000 tick stability test
-        run: npm run stress
+        run: |
+          mkdir -p world-engine/output/ci
+          npm run stress 2>&1 | tee world-engine/output/ci/stress.log
+      - name: Upload stress logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-engine-ci-stress-logs
+          path: world-engine/output/ci/stress.log
