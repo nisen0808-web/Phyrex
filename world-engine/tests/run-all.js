@@ -54,6 +54,7 @@ const tests = [
   'ecology-pipeline-test.js',
   'population-environment-pressure-test.js',
   'city-environment-pressure-test.js',
+  'economy-environment-linkage-test.js',
   'world-consistency-engine-test.js',
   'world-consistency-pipeline-test.js',
   'replay-determinism-test.js',
