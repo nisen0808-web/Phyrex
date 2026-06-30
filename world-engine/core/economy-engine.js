@@ -78,19 +78,8 @@ function ensureEconomyState(world) {
       industries: {},
       transactions: [],
       environment: createEmptyEconomyEnvironmentSummary(world.tick),
-      indexes: {
-        industriesByLocation: {},
-        industriesByType: {},
-      },
-      stats: {
-        ticks: 0,
-        production: {},
-        consumption: {},
-        transactionVolume: 0,
-        environmentUpdates: 0,
-        constrainedIndustries: 0,
-        stalledIndustries: 0,
-      },
+      indexes: { industriesByLocation: {}, industriesByType: {} },
+      stats: { ticks: 0, production: {}, consumption: {}, transactionVolume: 0, environmentUpdates: 0, constrainedIndustries: 0, stalledIndustries: 0 },
     };
     createMarket(world, { id: 'global', name: 'Global Market' });
   }
@@ -102,36 +91,21 @@ function ensureEconomyState(world) {
 
 function createMarket(world, input = {}) {
   const economy = ensureEconomyState(world);
-  const id = input.id || nextWorldId(world, 'market', 'economy.market');
+  const id = input.id || nextUniqueEconomyId(world, economy.markets, 'market', 'economy.market');
+  if (economy.markets[id]) throw new Error(`Market id already exists: ${id}`);
   const resources = {};
   for (const [resource, config] of Object.entries(DEFAULT_MARKET_RESOURCES)) {
-    resources[resource] = {
-      resource,
-      price: input.resources?.[resource]?.price || config.basePrice,
-      basePrice: config.basePrice,
-      supply: input.resources?.[resource]?.supply ?? config.supply,
-      demand: input.resources?.[resource]?.demand ?? config.demand,
-      environmentalDemand: 0,
-      environmentalSupplyShock: 0,
-      volatility: config.volatility,
-      history: [],
-    };
+    resources[resource] = { resource, price: input.resources?.[resource]?.price || config.basePrice, basePrice: config.basePrice, supply: input.resources?.[resource]?.supply ?? config.supply, demand: input.resources?.[resource]?.demand ?? config.demand, environmentalDemand: 0, environmentalSupplyShock: 0, volatility: config.volatility, history: [] };
   }
-  economy.markets[id] = {
-    id,
-    name: input.name || id,
-    locationId: input.locationId || null,
-    resources,
-    createdAt: world.tick,
-    memory: [],
-  };
+  economy.markets[id] = { id, name: input.name || id, locationId: input.locationId || null, resources, createdAt: world.tick, memory: [] };
   return economy.markets[id];
 }
 
 function createIndustry(world, input = {}) {
   if (!input.type) throw new Error('Industry requires type');
   const economy = ensureEconomyState(world);
-  const id = input.id || nextWorldId(world, 'industry', `economy.industry.${input.type}`);
+  const id = input.id || nextUniqueEconomyId(world, economy.industries, 'industry', `economy.industry.${input.type}`);
+  if (economy.industries[id]) throw new Error(`Industry id already exists: ${id}`);
   const industry = {
     id,
     type: input.type,
@@ -169,10 +143,7 @@ function processEconomyTick(world, options = {}) {
     const environment = calculateIndustryEnvironment(world, industry, config);
     applyIndustryEnvironment(world, industry, environment, config);
     environmentUpdates.push({ industryId: industry.id, locationId: industry.locationId, ...environment });
-    if (industry.status === INDUSTRY_STATUS.STALLED) {
-      recordIndustryMemory(world, industry, 'industry.stalled', { environment });
-      continue;
-    }
+    if (industry.status === INDUSTRY_STATUS.STALLED) continue;
     produced.push(...produceIndustryOutput(world, industry.id, config));
     transactions.push(...sellIndustryOutput(world, industry.id, config));
   }
@@ -219,12 +190,8 @@ function produceIndustryOutput(world, industryId, options = {}) {
 }
 
 function consumeInputsForIndustry(_world, industry) {
-  for (const [resource, amount] of Object.entries(industry.inputs || {})) {
-    if (Number(industry.inventory[resource] || 0) < Number(amount || 0)) return false;
-  }
-  for (const [resource, amount] of Object.entries(industry.inputs || {})) {
-    industry.inventory[resource] -= Number(amount || 0);
-  }
+  for (const [resource, amount] of Object.entries(industry.inputs || {})) if (Number(industry.inventory[resource] || 0) < Number(amount || 0)) return false;
+  for (const [resource, amount] of Object.entries(industry.inputs || {})) industry.inventory[resource] -= Number(amount || 0);
   return true;
 }
 
@@ -247,18 +214,7 @@ function sellIndustryOutput(world, industryId, options = {}) {
     market.resources[resource].supply += sellAmount;
     market.resources[resource].demand = Math.max(0, market.resources[resource].demand - sellAmount * 0.2);
     payOwner(world, industry, revenue);
-    const transaction = recordTransaction(world, {
-      type: 'industry_sale',
-      sellerType: 'industry',
-      sellerId: industry.id,
-      buyerType: 'market',
-      buyerId: market.id,
-      resource,
-      amount: sellAmount,
-      price,
-      total: revenue,
-    });
-    transactions.push(transaction);
+    transactions.push(recordTransaction(world, { type: 'industry_sale', sellerType: 'industry', sellerId: industry.id, buyerType: 'market', buyerId: market.id, resource, amount: sellAmount, price, total: revenue }));
   }
   return transactions;
 }
@@ -312,31 +268,14 @@ function calculateIndustryEnvironment(world, industry, options = {}) {
   const cityPressure = resolveCityPressure(world, locationId);
   const disasterRisk = calculateEconomicDisasterRisk(world, locationId);
   const ecologyRisk = calculateEconomicEcologyRisk(world, locationId, industry.type);
-  const populationRisk = clamp(Number(world.population?.environment?.byLocation?.[locationId]?.averageRisk || world.population?.environment?.averageRisk || 0), 0, 1);
+  const localPopulationRisk = world.population?.environment?.byLocation?.[locationId]?.averageRisk;
+  const globalPopulationRisk = world.population?.environment?.averageRisk;
+  const populationRisk = clamp(Number(localPopulationRisk ?? globalPopulationRisk ?? 0), 0, 1);
   const resourceRisk = calculateEconomicResourceRisk(world, locationId, industry.type);
-  const riskScore = clamp(
-    cityPressure * config.cityPressureWeight
-    + disasterRisk * config.disasterWeight
-    + ecologyRisk * config.ecologyWeight
-    + populationRisk * config.populationWeight
-    + resourceRisk * config.resourceWeight,
-    0,
-    1,
-  );
+  const riskScore = clamp(cityPressure * config.cityPressureWeight + disasterRisk * config.disasterWeight + ecologyRisk * config.ecologyWeight + populationRisk * config.populationWeight + resourceRisk * config.resourceWeight, 0, 1);
   const productionMultiplier = clamp(1 - riskScore * 0.85 + getIndustryResilience(industry.type) * 0.12, config.minProductionMultiplier, config.maxProductionMultiplier);
   const pricePressure = clamp(riskScore * 0.7 + resourceRisk * 0.3, 0, 1);
-  return {
-    tick: Number(world.tick || 0),
-    cityPressure: round(cityPressure, 3),
-    disasterRisk: round(disasterRisk, 3),
-    ecologyRisk: round(ecologyRisk, 3),
-    populationRisk: round(populationRisk, 3),
-    resourceRisk: round(resourceRisk, 3),
-    riskScore: round(riskScore, 3),
-    productionMultiplier: round(productionMultiplier, 3),
-    pricePressure: round(pricePressure, 3),
-    status: inferIndustryStatus(riskScore, productionMultiplier, config),
-  };
+  return { tick: Number(world.tick || 0), cityPressure: round(cityPressure, 3), disasterRisk: round(disasterRisk, 3), ecologyRisk: round(ecologyRisk, 3), populationRisk: round(populationRisk, 3), resourceRisk: round(resourceRisk, 3), riskScore: round(riskScore, 3), productionMultiplier: round(productionMultiplier, 3), pricePressure: round(pricePressure, 3), status: inferIndustryStatus(riskScore, productionMultiplier, config) };
 }
 
 function applyIndustryEnvironment(world, industry, environment, _options = {}) {
@@ -351,22 +290,7 @@ function applyIndustryEnvironment(world, industry, environment, _options = {}) {
 
 function summarizeEconomyEnvironment(world, updates) {
   if (!updates.length) return createEmptyEconomyEnvironmentSummary(world.tick);
-  return {
-    tick: Number(world.tick || 0),
-    industries: updates.length,
-    highRisk: updates.filter(update => update.riskScore >= 0.65).length,
-    stalled: updates.filter(update => update.status === INDUSTRY_STATUS.STALLED).length,
-    averageRisk: round(average(updates.map(update => update.riskScore)), 3),
-    averageProductionMultiplier: round(average(updates.map(update => update.productionMultiplier)), 3),
-    averagePricePressure: round(average(updates.map(update => update.pricePressure)), 3),
-    byIndustry: Object.fromEntries(updates.map(update => [update.industryId, {
-      locationId: update.locationId,
-      status: update.status,
-      riskScore: update.riskScore,
-      productionMultiplier: update.productionMultiplier,
-      pricePressure: update.pricePressure,
-    }])),
-  };
+  return { tick: Number(world.tick || 0), industries: updates.length, highRisk: updates.filter(update => update.riskScore >= 0.65).length, stalled: updates.filter(update => update.status === INDUSTRY_STATUS.STALLED).length, averageRisk: round(average(updates.map(update => update.riskScore)), 3), averageProductionMultiplier: round(average(updates.map(update => update.productionMultiplier)), 3), averagePricePressure: round(average(updates.map(update => update.pricePressure)), 3), byIndustry: Object.fromEntries(updates.map(update => [update.industryId, { locationId: update.locationId, status: update.status, riskScore: update.riskScore, productionMultiplier: update.productionMultiplier, pricePressure: update.pricePressure }])) };
 }
 
 function applyEconomyEnvironmentToMarkets(world, summary, _options = {}) {
@@ -396,9 +320,7 @@ function resolveCityPressure(world, locationId) {
 function calculateEconomicDisasterRisk(world, locationId) {
   const weather = world.natural?.weather?.byLocation?.[locationId] || { type: 'clear', severity: 0 };
   const weatherRisk = weatherEconomicRisk(weather.type, weather.severity);
-  const active = Object.values(world.natural?.disasters?.active || {})
-    .filter(disaster => !locationId || disaster.locationId === locationId)
-    .reduce((sum, disaster) => sum + Number(disaster.severity || 0) * 0.45, 0);
+  const active = Object.values(world.natural?.disasters?.active || {}).filter(disaster => !locationId || disaster.locationId === locationId).reduce((sum, disaster) => sum + Number(disaster.severity || 0) * 0.45, 0);
   return clamp(weatherRisk + active, 0, 1);
 }
 
@@ -433,44 +355,11 @@ function inferIndustryStatus(riskScore, productionMultiplier, config) {
   return INDUSTRY_STATUS.ACTIVE;
 }
 
-function industryResourceProfile(type) {
-  return {
-    agriculture: { food: 1, water: 1 },
-    mining: { wood: 0.4, water: 0.3 },
-    craft: { wood: 0.7, metal: 0.4, service: 0.2 },
-    trade: { food: 0.2, service: 0.5 },
-    service: { food: 0.1, service: 0.5 },
-    entertainment: { luxury: 0.5, service: 0.6 },
-    education: { knowledge: 0.5, service: 0.4 },
-    religion: { service: 0.4, knowledge: 0.2 },
-  }[type] || { food: 0.2 };
-}
-
-function industryEcologySensitivity(type) {
-  return { agriculture: 1.5, mining: 0.7, craft: 0.8, trade: 0.9, service: 0.8, entertainment: 0.7, education: 0.5, religion: 0.5 }[type] || 1;
-}
-
-function getIndustryResilience(type) {
-  return { agriculture: 0.15, mining: 0.25, craft: 0.35, trade: 0.45, service: 0.4, entertainment: 0.25, education: 0.55, religion: 0.5 }[type] || 0.3;
-}
-
-function marketResourceSensitivity(resource) {
-  return {
-    food: { demand: 1.4, supply: 1.2 },
-    wood: { demand: 0.7, supply: 0.8 },
-    stone: { demand: 0.6, supply: 0.7 },
-    metal: { demand: 0.8, supply: 0.9 },
-    fuel: { demand: 0.9, supply: 0.9 },
-    luxury: { demand: 0.45, supply: 0.55 },
-    knowledge: { demand: 0.35, supply: 0.25 },
-    service: { demand: 0.65, supply: 0.35 },
-  }[resource] || { demand: 0.5, supply: 0.5 };
-}
-
-function weatherEconomicRisk(type, severity) {
-  const base = { clear: 0, cloudy: 0.03, rain: 0.08, storm: 0.55, snow: 0.25, drought: 0.65, heatwave: 0.55, cold_snap: 0.45 }[type] || 0.04;
-  return clamp(base + Number(severity || 0) * 0.28, 0, 1);
-}
+function industryResourceProfile(type) { return { agriculture: { food: 1, water: 1 }, mining: { wood: 0.4, water: 0.3 }, craft: { wood: 0.7, metal: 0.4, service: 0.2 }, trade: { food: 0.2, service: 0.5 }, service: { food: 0.1, service: 0.5 }, entertainment: { luxury: 0.5, service: 0.6 }, education: { knowledge: 0.5, service: 0.4 }, religion: { service: 0.4, knowledge: 0.2 } }[type] || { food: 0.2 }; }
+function industryEcologySensitivity(type) { return { agriculture: 1.5, mining: 0.7, craft: 0.8, trade: 0.9, service: 0.8, entertainment: 0.7, education: 0.5, religion: 0.5 }[type] || 1; }
+function getIndustryResilience(type) { return { agriculture: 0.15, mining: 0.25, craft: 0.35, trade: 0.45, service: 0.4, entertainment: 0.25, education: 0.55, religion: 0.5 }[type] || 0.3; }
+function marketResourceSensitivity(resource) { return { food: { demand: 1.4, supply: 1.2 }, wood: { demand: 0.7, supply: 0.8 }, stone: { demand: 0.6, supply: 0.7 }, metal: { demand: 0.8, supply: 0.9 }, fuel: { demand: 0.9, supply: 0.9 }, luxury: { demand: 0.45, supply: 0.55 }, knowledge: { demand: 0.35, supply: 0.25 }, service: { demand: 0.65, supply: 0.35 } }[resource] || { demand: 0.5, supply: 0.5 }; }
+function weatherEconomicRisk(type, severity) { const base = { clear: 0, cloudy: 0.03, rain: 0.08, storm: 0.55, snow: 0.25, drought: 0.65, heatwave: 0.55, cold_snap: 0.45 }[type] || 0.04; return clamp(base + Number(severity || 0) * 0.28, 0, 1); }
 
 function payOwner(world, industry, amount) {
   if (!amount) return;
@@ -486,19 +375,7 @@ function payOwner(world, industry, amount) {
 
 function recordTransaction(world, input) {
   const economy = ensureEconomyState(world);
-  const transaction = {
-    id: input.id || nextWorldId(world, 'tx', 'economy.transaction'),
-    tick: world.tick,
-    type: input.type,
-    sellerType: input.sellerType || null,
-    sellerId: input.sellerId || null,
-    buyerType: input.buyerType || null,
-    buyerId: input.buyerId || null,
-    resource: input.resource,
-    amount: Number(input.amount || 0),
-    price: Number(input.price || 0),
-    total: Number(input.total || 0),
-  };
+  const transaction = { id: input.id || nextWorldId(world, 'tx', 'economy.transaction'), tick: world.tick, type: input.type, sellerType: input.sellerType || null, sellerId: input.sellerId || null, buyerType: input.buyerType || null, buyerId: input.buyerId || null, resource: input.resource, amount: Number(input.amount || 0), price: Number(input.price || 0), total: Number(input.total || 0) };
   economy.transactions.push(transaction);
   economy.stats.transactionVolume += transaction.total;
   if (economy.transactions.length > 1000) economy.transactions.shift();
@@ -536,33 +413,10 @@ function estimateOwnerWorkforce(world, industry) {
 
 function getMarket(world, marketId = 'global') { return ensureEconomyState(world).markets[marketId] || null; }
 function getIndustry(world, industryId) { return ensureEconomyState(world).industries[industryId] || null; }
-
-function snapshotMarkets(world) {
-  const out = {};
-  for (const [id, market] of Object.entries(ensureEconomyState(world).markets)) {
-    out[id] = {};
-    for (const [resource, item] of Object.entries(market.resources)) out[id][resource] = { price: item.price, supply: Math.round(item.supply), demand: Math.round(item.demand) };
-  }
-  return out;
-}
-
-function recordIndustryMemory(world, industry, type, payload = {}) {
-  const memory = { id: `industry_memory_${world.tick}_${industry.memory.length + 1}`, tick: world.tick, type, payload: { industryId: industry.id, ...payload } };
-  industry.memory.push(memory);
-  if (industry.memory.length > 300) industry.memory.shift();
-  return memory;
-}
-
-function rebuildEconomyIndexes(world) {
-  const economy = ensureEconomyState(world);
-  economy.indexes = { industriesByLocation: {}, industriesByType: {}, industriesByStatus: {} };
-  for (const industry of Object.values(economy.industries)) {
-    addIndex(economy.indexes.industriesByType, industry.type, industry.id);
-    addIndex(economy.indexes.industriesByStatus, industry.status, industry.id);
-    if (industry.locationId) addIndex(economy.indexes.industriesByLocation, industry.locationId, industry.id);
-  }
-}
-
+function snapshotMarkets(world) { const out = {}; for (const [id, market] of Object.entries(ensureEconomyState(world).markets)) { out[id] = {}; for (const [resource, item] of Object.entries(market.resources)) out[id][resource] = { price: item.price, supply: Math.round(item.supply), demand: Math.round(item.demand) }; } return out; }
+function recordIndustryMemory(world, industry, type, payload = {}) { const memory = { id: `industry_memory_${world.tick}_${industry.memory.length + 1}`, tick: world.tick, type, payload: { industryId: industry.id, ...payload } }; industry.memory.push(memory); if (industry.memory.length > 300) industry.memory.shift(); return memory; }
+function rebuildEconomyIndexes(world) { const economy = ensureEconomyState(world); economy.indexes = { industriesByLocation: {}, industriesByType: {}, industriesByStatus: {} }; for (const industry of Object.values(economy.industries)) { addIndex(economy.indexes.industriesByType, industry.type, industry.id); addIndex(economy.indexes.industriesByStatus, industry.status, industry.id); if (industry.locationId) addIndex(economy.indexes.industriesByLocation, industry.locationId, industry.id); } }
+function nextUniqueEconomyId(world, collection, prefix, key) { let id = nextWorldId(world, prefix, key); while (collection[id]) id = nextWorldId(world, prefix, key); return id; }
 function createEmptyIndustryEnvironment(tick = 0) { return { tick, cityPressure: 0, disasterRisk: 0, ecologyRisk: 0, populationRisk: 0, resourceRisk: 0, riskScore: 0, productionMultiplier: 1, pricePressure: 0, status: INDUSTRY_STATUS.ACTIVE }; }
 function createEmptyEconomyEnvironmentSummary(tick = 0) { return { tick, industries: 0, highRisk: 0, stalled: 0, averageRisk: 0, averageProductionMultiplier: 1, averagePricePressure: 0, byIndustry: {} }; }
 function ensureEconomyStats(economy) { for (const key of ['ticks', 'transactionVolume', 'environmentUpdates', 'constrainedIndustries', 'stalledIndustries']) if (economy.stats[key] === undefined) economy.stats[key] = 0; if (!economy.stats.production) economy.stats.production = {}; if (!economy.stats.consumption) economy.stats.consumption = {}; }
