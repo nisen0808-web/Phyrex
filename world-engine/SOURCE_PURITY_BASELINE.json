@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "root": "world-engine/core",
+  "summary": {
+    "total": 0,
+    "errors": 0,
+    "warnings": 0,
+    "byRule": {},
+    "byFile": {}
+  },
+  "allowed": []
+}
