@@ -7,6 +7,7 @@ const tests = [
   'governance-process-execution-test.js',
   ['conflict', 'governance', 'process', 'test.js'].join('-'),
   'opportunity-governance-linkage-test.js',
+  'trade-flow-system-test.js',
 ];
 
 for (const test of tests) {
