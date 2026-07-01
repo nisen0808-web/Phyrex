@@ -2,10 +2,11 @@
 
 本层把 `world.kernel.performance.samples` 转成可读的趋势报告和压力场景报告。
 
-## Core module
+## Core modules
 
 ```text
 world-engine/core/performance-report-engine.js
+world-engine/core/performance-markdown-engine.js
 ```
 
 主要能力：
@@ -15,20 +16,27 @@ createPerformanceTrendReport(world, options)
 createPerformancePressureScenarioReport(world, scenarios, options)
 createPerformanceOperationsReport(world, scenarios, options)
 aggregateTopSystems(samples, limit)
+formatPerformanceReportMarkdown(report, options)
 ```
 
 ## CLI
 
-性能报告可以通过命令导出：
+性能报告可以通过命令导出 JSON：
 
 ```text
 npm run performance:report -- output/runtime-world-save.json output/performance-report.json --mode operations
 ```
 
+也可以导出 Markdown：
+
+```text
+npm run performance:report -- output/runtime-world-save.json output/performance-report.md --mode operations --format markdown
+```
+
 也可以直接运行：
 
 ```text
-node demo/performance-report-cli.js <input-save> <output-json> --mode operations
+node demo/performance-report-cli.js <input-save> <output-file> --mode operations --format markdown
 ```
 
 支持参数：
@@ -37,6 +45,7 @@ node demo/performance-report-cli.js <input-save> <output-json> --mode operations
 --input <file>
 --output <file>
 --mode operations | trend | pressure
+--format json | markdown
 --window <number>
 --top <number>
 --multipliers 1,1.5,2
@@ -53,7 +62,23 @@ CLI 默认输出：
 
 ```text
 output/performance-report.json
+output/performance-report.md
 ```
+
+当输出路径是 `.md` 或 `.markdown` 时，即使没有传入 `--format markdown`，CLI 也会自动使用 Markdown 格式。
+
+## Markdown output
+
+Markdown 输出包含：
+
+```text
+Trend
+Top Systems
+Pressure Scenarios
+Recommendations
+```
+
+该格式更适合复制到开发记录、运营报告或 GitHub issue。
 
 ## Trend report
 
@@ -123,4 +148,4 @@ performance-report-test.js
 performance-report-cli-test.js
 ```
 
-这些测试通过 `package.json` 接入 `npm test`。
+这些测试通过 `package.json` 接入 `npm test`，覆盖 JSON 和 Markdown 两种 CLI 输出。

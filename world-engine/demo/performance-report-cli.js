@@ -8,6 +8,7 @@ const {
   createPerformanceTrendReport,
   createPerformancePressureScenarioReport,
 } = require('../core/performance-report-engine');
+const { formatPerformanceReportMarkdown } = require('../core/performance-markdown-engine');
 
 function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
@@ -16,8 +17,9 @@ function main(argv = process.argv.slice(2)) {
     return { help: true };
   }
 
+  const format = normalizeFormat(args.format || inferFormatFromOutput(args.output) || 'json');
   const input = args.input || path.join(__dirname, '..', 'output', 'runtime-world-save.json');
-  const output = args.output || path.join(__dirname, '..', 'output', 'performance-report.json');
+  const output = args.output || path.join(__dirname, '..', 'output', format === 'markdown' ? 'performance-report.md' : 'performance-report.json');
   const mode = args.mode || 'operations';
   const loaded = loadWorld(input);
   const world = loaded.world;
@@ -27,13 +29,15 @@ function main(argv = process.argv.slice(2)) {
   };
   const scenarios = buildScenarios(world, args);
   const report = createSelectedReport(mode, world, scenarios, options);
+  const rendered = renderReport(report, format, { title: `${mode} performance report` });
 
   fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
-  fs.writeFileSync(output, JSON.stringify(report, null, 2), 'utf8');
+  fs.writeFileSync(output, rendered, 'utf8');
 
   if (!args.quiet) {
     console.log(`Performance report exported: ${output}`);
     console.log(`Mode: ${mode}`);
+    console.log(`Format: ${format}`);
     console.log(`World: ${loaded.worldId}`);
     console.log(`Tick: ${loaded.tick}`);
     printSummary(mode, report);
@@ -46,6 +50,12 @@ function createSelectedReport(mode, world, scenarios, options) {
   if (mode === 'pressure') return createPerformancePressureScenarioReport(world, scenarios, options);
   if (mode === 'operations') return createPerformanceOperationsReport(world, scenarios, options);
   throw new Error(`Unsupported performance report mode ${mode}`);
+}
+
+function renderReport(report, format, options = {}) {
+  if (format === 'json') return JSON.stringify(report, null, 2);
+  if (format === 'markdown') return formatPerformanceReportMarkdown(report, options);
+  throw new Error(`Unsupported performance report format ${format}`);
 }
 
 function buildScenarios(world, args) {
@@ -88,6 +98,21 @@ function parseNumberList(value) {
     .filter(item => Number.isFinite(item) && item > 0);
 }
 
+function normalizeFormat(value) {
+  const format = String(value || 'json').trim().toLowerCase();
+  if (format === 'md') return 'markdown';
+  if (format === 'markdown' || format === 'json') return format;
+  throw new Error(`Unsupported performance report format ${format}`);
+}
+
+function inferFormatFromOutput(output) {
+  if (!output) return null;
+  const extension = path.extname(String(output)).toLowerCase();
+  if (extension === '.md' || extension === '.markdown') return 'markdown';
+  if (extension === '.json') return 'json';
+  return null;
+}
+
 function printSummary(mode, report) {
   if (mode === 'trend') {
     console.log(`Samples: ${report.sampleCount}`);
@@ -108,12 +133,13 @@ function printSummary(mode, report) {
 function helpText() {
   return [
     'Usage:',
-    '  node demo/performance-report-cli.js [input-save] [output-json] [--mode operations|trend|pressure]',
+    '  node demo/performance-report-cli.js [input-save] [output-file] [--mode operations|trend|pressure] [--format json|markdown]',
     '',
     'Options:',
     '  --input <file>         Save file path',
     '  --output <file>        Output report path',
     '  --mode <mode>          operations, trend, or pressure',
+    '  --format <format>      json or markdown',
     '  --window <number>      Trend window size',
     '  --top <number>         Top systems limit',
     '  --multipliers <list>   Pressure multipliers, for example 1,1.5,2',
@@ -127,6 +153,9 @@ module.exports = {
   main,
   parseArgs,
   parseNumberList,
+  normalizeFormat,
+  inferFormatFromOutput,
+  renderReport,
   createSelectedReport,
   buildScenarios,
 };
