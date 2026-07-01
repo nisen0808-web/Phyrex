@@ -6,10 +6,11 @@
 
 该模块不使用真实时间 API。当前实现使用确定性负载估算，根据系统输出结构、数组规模、对象规模和调度状态估算每个系统的 load。
 
-## Core module
+## Core modules
 
 ```text
 world-engine/core/performance-budget-engine.js
+world-engine/core/performance-runtime-engine.js
 ```
 
 主要能力：
@@ -18,6 +19,8 @@ world-engine/core/performance-budget-engine.js
 analyzePerformanceBudget(world, simulationReport, scheduleReport, options)
 estimateValueLoad(value)
 getPerformanceBudgetSummary(world)
+runDeterministicSimulationTickWithPerformance(world, options, kernel)
+attachPerformanceBudgetToKernelReport(world, report, options)
 ```
 
 ## State
@@ -54,16 +57,30 @@ section
 
 总负载超过 `maxTotalLoad` 时记录总负载超标。单系统负载超过对应系统预算时记录系统负载超标。
 
-## Current integration
+## Runtime wrapper
 
-当前 PR 先交付独立模块和测试。运行时主文件接入后续用单独小 PR 完成。
+`performance-runtime-engine.js` 提供 wrapper，不修改 deterministic runtime 主文件：
 
-## Test
+```text
+runDeterministicSimulationTickWithPerformance
+```
+
+该 wrapper 会先运行原有 deterministic tick，然后根据 `report.kernel.order` 合成 schedule report，再调用 `analyzePerformanceBudget`，最后写入：
+
+```text
+report.kernel.performance
+world.kernel.performance
+```
+
+这样可以先完成运行时报告接入，同时避免对主 runtime 文件做大面积修改。
+
+## Tests
 
 新增测试：
 
 ```text
 performance-budget-test.js
+performance-runtime-test.js
 ```
 
 覆盖内容：
@@ -73,4 +90,5 @@ performance-budget-test.js
 2. analyzePerformanceBudget 能生成 world.kernel.performance 样本。
 3. 预算过低时可以产生确定性超标记录。
 4. getPerformanceBudgetSummary 能返回累计统计。
+5. runtime wrapper 能把性能摘要写入 report.kernel.performance。
 ```
