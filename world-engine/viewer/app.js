@@ -5,6 +5,10 @@ const els = {
   status: document.getElementById('status'),
   url: document.getElementById('snapshot-url'),
   load: document.getElementById('load-button'),
+  performanceUrl: document.getElementById('performance-url'),
+  loadPerformance: document.getElementById('load-performance-button'),
+  performance: document.getElementById('performance'),
+  performanceRecommendations: document.getElementById('performanceRecommendations'),
   metrics: document.getElementById('metrics'),
   players: document.getElementById('players'),
   commands: document.getElementById('commands'),
@@ -29,6 +33,12 @@ async function loadSnapshot(url) {
   setStatus(`Loading ${url}...`);
   const response = await fetch(url, { cache: 'no-store' });
   if (!response.ok) throw new Error(`Failed to load snapshot: ${response.status} ${response.statusText}`);
+  return response.json();
+}
+
+async function loadJson(url) {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Failed to load ${url}: ${response.status} ${response.statusText}`);
   return response.json();
 }
 
@@ -76,13 +86,65 @@ function renderMetrics(snapshot) {
   els.metrics.innerHTML = metrics.map(([label, value]) => `<article class="metric"><div class="metric-label">${escapeHtml(label)}</div><div class="metric-value">${escapeHtml(String(formatNumber(value)))}</div></article>`).join('');
 }
 
+function renderPerformance(report) {
+  if (!report || typeof report !== 'object') {
+    els.performance.innerHTML = '<p class="muted">No performance report loaded.</p>';
+    els.performanceRecommendations.innerHTML = '<p class="muted">No recommendations.</p>';
+    return;
+  }
+  const trend = report.trend?.trend ? report.trend : report.sampleCount !== undefined ? report : null;
+  const pressure = report.pressure?.scenarios ? report.pressure : report.scenarios ? report : null;
+  els.performance.innerHTML = [
+    renderPerformanceTrend(trend),
+    renderPerformancePressure(pressure),
+    renderPerformanceTopSystems(trend?.topSystems || pressure?.highestRisk?.topSystems || []),
+  ].join('');
+  renderPerformanceRecommendations(report.recommendations || []);
+}
+
+function renderPerformanceTrend(trend) {
+  if (!trend) return '<p class="muted">No trend data.</p>';
+  const rows = [
+    ['Samples', trend.sampleCount],
+    ['Direction', trend.trend?.direction || 'unknown'],
+    ['Average total load', trend.averageTotalLoad],
+    ['Max total load', trend.maxTotalLoad],
+    ['Average max system load', trend.averageMaxSystemLoad],
+    ['Warnings', trend.warningCount],
+    ['Violations', trend.violationCount],
+  ];
+  return `<h3>Trend</h3>${renderMiniTable(rows)}`;
+}
+
+function renderPerformancePressure(pressure) {
+  if (!pressure) return '<p class="muted">No pressure data.</p>';
+  const rows = (pressure.scenarios || []).map(item => [item.name, item.totalLoad, item.maxSystemLoad, item.warnings, item.violations, item.riskScore]);
+  const body = rows.length ? rows.map(row => `<tr>${row.map(value => `<td>${escapeHtml(formatNumber(value))}</td>`).join('')}</tr>`).join('') : '<tr><td colspan="6">none</td></tr>';
+  return `<h3>Pressure</h3><table class="data-table"><thead><tr><th>Scenario</th><th>Total</th><th>Max System</th><th>Warnings</th><th>Violations</th><th>Risk</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function renderPerformanceTopSystems(systems) {
+  if (!systems.length) return '<p class="muted">No top system data.</p>';
+  const rows = systems.map(system => [system.systemId, system.averageLoad ?? system.load, system.maxLoad ?? system.load, system.appearances ?? 1, system.budget]);
+  const body = rows.map(row => `<tr>${row.map(value => `<td>${escapeHtml(formatNumber(value))}</td>`).join('')}</tr>`).join('');
+  return `<h3>Top Systems</h3><table class="data-table"><thead><tr><th>System</th><th>Average</th><th>Max</th><th>Seen</th><th>Budget</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function renderPerformanceRecommendations(items) {
+  els.performanceRecommendations.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.priority || 'info')}</strong><span>${escapeHtml(item.message || item.type || '')}</span>`);
+}
+
+function renderMiniTable(rows) {
+  return `<table class="data-table"><tbody>${rows.map(([key, value]) => `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(formatNumber(value))}</td></tr>`).join('')}</tbody></table>`;
+}
+
 function renderPlayers(items) { els.players.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.name || item.id)}</strong><span>${escapeHtml(item.status || 'unknown')} · ${escapeHtml(item.controlMode || 'unknown')}</span><span>entity ${escapeHtml(item.activeEntityName || item.activeEntityId || 'none')} · location ${escapeHtml(item.locationId || 'unknown')}</span><span>controlled entities ${formatNumber(item.controlledEntities || 0)}</span>`); }
 function renderCommands(items) { els.commands.innerHTML = renderList(items.slice().reverse(), item => `<strong>${escapeHtml(item.type || 'command')} · ${escapeHtml(item.status || 'unknown')}</strong><span>player ${escapeHtml(item.playerId || 'unknown')} · tick ${formatNumber(item.updatedAt ?? item.createdAt ?? 0)}</span><span>${item.result?.ok ? 'ok' : 'not ok'}${item.result?.reason ? ` · ${escapeHtml(item.result.reason)}` : ''}${item.result?.actionType ? ` · action ${escapeHtml(item.result.actionType)}` : ''}</span>`); }
 function renderTutorials(items) { els.tutorials.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.playerId)}</strong><span>${escapeHtml(item.status || 'unknown')} · active quest ${escapeHtml(item.activeQuestId || 'none')}</span><span>completed ${formatNumber(item.completedQuests || 0)} · claimed ${formatNumber(item.claimedQuests || 0)}</span>`); }
 function renderQuests(items) { els.quests.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.title || item.id)}</strong><span>${escapeHtml(item.status || 'unknown')} · player ${escapeHtml(item.playerId || 'unknown')} · progress ${formatNumber(item.progress || 0)}%</span><span>objectives ${formatNumber(item.completedObjectives || 0)}/${formatNumber(item.objectives || 0)} · tags ${(item.tags || []).map(escapeHtml).join(', ') || 'none'}</span>`); }
 function renderJournals(items) { els.journals.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.title || item.type)}</strong><span>tick ${formatNumber(item.tick || 0)} · ${escapeHtml(item.type || 'journal')} · ${escapeHtml(item.locationId || 'unknown')}</span><span>${escapeHtml(item.summary || '')}</span>`); }
 function renderEncounters(items) { els.encounters.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.title || item.type)}</strong><span>${escapeHtml(item.type || 'encounter')} · ${escapeHtml(item.status || 'unknown')} · ${escapeHtml(item.locationId || 'unknown')}</span><span>${escapeHtml(item.summary || '')}</span>`); }
-function renderQuestBoards(items) { els.questBoards.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.title || item.id)}</strong><span>${escapeHtml(item.status || 'unknown')} · ${escapeHtml(item.type || 'board')} · ${escapeHtml(item.locationId || 'unknown')}</span><span>${escapeHtml(item.summary || '')}</span>`); }
+function renderQuestBoards(items) { els.questBoards.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.title || item.id)}</strong><span>${escapeHtml(item.status || 'unknown')} · ${escapeHtml(item.type || 'board')} · ${escapeHtml(item.locationId || 'world')}</span><span>${escapeHtml(item.summary || '')}</span>`); }
 function renderItems(items) { els.items.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.name || item.definitionId)}</strong><span>${escapeHtml(item.type || 'item')} · ${escapeHtml(item.rarity || 'common')} · qty ${formatNumber(item.quantity || 0)}</span><span>owner ${escapeHtml(item.ownerType || 'none')}:${escapeHtml(item.ownerId || 'none')}${item.equipped ? ' · equipped' : ''}</span>`); }
 function renderShops(items) { els.shops.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.name || item.id)}</strong><span>${escapeHtml(item.type || 'shop')} · ${escapeHtml(item.locationId || 'world')} · stock ${(item.stock || []).length}</span><span>currency ${formatNumber(item.currency || 0)}</span>`); }
 function renderCivilizations(items) { els.civilizations.innerHTML = renderList(items, item => `<strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.level)} · score ${formatNumber(item.score)} · ${escapeHtml(item.dominantSpecies || 'unknown')}</span><div class="badge-row">${(item.values || []).slice(0, 5).map(value => `<span class="badge">${escapeHtml(value)}</span>`).join('')}</div>`); }
@@ -116,7 +178,10 @@ function renderList(items, renderer) { if (!items.length) return '<p class="mute
 function setStatus(message) { els.status.textContent = message; }
 function formatNumber(value) { const num = Number(value || 0); if (!Number.isFinite(num)) return value; return Math.round(num * 100) / 100; }
 function escapeHtml(value) { return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
-async function boot() { try { const snapshot = await loadSnapshot(els.url.value); render(snapshot); } catch (error) { setStatus(error.message); } }
+async function boot() { try { const snapshot = await loadSnapshot(els.url.value); render(snapshot); await bootPerformance(false); } catch (error) { setStatus(error.message); } }
+async function bootPerformance(showError = true) { try { const report = await loadJson(els.performanceUrl.value); renderPerformance(report); } catch (error) { renderPerformance(null); if (showError) setStatus(error.message); } }
 els.load.addEventListener('click', () => boot());
+els.loadPerformance.addEventListener('click', () => bootPerformance(true));
 els.url.addEventListener('keydown', event => { if (event.key === 'Enter') boot(); });
+els.performanceUrl.addEventListener('keydown', event => { if (event.key === 'Enter') bootPerformance(true); });
 boot();

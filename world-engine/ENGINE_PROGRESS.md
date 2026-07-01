@@ -2,7 +2,7 @@
 
 本文件记录当前引擎优先阶段的完成度。浏览器客户端、账号和部署相关能力只作为参考客户端与运维外壳，不作为本阶段主线。
 
-## 当前阶段：性能报告 Markdown 导出
+## 当前阶段：性能报告 Viewer 入口
 
 | 引擎层 | 状态 | 说明 |
 |---|---:|---|
@@ -33,23 +33,22 @@
 | 文明、科技、基础设施 | 50% | 已接入管线；仍需时代、扩散和依赖网络。 |
 | 自然、气候、生态 | 55% | 自然世界和生态主模块已完成基础版，并能向人口、城市、经济、AI 目标、治理、冲突、机会和组织系统提供压力数据。 |
 | 世界一致性检查与自动修复 | 100% | 已完成审计、修复计划、自动修复、报告记录、默认管线接入、Contract 和回归测试。 |
-| 性能预算与采样 | 96% -> 98% | 已新增 Markdown formatter，CLI 支持 JSON 和 Markdown 两种性能报告输出。 |
+| 性能预算与采样 | 98% -> 100% | 已新增 viewer 性能报告入口，可加载 performance-report.json 并展示 trend、pressure、top systems 和 recommendations。 |
 
 ## 本批次新增
 
 ```text
-Performance report Markdown export
-performance-markdown-engine.js
-formatPerformanceReportMarkdown
---format json / markdown
-.md 自动识别 Markdown 输出
-performance-report-cli-test.js 覆盖 JSON 和 Markdown 输出
-PERFORMANCE_REPORTS.md 更新 Markdown 使用说明
+Performance report viewer entry
+viewer/index.html 性能报告卡片
+viewer/app.js 加载和渲染 performance-report.json
+viewer/styles.css 表格和内联工具栏样式
+viewer/serve-viewer.js 输出性能报告提示
+VIEWER_PERFORMANCE_REPORT.md
 ```
 
 ## 下一批建议
 
 ```text
 1. 后续如平台允许，再将 wrapper 逻辑内联进 deterministic runtime 主文件。
-2. 增加性能报告 UI 或 viewer 展示入口。
+2. 开始信息、记忆、文化、宗教传播网络细化。
 ```
