@@ -2,6 +2,7 @@
 
 const { createProcess, PROCESS_TYPES } = require('./process-engine');
 const { createInformation, INFORMATION_TYPES } = require('./information-engine');
+const { applyGovernanceProcessConflictEffects } = require('./conflict-governance-process-engine');
 
 const CONFLICT_STATUS = {
   TENSION: 'tension',
@@ -35,9 +36,13 @@ function ensureConflictState(world) {
     world.conflicts = {
       byId: {},
       indexes: { byStatus: {}, byType: {}, byParticipant: {} },
-      stats: { created: 0, escalated: 0, resolved: 0, battles: 0 },
+      stats: { created: 0, escalated: 0, resolved: 0, battles: 0, governanceProcessEffects: 0, governanceSuppressions: 0, governanceMobilizations: 0 },
     };
   }
+  if (!world.conflicts.stats || typeof world.conflicts.stats !== 'object') world.conflicts.stats = { created: 0, escalated: 0, resolved: 0, battles: 0 };
+  if (world.conflicts.stats.governanceProcessEffects === undefined) world.conflicts.stats.governanceProcessEffects = 0;
+  if (world.conflicts.stats.governanceSuppressions === undefined) world.conflicts.stats.governanceSuppressions = 0;
+  if (world.conflicts.stats.governanceMobilizations === undefined) world.conflicts.stats.governanceMobilizations = 0;
   return world.conflicts;
 }
 
@@ -84,9 +89,18 @@ function processConflictTick(world, options = {}) {
   const escalated = [];
   const battles = [];
   const resolved = [];
+  const governanceProcessEffects = [];
 
   for (const conflict of Object.values(ensureConflictState(world).byId)) {
     if (conflict.status === CONFLICT_STATUS.RESOLVED) continue;
+    const effects = applyGovernanceProcessConflictEffects(world, conflict, config);
+    for (const effect of effects) {
+      governanceProcessEffects.push(effect);
+      recordConflictMemory(world, conflict, `conflict.governance_process.${effect.effect}`, effect);
+      ensureConflictState(world).stats.governanceProcessEffects += 1;
+      if (effect.effect === 'suppress_revolt') ensureConflictState(world).stats.governanceSuppressions += 1;
+      if (effect.effect === 'mobilize_conflict') ensureConflictState(world).stats.governanceMobilizations += 1;
+    }
     updateConflictIntensity(world, conflict.id, config);
     if (conflict.status === CONFLICT_STATUS.TENSION && conflict.intensity >= config.activeThreshold) {
       conflict.status = CONFLICT_STATUS.ACTIVE;
@@ -104,7 +118,7 @@ function processConflictTick(world, options = {}) {
   }
 
   rebuildConflictIndexes(world);
-  return { created, escalated, battles: battles.filter(Boolean), resolved, stats: getConflictStats(world) };
+  return { created, escalated, battles: battles.filter(Boolean), resolved, governanceProcessEffects, stats: getConflictStats(world) };
 }
 
 function detectConflicts(world, options = {}) {
@@ -322,6 +336,9 @@ function getConflictStats(world) {
     active: Object.values(state.byId).filter(c => c.status === CONFLICT_STATUS.ACTIVE).length,
     tension: Object.values(state.byId).filter(c => c.status === CONFLICT_STATUS.TENSION).length,
     resolved: Object.values(state.byId).filter(c => c.status === CONFLICT_STATUS.RESOLVED).length,
+    governanceProcessEffects: state.stats.governanceProcessEffects,
+    governanceSuppressions: state.stats.governanceSuppressions,
+    governanceMobilizations: state.stats.governanceMobilizations,
     byType: countIndex(state.indexes.byType),
     byStatus: countIndex(state.indexes.byStatus),
   };
@@ -343,6 +360,7 @@ function getConflictChronicle(world, conflictId) {
     casualties: conflict.casualties,
     winner: conflict.winner,
     causes: [...conflict.causes],
+    tags: [...conflict.tags],
     memory: [...conflict.memory],
   };
 }
