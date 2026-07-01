@@ -23,6 +23,18 @@
     <section class="grid metrics" id="metrics"></section>
 
     <section class="grid two-col">
+      <article class="card">
+        <h2>Performance Report</h2>
+        <div class="inline-toolbar">
+          <input id="performance-url" type="text" value="../output/performance-report.json" aria-label="Performance report URL">
+          <button id="load-performance-button">Load Performance</button>
+        </div>
+        <div id="performance"></div>
+      </article>
+      <article class="card"><h2>Performance Recommendations</h2><div id="performanceRecommendations"></div></article>
+    </section>
+
+    <section class="grid two-col">
       <article class="card"><h2>Players</h2><div id="players"></div></article>
       <article class="card"><h2>Recent Commands</h2><div id="commands"></div></article>
     </section>
