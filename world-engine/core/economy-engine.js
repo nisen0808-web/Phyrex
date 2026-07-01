@@ -3,6 +3,7 @@
 const { recordLifeEvent, LIFE_EVENT_TYPES } = require('./history-engine');
 const { getOrganization } = require('./organization-engine');
 const { nextWorldId } = require('./world-id-engine');
+const { processTradeFlows, createEmptyTradeFlowSummary } = require('./trade-flow-engine');
 
 const RESOURCE_TYPES = {
   FOOD: 'food',
@@ -78,12 +79,16 @@ function ensureEconomyState(world) {
       industries: {},
       transactions: [],
       environment: createEmptyEconomyEnvironmentSummary(world.tick),
+      tradeFlows: createEmptyTradeFlowSummary(world.tick),
+      tradeFlowLog: [],
       indexes: { industriesByLocation: {}, industriesByType: {} },
-      stats: { ticks: 0, production: {}, consumption: {}, transactionVolume: 0, environmentUpdates: 0, constrainedIndustries: 0, stalledIndustries: 0 },
+      stats: { ticks: 0, production: {}, consumption: {}, transactionVolume: 0, environmentUpdates: 0, constrainedIndustries: 0, stalledIndustries: 0, tradeFlowCount: 0, tradeFlowVolume: 0 },
     };
     createMarket(world, { id: 'global', name: 'Global Market' });
   }
   if (!world.economy.environment) world.economy.environment = createEmptyEconomyEnvironmentSummary(world.tick);
+  if (!world.economy.tradeFlows) world.economy.tradeFlows = createEmptyTradeFlowSummary(world.tick);
+  if (!Array.isArray(world.economy.tradeFlowLog)) world.economy.tradeFlowLog = [];
   if (!world.economy.stats) world.economy.stats = { ticks: 0, production: {}, consumption: {}, transactionVolume: 0 };
   ensureEconomyStats(world.economy);
   return world.economy;
@@ -149,6 +154,7 @@ function processEconomyTick(world, options = {}) {
   }
 
   consumed.push(...consumePopulationNeeds(world, config));
+  const tradeFlows = processTradeFlows(world, config, { recordTransaction });
   const environmentSummary = summarizeEconomyEnvironment(world, environmentUpdates);
   economy.environment = environmentSummary;
   applyEconomyEnvironmentToMarkets(world, environmentSummary, config);
@@ -159,7 +165,7 @@ function processEconomyTick(world, options = {}) {
   economy.stats.stalledIndustries += environmentUpdates.filter(item => item.status === INDUSTRY_STATUS.STALLED).length;
   rebuildEconomyIndexes(world);
 
-  return { produced, consumed, transactions, environment: environmentSummary, environmentUpdates, markets: snapshotMarkets(world) };
+  return { produced, consumed, transactions, tradeFlows, environment: environmentSummary, environmentUpdates, markets: snapshotMarkets(world) };
 }
 
 function produceIndustryOutput(world, industryId, options = {}) {
@@ -419,7 +425,7 @@ function rebuildEconomyIndexes(world) { const economy = ensureEconomyState(world
 function nextUniqueEconomyId(world, collection, prefix, key) { let id = nextWorldId(world, prefix, key); while (collection[id]) id = nextWorldId(world, prefix, key); return id; }
 function createEmptyIndustryEnvironment(tick = 0) { return { tick, cityPressure: 0, disasterRisk: 0, ecologyRisk: 0, populationRisk: 0, resourceRisk: 0, riskScore: 0, productionMultiplier: 1, pricePressure: 0, status: INDUSTRY_STATUS.ACTIVE }; }
 function createEmptyEconomyEnvironmentSummary(tick = 0) { return { tick, industries: 0, highRisk: 0, stalled: 0, averageRisk: 0, averageProductionMultiplier: 1, averagePricePressure: 0, byIndustry: {} }; }
-function ensureEconomyStats(economy) { for (const key of ['ticks', 'transactionVolume', 'environmentUpdates', 'constrainedIndustries', 'stalledIndustries']) if (economy.stats[key] === undefined) economy.stats[key] = 0; if (!economy.stats.production) economy.stats.production = {}; if (!economy.stats.consumption) economy.stats.consumption = {}; }
+function ensureEconomyStats(economy) { for (const key of ['ticks', 'transactionVolume', 'environmentUpdates', 'constrainedIndustries', 'stalledIndustries', 'tradeFlowCount', 'tradeFlowVolume']) if (economy.stats[key] === undefined) economy.stats[key] = 0; if (!economy.stats.production) economy.stats.production = {}; if (!economy.stats.consumption) economy.stats.consumption = {}; }
 function mergeEconomyEnvironmentOptions(options = {}) { return { ...DEFAULT_ECONOMY_ENVIRONMENT_OPTIONS, ...(options || {}) }; }
 function addIndex(index, key, value) { if (!index[key]) index[key] = []; if (!index[key].includes(value)) index[key].push(value); }
 function average(values) { const filtered = (values || []).filter(Number.isFinite); return filtered.length ? filtered.reduce((sum, value) => sum + value, 0) / filtered.length : 0; }
@@ -445,6 +451,7 @@ module.exports = {
   calculateIndustryEnvironment,
   applyIndustryEnvironment,
   summarizeEconomyEnvironment,
+  processTradeFlows,
   seedIndustriesFromOrganizations,
   inferIndustryFromOrganization,
   getMarket,
