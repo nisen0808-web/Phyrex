@@ -2,6 +2,7 @@
 
 const { createInformation, revealInformation, INFORMATION_TYPES } = require('./information-engine');
 const { createMemory } = require('./memory-engine');
+const { generateGovernanceOpportunities } = require('./opportunity-governance-engine');
 
 const OPPORTUNITY_STATUS = {
   ACTIVE: 'active',
@@ -28,6 +29,7 @@ const DEFAULT_OPPORTUNITY_OPTIONS = {
   claimChance: 0.2,
   defaultDuration: 120,
   maxActive: 200,
+  maxGovernanceOpportunitiesPerTick: 10,
 };
 
 function ensureOpportunityState(world) {
@@ -35,9 +37,11 @@ function ensureOpportunityState(world) {
     world.opportunities = {
       byId: {},
       indexes: { byType: {}, byStatus: {}, byLocation: {}, byEntity: {} },
-      stats: { created: 0, claimed: 0, expired: 0, failed: 0 },
+      stats: { created: 0, claimed: 0, expired: 0, failed: 0, governanceGenerated: 0 },
     };
   }
+  if (!world.opportunities.stats || typeof world.opportunities.stats !== 'object') world.opportunities.stats = { created: 0, claimed: 0, expired: 0, failed: 0 };
+  if (world.opportunities.stats.governanceGenerated === undefined) world.opportunities.stats.governanceGenerated = 0;
   return world.opportunities;
 }
 
@@ -90,8 +94,11 @@ function generateOpportunities(world, options = {}) {
   generated.push(...generateTradeOpportunities(world, options));
   generated.push(...generatePowerVacuumOpportunities(world, options));
   generated.push(...generateCrisisOpportunities(world, options));
+  generated.push(...generateGovernanceOpportunities(world, options, { createOpportunity, OPPORTUNITY_TYPES }));
   generated.push(...generateRumorLeads(world, options));
 
+  const governanceGenerated = generated.filter(opp => opp?.tags?.includes('governance_generated')).length;
+  ensureOpportunityState(world).stats.governanceGenerated += governanceGenerated;
   return generated;
 }
 
@@ -230,6 +237,7 @@ function scoreCandidate(world, opportunity, entity) {
   if (opportunity.type === OPPORTUNITY_TYPES.TRADE && desire === 'wealth') score += 20;
   if (opportunity.type === OPPORTUNITY_TYPES.POWER_VACUUM && desire === 'power') score += 25;
   if (opportunity.type === OPPORTUNITY_TYPES.CRISIS && desire === 'recognition') score += 20;
+  if (opportunity.tags?.includes('governance_generated') && ['recognition', 'power', 'security'].includes(desire)) score += 12;
   return score;
 }
 
@@ -315,6 +323,7 @@ function getOpportunityStats(world) {
     total: Object.keys(state.byId).length,
     active: Object.values(state.byId).filter(opp => opp.status === OPPORTUNITY_STATUS.ACTIVE).length,
     claimed: Object.values(state.byId).filter(opp => opp.status === OPPORTUNITY_STATUS.CLAIMED).length,
+    governanceGenerated: state.stats.governanceGenerated,
     byType: countIndex(state.indexes.byType),
     byStatus: countIndex(state.indexes.byStatus),
   };
@@ -371,6 +380,7 @@ module.exports = {
   createOpportunity,
   processOpportunityTick,
   generateOpportunities,
+  generateGovernanceOpportunities,
   claimOpportunity,
   getOpportunity,
   getOpportunityStats,

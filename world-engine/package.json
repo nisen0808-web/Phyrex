@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "test": "node tests/run-all.js && node tests/governance-process-execution-test.js && node tests/conflict-governance-process-test.js",
+    "test": "node tests/run-all.js && node tests/extra-engine-tests.js",
     "stress": "node tests/stability-1000-test.js",
     "demo": "node demo/run-demo.js",
     "templates": "node demo/template-demo.js",
