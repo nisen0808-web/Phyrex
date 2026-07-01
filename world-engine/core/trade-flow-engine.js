@@ -45,6 +45,7 @@ function processTradeFlows(world, options = {}, helpers = {}) {
 
 function buildTradeFlowCandidates(world, config = {}) {
   const candidates = [];
+  const reserved = {};
   const locations = Object.values(world.locations || {}).filter(location => location && location.id);
   for (const resource of TRADE_FLOW_RESOURCE_TYPES) {
     const surplus = locations
@@ -56,19 +57,25 @@ function buildTradeFlowCandidates(world, config = {}) {
       .filter(item => item.score.deficit >= Number(config.minimumDeficit || DEFAULT_TRADE_FLOW_OPTIONS.minimumDeficit))
       .sort((left, right) => right.score.priority - left.score.priority || String(left.location.id).localeCompare(String(right.location.id)));
     for (const target of deficit) {
-      const source = surplus.find(item => item.location.id !== target.location.id && Number(item.location.resources?.[resource] || 0) > Number(config.minimumSurplus || 25));
+      const source = surplus.find(item => {
+        const key = `${item.location.id}:${resource}`;
+        const available = Number(item.location.resources?.[resource] || 0) - Number(reserved[key] || 0);
+        return item.location.id !== target.location.id && available > Number(config.minimumSurplus || 25);
+      });
       if (!source) continue;
+      const reserveKey = `${source.location.id}:${resource}`;
+      const remainingSource = Number(source.location.resources?.[resource] || 0) - Number(reserved[reserveKey] || 0);
       const marketPressure = marketResourcePressure(world, resource);
       const routeRisk = resolveLocationRisk(world, source.location.id) * 0.35 + resolveLocationRisk(world, target.location.id) * 0.65;
       const capacity = Math.max(0, 1 - routeRisk * Number(config.cityRiskPenalty || DEFAULT_TRADE_FLOW_OPTIONS.cityRiskPenalty));
       const amount = Math.max(0, Math.floor(Math.min(
         source.score.surplus * Number(config.maxRouteShare || DEFAULT_TRADE_FLOW_OPTIONS.maxRouteShare),
         target.score.deficit,
-        source.location.resources[resource] * 0.5,
+        remainingSource * 0.5,
       ) * capacity * (1 + marketPressure * Number(config.pricePressureMultiplier || DEFAULT_TRADE_FLOW_OPTIONS.pricePressureMultiplier))));
       if (amount <= 0) continue;
+      reserved[reserveKey] = Number(reserved[reserveKey] || 0) + amount;
       candidates.push({ resource, fromLocationId: source.location.id, toLocationId: target.location.id, amount, routeRisk: round(routeRisk), marketPressure: round(marketPressure), priority: round(target.score.priority + marketPressure * 30 - routeRisk * 10) });
-      source.location.resources[resource] = Math.max(0, Number(source.location.resources[resource] || 0) - amount * 0.15);
     }
   }
   return candidates.sort((left, right) => right.priority - left.priority || String(left.resource).localeCompare(String(right.resource))).slice(0, Number(config.maxTradeFlowsPerTick || DEFAULT_TRADE_FLOW_OPTIONS.maxTradeFlowsPerTick) * 2);
