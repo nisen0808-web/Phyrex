@@ -17,6 +17,44 @@ createPerformanceOperationsReport(world, scenarios, options)
 aggregateTopSystems(samples, limit)
 ```
 
+## CLI
+
+性能报告可以通过命令导出：
+
+```text
+npm run performance:report -- output/runtime-world-save.json output/performance-report.json --mode operations
+```
+
+也可以直接运行：
+
+```text
+node demo/performance-report-cli.js <input-save> <output-json> --mode operations
+```
+
+支持参数：
+
+```text
+--input <file>
+--output <file>
+--mode operations | trend | pressure
+--window <number>
+--top <number>
+--multipliers 1,1.5,2
+--quiet
+```
+
+CLI 默认读取：
+
+```text
+output/runtime-world-save.json
+```
+
+CLI 默认输出：
+
+```text
+output/performance-report.json
+```
+
 ## Trend report
 
 趋势报告会读取最近 N 个样本，并输出：
@@ -76,12 +114,13 @@ pressure
 recommendations
 ```
 
-## Test
+## Tests
 
 新增测试：
 
 ```text
 performance-report-test.js
+performance-report-cli-test.js
 ```
 
-该测试通过 `package.json` 接入 `npm test`。
+这些测试通过 `package.json` 接入 `npm test`。
