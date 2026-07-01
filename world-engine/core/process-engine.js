@@ -1,5 +1,10 @@
 'use strict';
 
+const {
+  ingestGovernanceResponsesAsProcesses,
+  updateGovernanceProcessProgress,
+} = require('./governance-process-engine');
+
 const PROCESS_STATUS = {
   ACTIVE: 'active',
   RESOLVED: 'resolved',
@@ -18,6 +23,7 @@ const PROCESS_TYPES = {
   CIVILIZATION_GROWTH: 'civilization_growth',
   OPPORTUNITY_CHAIN: 'opportunity_chain',
   LIFE_ARC: 'life_arc',
+  GOVERNANCE_RESPONSE: 'governance_response',
 };
 
 const DEFAULT_PROCESS_OPTIONS = {
@@ -29,6 +35,7 @@ const DEFAULT_PROCESS_OPTIONS = {
   staleAfterTicks: 720,
   resolveProgress: 100,
   memoryLimit: 1000,
+  maxGovernanceResponseIds: 3000,
 };
 
 function ensureProcessState(world) {
@@ -37,10 +44,16 @@ function ensureProcessState(world) {
       byId: {},
       indexes: { byType: {}, byStatus: {}, byParticipant: {}, byOwner: {} },
       consumedMemoryIds: [],
-      stats: { created: 0, updated: 0, resolved: 0, stalled: 0, pruned: 0 },
+      consumedGovernanceResponseIds: [],
+      stats: { created: 0, updated: 0, resolved: 0, stalled: 0, pruned: 0, governanceResponsesIngested: 0, governanceProcessesAdvanced: 0 },
     };
   }
+  if (!Array.isArray(world.processes.consumedMemoryIds)) world.processes.consumedMemoryIds = [];
+  if (!Array.isArray(world.processes.consumedGovernanceResponseIds)) world.processes.consumedGovernanceResponseIds = [];
+  if (!world.processes.stats || typeof world.processes.stats !== 'object') world.processes.stats = { created: 0, updated: 0, resolved: 0, stalled: 0, pruned: 0 };
   if (world.processes.stats.pruned === undefined) world.processes.stats.pruned = 0;
+  if (world.processes.stats.governanceResponsesIngested === undefined) world.processes.stats.governanceResponsesIngested = 0;
+  if (world.processes.stats.governanceProcessesAdvanced === undefined) world.processes.stats.governanceProcessesAdvanced = 0;
   return world.processes;
 }
 
@@ -82,6 +95,15 @@ function processProcessesTick(world, options = {}) {
   const ingested = ingestWorldMemoryAsProcesses(world, config);
   created.push(...ingested.created);
   updated.push(...ingested.updated);
+
+  const governance = ingestGovernanceResponsesAsProcesses(world, config, {
+    processType: PROCESS_TYPES.GOVERNANCE_RESPONSE,
+    createProcess,
+    addProcessStep,
+    findActiveProcess,
+  });
+  created.push(...governance.created);
+  updated.push(...governance.updated);
 
   for (const process of Object.values(ensureProcessState(world).byId)) {
     if (process.status !== PROCESS_STATUS.ACTIVE) continue;
@@ -173,6 +195,7 @@ function describeProcessFromMemory(world, memory) {
 }
 
 function inferProcessType(type, payload = {}) {
+  if (type.includes('government.response') || type.includes('governance.response') || payload.responseId) return PROCESS_TYPES.GOVERNANCE_RESPONSE;
   if (type.includes('contract.broken') || type.includes('damaged')) return PROCESS_TYPES.CONFLICT;
   if (type.includes('goal.completed')) return PROCESS_TYPES.RISE;
   if (type.includes('death')) return PROCESS_TYPES.DECLINE;
@@ -189,6 +212,7 @@ function inferProcessType(type, payload = {}) {
 
 function inferOwner(memory, world) {
   const payload = memory.payload || {};
+  if (payload.governmentId) return { ownerType: 'government', ownerId: payload.governmentId };
   if (payload.conflictId) return { ownerType: 'conflict', ownerId: payload.conflictId };
   if (payload.civilizationId) return { ownerType: 'civilization', ownerId: payload.civilizationId };
   if (payload.religionId) return { ownerType: 'religion', ownerId: payload.religionId };
@@ -201,6 +225,7 @@ function inferOwner(memory, world) {
 }
 
 function inferProcessKey(type, owner, payload = {}, participants = []) {
+  if (payload.responseId) return `governance_response:${payload.responseId}`;
   if (payload.conflictId) return `conflict:${payload.conflictId}`;
   if (payload.contractId) return `contract:${payload.contractId}`;
   if (payload.opportunityId) return `opportunity:${payload.opportunityId}`;
@@ -222,9 +247,10 @@ function addProcessStep(world, processId, step, options = {}) {
   return process;
 }
 
-function updateProcessProgress(world, processId) {
+function updateProcessProgress(world, processId, options = {}) {
   const process = getProcess(world, processId);
   if (!process) return null;
+  if (process.type === PROCESS_TYPES.GOVERNANCE_RESPONSE) return updateGovernanceProcessProgress(world, process, options);
   const stepScore = process.steps.length * 8;
   const strengthScore = process.strength * 5;
   const participantScore = process.participants.length * 2;
@@ -288,6 +314,7 @@ function getProcessChronicle(world, processId) {
     participants: [...process.participants],
     steps: [...process.steps],
     tags: [...process.tags],
+    payload: { ...(process.payload || {}) },
   };
 }
 
@@ -299,6 +326,8 @@ function getProcessStats(world) {
     resolved: Object.values(state.byId).filter(process => process.status === PROCESS_STATUS.RESOLVED).length,
     stalled: Object.values(state.byId).filter(process => process.status === PROCESS_STATUS.STALLED).length,
     pruned: state.stats.pruned,
+    governanceResponsesIngested: state.stats.governanceResponsesIngested,
+    governanceProcessesAdvanced: state.stats.governanceProcessesAdvanced,
     byType: countIndex(state.indexes.byType),
     byStatus: countIndex(state.indexes.byStatus),
   };
@@ -334,6 +363,7 @@ function collectParticipants(memory) {
 }
 
 function inferImportance(type, payload = {}) {
+  if (type.includes('government.response') || type.includes('governance.response')) return Math.round(70 + Number(payload.severity || 0) * 80);
   if (type.includes('death')) return 100;
   if (type.includes('goal.completed')) return payload.scope === 'dream' ? 120 : 60;
   if (type.includes('civilization')) return 120;
@@ -370,7 +400,9 @@ module.exports = {
   createProcess,
   processProcessesTick,
   ingestWorldMemoryAsProcesses,
+  ingestGovernanceResponsesAsProcesses,
   addProcessStep,
+  updateProcessProgress,
   pruneProcesses,
   getProcess,
   getProcessChronicle,
