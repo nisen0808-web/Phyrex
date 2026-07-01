@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "test": "node tests/run-all.js && node tests/extra-engine-tests.js && node tests/performance-report-test.js",
+    "test": "node tests/run-all.js && node tests/extra-engine-tests.js && node tests/performance-report-test.js && node tests/performance-report-cli-test.js",
     "stress": "node tests/stability-1000-test.js",
     "demo": "node demo/run-demo.js",
     "templates": "node demo/template-demo.js",
@@ -12,6 +12,7 @@
     "shell:sample": "node demo/play-shell.js --script demo/sample-commands.txt",
     "snapshot": "node demo/export-snapshot.js",
     "runtime": "node demo/runtime-demo.js",
+    "performance:report": "node demo/performance-report-cli.js",
     "api": "node demo/api-server.js",
     "api:live": "node demo/api-server.js --auto-loop --interval 1000 --ticks-per-cycle 1 --autosave-every 25 --autosave-path output/live-world-save.json",
     "viewer": "node viewer/serve-viewer.js"
