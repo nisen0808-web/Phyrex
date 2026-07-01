@@ -12,6 +12,7 @@ function main() {
   const report = scanSourceDirectory(root, {
     ignoreFiles: new Set(['source-purity-engine.js', 'source-purity-baseline-engine.js']),
   });
+  assert.ok(report.files >= 40, `expected core scan to cover many files, got ${report.files}`);
   const comparison = compareReportToRelativeBaseline(report, baseline, { root });
   assert.strictEqual(comparison.newFindings.length, 0, JSON.stringify(comparison.newFindings, null, 2));
   console.log('source purity baseline test passed');
