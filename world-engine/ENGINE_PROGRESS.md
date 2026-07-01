@@ -2,7 +2,7 @@
 
 本文件记录当前引擎优先阶段的完成度。浏览器客户端、账号和部署相关能力只作为参考客户端与运维外壳，不作为本阶段主线。
 
-## 当前阶段：源码纯度 baseline
+## 当前阶段：性能预算与采样
 
 | 引擎层 | 状态 | 说明 |
 |---|---:|---|
@@ -12,7 +12,7 @@
 | 世界级确定性 ID | 93% | 城市、市场、产业、交易、目标、目标记忆、治理响应、治理过程和贸易流 ID 已迁移到世界级确定性 ID。 |
 | 模块化模拟管线 | 95% | 治理、过程、冲突、机会、经济贸易流和组织系统已经形成连续联动。 |
 | 系统 Contract 校验 | 84% | social.organizations 继续保持 Contract 兼容，并覆盖组织过程联动路径。 |
-| 源码确定性纯度审计 | 35% -> 60% | 已新增核心目录 baseline 文件、相对路径 baseline 比对和 CI 回归测试。 |
+| 源码确定性纯度审计 | 60% | 已新增核心目录 baseline 文件、相对路径 baseline 比对和 CI 回归测试。 |
 | 状态哈希与差异定位 | 82% | 一致性层可在重放前后修复结构性坏状态，减少无意义漂移。 |
 | 重放与确定性验证 | 84% | 治理环境、治理过程、冲突联动、机会生成、贸易流和组织联动进入确定性管线路径。 |
 | 人口、家庭、遗产 | 68% | 人口生命周期已读取天气、灾害、资源、疾病、承载力和栖息地压力。 |
@@ -33,23 +33,25 @@
 | 文明、科技、基础设施 | 50% | 已接入管线；仍需时代、扩散和依赖网络。 |
 | 自然、气候、生态 | 55% | 自然世界和生态主模块已完成基础版，并能向人口、城市、经济、AI 目标、治理、冲突、机会和组织系统提供压力数据。 |
 | 世界一致性检查与自动修复 | 100% | 已完成审计、修复计划、自动修复、报告记录、默认管线接入、Contract 和回归测试。 |
-| 性能预算与采样 | 10% | 尚未形成系统级 profiling。 |
+| 性能预算与采样 | 10% -> 70% | 已新增确定性负载估算、系统预算、采样状态、摘要和回归测试。运行时主报告接入后续单独处理。 |
 
 ## 本批次新增
 
 ```text
-Source purity baseline
-source-purity-baseline-engine.js
-source-purity-baseline-test.js
-SOURCE_PURITY_BASELINE.json
-SOURCE_PURITY_BASELINE.md
-相对路径 baseline 比对
-核心目录扫描文件数量断言
-extra-engine-tests.js 追加源码纯度 baseline 回归测试
+Deterministic performance budget sampling
+performance-budget-engine.js
+performance-budget-test.js
+PERFORMANCE_BUDGET.md
+world.kernel.performance
+system load estimate
+total load budget
+per-system budget
+extra-engine-tests.js 追加性能预算回归测试
 ```
 
 ## 下一批建议
 
 ```text
-1. 增加系统级性能预算与采样。
+1. 用小 PR 将 performance budget 接入 deterministic runtime kernel report。
+2. 增加压力场景采样报告和性能趋势输出。
 ```
