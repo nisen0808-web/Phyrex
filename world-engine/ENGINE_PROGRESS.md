@@ -2,7 +2,7 @@
 
 本文件记录当前引擎优先阶段的完成度。浏览器客户端、账号和部署相关能力只作为参考客户端与运维外壳，不作为本阶段主线。
 
-## 当前阶段：性能预算运行时接入
+## 当前阶段：性能趋势报告
 
 | 引擎层 | 状态 | 说明 |
 |---|---:|---|
@@ -33,25 +33,25 @@
 | 文明、科技、基础设施 | 50% | 已接入管线；仍需时代、扩散和依赖网络。 |
 | 自然、气候、生态 | 55% | 自然世界和生态主模块已完成基础版，并能向人口、城市、经济、AI 目标、治理、冲突、机会和组织系统提供压力数据。 |
 | 世界一致性检查与自动修复 | 100% | 已完成审计、修复计划、自动修复、报告记录、默认管线接入、Contract 和回归测试。 |
-| 性能预算与采样 | 70% -> 85% | 已新增 runtime wrapper，可将性能预算写入 report.kernel.performance 和 world.kernel.performance。 |
+| 性能预算与采样 | 85% -> 92% | 已新增趋势窗口、压力场景、最高风险场景、系统排行和运维建议输出。 |
 
 ## 本批次新增
 
 ```text
-Performance runtime wrapper
-performance-runtime-engine.js
-performance-runtime-test.js
-runDeterministicSimulationTickWithPerformance
-attachPerformanceBudgetToKernelReport
-createSyntheticScheduleReport
-report.kernel.performance
-world.kernel.performance runtime samples
-extra-engine-tests.js 追加性能运行时回归测试
+Performance trend reports
+performance-report-engine.js
+performance-report-test.js
+PERFORMANCE_REPORTS.md
+createPerformanceTrendReport
+createPerformancePressureScenarioReport
+createPerformanceOperationsReport
+aggregateTopSystems
+package.json 追加性能趋势报告测试
 ```
 
 ## 下一批建议
 
 ```text
-1. 增加压力场景采样报告和性能趋势输出。
+1. 为性能报告增加 CLI 导出命令。
 2. 后续如平台允许，再将 wrapper 逻辑内联进 deterministic runtime 主文件。
 ```
