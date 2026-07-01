@@ -11,6 +11,7 @@ const tests = [
   'desire-opportunity-test.js',
   'process-emergence-test.js',
   'governance-conflict-test.js',
+  'governance-environment-response-test.js',
   'technology-infrastructure-test.js',
   'snapshot-test.js',
   'viewer-test.js',
