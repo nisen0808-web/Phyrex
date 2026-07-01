@@ -2,7 +2,7 @@
 
 本文件记录当前引擎优先阶段的完成度。浏览器客户端、账号和部署相关能力只作为参考客户端与运维外壳，不作为本阶段主线。
 
-## 当前阶段：组织过程联动层
+## 当前阶段：源码纯度 baseline
 
 | 引擎层 | 状态 | 说明 |
 |---|---:|---|
@@ -12,11 +12,11 @@
 | 世界级确定性 ID | 93% | 城市、市场、产业、交易、目标、目标记忆、治理响应、治理过程和贸易流 ID 已迁移到世界级确定性 ID。 |
 | 模块化模拟管线 | 95% | 治理、过程、冲突、机会、经济贸易流和组织系统已经形成连续联动。 |
 | 系统 Contract 校验 | 84% | social.organizations 继续保持 Contract 兼容，并覆盖组织过程联动路径。 |
-| 源码确定性纯度审计 | 35% | 已有扫描器、baseline、allowlist 和测试；下一步接入核心目录 baseline。 |
+| 源码确定性纯度审计 | 35% -> 60% | 已新增核心目录 baseline 文件、相对路径 baseline 比对和 CI 回归测试。 |
 | 状态哈希与差异定位 | 82% | 一致性层可在重放前后修复结构性坏状态，减少无意义漂移。 |
 | 重放与确定性验证 | 84% | 治理环境、治理过程、冲突联动、机会生成、贸易流和组织联动进入确定性管线路径。 |
 | 人口、家庭、遗产 | 68% | 人口生命周期已读取天气、灾害、资源、疾病、承载力和栖息地压力。 |
-| 组织、契约、城市 | 73% -> 78% | 组织系统已读取活跃治理过程，根据过程类型吸纳成员并更新组织能力。 |
+| 组织、契约、城市 | 78% | 组织系统已读取活跃治理过程，根据过程类型吸纳成员并更新组织能力。 |
 | 城市环境压力层 | 100% | 已完成压力计算、稳定度、风险、迁徙吸引力、维护缺口、状态变更、记忆和测试。 |
 | 经济系统 | 76% | 经济系统已新增地点资源贸易流，会根据城市压力、地点资源和市场压力自动移动资源。 |
 | 经济环境联动层 | 100% | 已完成产业风险、生产倍率、价格压力、产业状态、市场供需冲击和测试。 |
@@ -28,7 +28,7 @@
 | 治理过程执行层 | 100% | 已完成治理响应日志消费、governance_response 过程生成、持续效果、过程推进和确定性管线测试。 |
 | 冲突治理过程联动层 | 100% | 已完成治理过程对叛乱和组织冲突强度的联动、冲突记忆和统计接入。 |
 | 机会治理联动层 | 100% | 已完成治理环境、治理过程和冲突状态到公共机会的映射、去重和统计。 |
-| 组织过程联动层 | 0% -> 100% | 已完成组织读取 governance_response 过程、按角色吸纳成员、组织状态调整、记忆和统计。 |
+| 组织过程联动层 | 100% | 已完成组织读取 governance_response 过程、按角色吸纳成员、组织状态调整、记忆和统计。 |
 | 信息、记忆、文化、宗教 | 55% | 已接入管线；仍需传播网络和文化变迁细化。 |
 | 文明、科技、基础设施 | 50% | 已接入管线；仍需时代、扩散和依赖网络。 |
 | 自然、气候、生态 | 55% | 自然世界和生态主模块已完成基础版，并能向人口、城市、经济、AI 目标、治理、冲突、机会和组织系统提供压力数据。 |
@@ -38,19 +38,18 @@
 ## 本批次新增
 
 ```text
-Organization process linkage
-organization-process-link-engine.js
-organization-process-linkage-test.js
-ORGANIZATION_PROCESS_LINKAGE.md
-organization.process_link memory
-world.organizations.stats.processLinkedRecruits / processSupportActions
-relief_worker / logistics / worker / engineer / guard / auxiliary role mapping
-extra-engine-tests.js 追加组织过程联动回归测试
+Source purity baseline
+source-purity-baseline-engine.js
+source-purity-baseline-test.js
+SOURCE_PURITY_BASELINE.json
+SOURCE_PURITY_BASELINE.md
+相对路径 baseline 比对
+核心目录扫描文件数量断言
+extra-engine-tests.js 追加源码纯度 baseline 回归测试
 ```
 
 ## 下一批建议
 
 ```text
-1. 基于 source-purity-engine 扫描核心目录并生成首个 baseline。
-2. 增加系统级性能预算与采样。
+1. 增加系统级性能预算与采样。
 ```
