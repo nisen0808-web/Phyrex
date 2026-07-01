@@ -9,6 +9,7 @@ const tests = [
   'opportunity-governance-linkage-test.js',
   'trade-flow-system-test.js',
   'organization-process-linkage-test.js',
+  'source-purity-baseline-test.js',
 ];
 
 for (const test of tests) {
