@@ -11,6 +11,7 @@ const tests = [
   'organization-process-linkage-test.js',
   'source-purity-baseline-test.js',
   ['performance', 'budget', 'test.js'].join('-'),
+  ['performance', 'runtime', 'test.js'].join('-'),
 ];
 
 for (const test of tests) {
