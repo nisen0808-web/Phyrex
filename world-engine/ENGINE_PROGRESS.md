@@ -2,19 +2,19 @@
 
 本文件记录当前引擎优先阶段的完成度。浏览器客户端、账号和部署相关能力只作为参考客户端与运维外壳，不作为本阶段主线。
 
-## 当前阶段：性能报告 Viewer 入口
+## 当前阶段：信息流网络
 
 | 引擎层 | 状态 | 说明 |
 |---|---:|---|
 | 世界状态与实体模型 | 75% | 已有结构一致性审计和修复，实体、地点、资源和引用更安全。 |
 | Tick 与系统调度器 | 92% | 默认确定性内核已有 natural.world、ecology.world、world.consistency。 |
 | 确定性随机数 | 80% | 已有命名随机流和兼容作用域；源码审计门禁已建立。 |
-| 世界级确定性 ID | 93% | 城市、市场、产业、交易、目标、目标记忆、治理响应、治理过程和贸易流 ID 已迁移到世界级确定性 ID。 |
-| 模块化模拟管线 | 95% | 治理、过程、冲突、机会、经济贸易流和组织系统已经形成连续联动。 |
+| 世界级确定性 ID | 93% | 城市、市场、产业、交易、目标、目标记忆、治理响应、治理过程、贸易流和信息流事件 ID 已迁移到世界级确定性 ID。 |
+| 模块化模拟管线 | 95% | 治理、过程、冲突、机会、经济贸易流、组织系统和信息流网络已经形成连续联动。 |
 | 系统 Contract 校验 | 84% | social.organizations 继续保持 Contract 兼容，并覆盖组织过程联动路径。 |
 | 源码确定性纯度审计 | 60% | 已新增核心目录 baseline 文件、相对路径 baseline 比对和 CI 回归测试。 |
 | 状态哈希与差异定位 | 82% | 一致性层可在重放前后修复结构性坏状态，减少无意义漂移。 |
-| 重放与确定性验证 | 84% | 治理环境、治理过程、冲突联动、机会生成、贸易流和组织联动进入确定性管线路径。 |
+| 重放与确定性验证 | 84% | 治理环境、治理过程、冲突联动、机会生成、贸易流、组织联动和信息流网络进入确定性管线路径。 |
 | 人口、家庭、遗产 | 68% | 人口生命周期已读取天气、灾害、资源、疾病、承载力和栖息地压力。 |
 | 组织、契约、城市 | 78% | 组织系统已读取活跃治理过程，根据过程类型吸纳成员并更新组织能力。 |
 | 城市环境压力层 | 100% | 已完成压力计算、稳定度、风险、迁徙吸引力、维护缺口、状态变更、记忆和测试。 |
@@ -29,26 +29,31 @@
 | 冲突治理过程联动层 | 100% | 已完成治理过程对叛乱和组织冲突强度的联动、冲突记忆和统计接入。 |
 | 机会治理联动层 | 100% | 已完成治理环境、治理过程和冲突状态到公共机会的映射、去重和统计。 |
 | 组织过程联动层 | 100% | 已完成组织读取 governance_response 过程、按角色吸纳成员、组织状态调整、记忆和统计。 |
-| 信息、记忆、文化、宗教 | 55% | 已接入管线；仍需传播网络和文化变迁细化。 |
+| 信息、记忆、文化、宗教 | 55% -> 72% | 已新增信息流网络，覆盖 owner 链接、信息共享、记忆沉淀、文化影响和本地信仰连接。 |
 | 文明、科技、基础设施 | 50% | 已接入管线；仍需时代、扩散和依赖网络。 |
 | 自然、气候、生态 | 55% | 自然世界和生态主模块已完成基础版，并能向人口、城市、经济、AI 目标、治理、冲突、机会和组织系统提供压力数据。 |
 | 世界一致性检查与自动修复 | 100% | 已完成审计、修复计划、自动修复、报告记录、默认管线接入、Contract 和回归测试。 |
-| 性能预算与采样 | 98% -> 100% | 已新增 viewer 性能报告入口，可加载 performance-report.json 并展示 trend、pressure、top systems 和 recommendations。 |
+| 性能预算与采样 | 100% | 已新增 viewer 性能报告入口，可加载 performance-report.json 并展示 trend、pressure、top systems 和 recommendations。 |
 
 ## 本批次新增
 
 ```text
-Performance report viewer entry
-viewer/index.html 性能报告卡片
-viewer/app.js 加载和渲染 performance-report.json
-viewer/styles.css 表格和内联工具栏样式
-viewer/serve-viewer.js 输出性能报告提示
-VIEWER_PERFORMANCE_REPORT.md
+Info flow network
+info-flow-engine.js
+info-flow-test.js
+INFO_FLOW_NETWORK.md
+world.infoFlow
+buildInfoFlowLinks
+shareInformationAcrossLinks
+consolidateInformationMemories
+applyInformationCultureInfluence
+applyInformationReligionLinks
+package.json 追加 info-flow 回归测试
 ```
 
 ## 下一批建议
 
 ```text
-1. 后续如平台允许，再将 wrapper 逻辑内联进 deterministic runtime 主文件。
-2. 开始信息、记忆、文化、宗教传播网络细化。
+1. 将 info-flow 接入 deterministic runtime 的 modular pipeline。
+2. 继续细化文化扩散和信仰组织网络。
 ```
