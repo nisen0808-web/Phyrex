@@ -2,6 +2,7 @@
 
 const { recordLifeEvent, LIFE_EVENT_TYPES } = require('./history-engine');
 const { createContract, CONTRACT_TYPES } = require('./contract-engine');
+const { processOrganizationLinkedProcesses } = require('./organization-process-link-engine');
 
 const ORGANIZATION_STATUS = {
   ACTIVE: 'active',
@@ -41,9 +42,12 @@ function ensureOrganizationState(world) {
         byMember: {},
         byLocation: {},
       },
-      stats: { created: 0, dissolved: 0 },
+      stats: { created: 0, dissolved: 0, processLinkedRecruits: 0, processSupportActions: 0 },
     };
   }
+  if (!world.organizations.stats || typeof world.organizations.stats !== 'object') world.organizations.stats = { created: 0, dissolved: 0 };
+  if (world.organizations.stats.processLinkedRecruits === undefined) world.organizations.stats.processLinkedRecruits = 0;
+  if (world.organizations.stats.processSupportActions === undefined) world.organizations.stats.processSupportActions = 0;
   return world.organizations;
 }
 
@@ -143,6 +147,8 @@ function processOrganizationsTick(world, options = {}) {
   const changed = [];
   for (const org of Object.values(ensureOrganizationState(world).byId)) {
     if (org.status !== ORGANIZATION_STATUS.ACTIVE && org.status !== ORGANIZATION_STATUS.DECLINING) continue;
+    const processActions = processOrganizationLinkedProcesses(world, org, options, { addOrganizationMember, recordOrganizationMemory });
+    if (processActions.length) org.meta.lastProcessLinkActions = processActions;
     updateOrganizationStats(world, org.id);
     processOrganizationGoals(world, org.id, options);
     if (org.members.length === 0 || org.cohesion <= 0) dissolveOrganization(world, org.id, org.members.length === 0 ? 'no_members' : 'lost_cohesion');
@@ -274,6 +280,8 @@ function getOrganizationChronicle(world, organizationId) {
     goals: [...org.goals],
     allies: { ...org.allies },
     rivals: { ...org.rivals },
+    roles: { ...org.roles },
+    meta: { ...(org.meta || {}) },
     memory: [...org.memory],
   };
 }
