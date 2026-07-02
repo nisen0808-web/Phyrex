@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "test": "node tests/run-all.js && node tests/extra-engine-tests.js && node tests/performance-report-test.js && node tests/performance-report-cli-test.js && node tests/info-flow-test.js && node tests/info-flow-runtime-test.js && node tests/culture-belief-flow-test.js && node tests/culture-belief-flow-runtime-test.js && node tests/database-config-test.js && node tests/api-database-persistence-test.js && node tests/api-database-routes-test.js && node tests/runtime-database-autosave-test.js && node tests/database-admin-status-test.js && node tests/database-cli-autosave-test.js",
+    "test": "node tests/run-all.js && node tests/extra-engine-tests.js && node tests/performance-report-test.js && node tests/performance-report-cli-test.js && node tests/info-flow-test.js && node tests/info-flow-runtime-test.js && node tests/culture-belief-flow-test.js && node tests/culture-belief-flow-runtime-test.js && node tests/database-config-test.js && node tests/api-database-persistence-test.js && node tests/api-database-routes-test.js && node tests/runtime-database-autosave-test.js && node tests/database-admin-status-test.js && node tests/database-cli-autosave-test.js && node tests/database-live-script-test.js",
     "stress": "node tests/stability-1000-test.js",
     "demo": "node demo/run-demo.js",
     "templates": "node demo/template-demo.js",
@@ -15,6 +15,7 @@
     "performance:report": "node demo/performance-report-cli.js",
     "api": "node demo/api-server.js",
     "api:live": "node demo/api-server.js --auto-loop --interval 1000 --ticks-per-cycle 1 --autosave-every 25 --autosave-path output/live-world-save.json",
+    "api:live:db": "node demo/api-server.js --auto-loop --interval 1000 --ticks-per-cycle 1 --autosave-every 25 --autosave-mode database --db-provider jsonl --db-dir world-engine/data/db --db-name world-engine",
     "viewer": "node viewer/serve-viewer.js"
   },
   "devDependencies": {}
