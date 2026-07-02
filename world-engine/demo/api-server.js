@@ -11,20 +11,14 @@ function main() {
   const seedTicks = Number(args.seedTicks || DEFAULT_API_OPTIONS.seedTicks);
   const savePath = args.savePath || DEFAULT_API_OPTIONS.defaultSavePath;
   const autoStartLoop = Boolean(args.autoLoop);
-  const runtimeLoop = {
-    intervalMs: Number(args.interval || 1000),
-    ticksPerCycle: Number(args.ticksPerCycle || 1),
-    autosaveEveryTicks: Number(args.autosaveEvery || 0),
-    autosavePath: args.autosavePath || (Number(args.autosaveEvery || 0) > 0 ? savePath : null),
-    immediate: Boolean(args.immediate),
-    stopOnError: Boolean(args.stopOnError),
-  };
+  const runtimeLoop = buildRuntimeLoopOptions(args, { savePath });
 
   const { server, api } = createWorldApiServer(null, {
     port,
     host,
     seedTicks,
     defaultSavePath: savePath,
+    database: buildDatabaseOptions(args),
     requireAuth: Boolean(args.requireAuth),
     autoStartLoop,
     runtimeLoop,
@@ -45,6 +39,31 @@ function main() {
       endpoints: endpoints(),
     }, null, 2));
   });
+}
+
+function buildRuntimeLoopOptions(args = {}, context = {}) {
+  const savePath = context.savePath || args.savePath || DEFAULT_API_OPTIONS.defaultSavePath;
+  const autosaveMode = args.autosaveMode || process.env.WORLD_ENGINE_AUTOSAVE_MODE || 'file';
+  const autosaveEveryTicks = Number(args.autosaveEvery || 0);
+  return {
+    intervalMs: Number(args.interval || 1000),
+    ticksPerCycle: Number(args.ticksPerCycle || 1),
+    autosaveEveryTicks,
+    autosavePath: args.autosavePath || (autosaveEveryTicks > 0 && autosaveMode === 'file' ? savePath : null),
+    autosaveMode,
+    autosaveDatabase: buildDatabaseOptions(args),
+    immediate: Boolean(args.immediate),
+    stopOnError: Boolean(args.stopOnError),
+  };
+}
+
+function buildDatabaseOptions(args = {}) {
+  return {
+    provider: args.dbProvider || process.env.WORLD_ENGINE_DB_PROVIDER || undefined,
+    directory: args.dbDir || process.env.WORLD_ENGINE_DB_DIR || undefined,
+    name: args.dbName || process.env.WORLD_ENGINE_DB_NAME || undefined,
+    autoCreate: args.dbAutoCreate ?? process.env.WORLD_ENGINE_DB_AUTO_CREATE,
+  };
 }
 
 function endpoints() {
@@ -93,6 +112,11 @@ function parseArgs(argv) {
     else if (arg === '--ticks-per-cycle') out.ticksPerCycle = argv[++i];
     else if (arg === '--autosave-every') out.autosaveEvery = argv[++i];
     else if (arg === '--autosave-path') out.autosavePath = argv[++i];
+    else if (arg === '--autosave-mode') out.autosaveMode = argv[++i];
+    else if (arg === '--db-provider') out.dbProvider = argv[++i];
+    else if (arg === '--db-dir') out.dbDir = argv[++i];
+    else if (arg === '--db-name') out.dbName = argv[++i];
+    else if (arg === '--db-auto-create') out.dbAutoCreate = argv[++i];
     else if (arg === '--immediate') out.immediate = true;
     else if (arg === '--stop-on-error') out.stopOnError = true;
     else if (arg === '--auth') out.requireAuth = true;
@@ -110,6 +134,11 @@ function parseArgs(argv) {
         '  --ticks-per-cycle <n>      World ticks per runtime cycle',
         '  --autosave-every <ticks>   Autosave after this many world ticks',
         '  --autosave-path <file>     Runtime-loop autosave path',
+        '  --autosave-mode <mode>     file or database',
+        '  --db-provider <provider>   Database provider, default jsonl',
+        '  --db-dir <dir>             Database directory',
+        '  --db-name <name>           Database name',
+        '  --db-auto-create <bool>    Auto-create local database files',
         '  --immediate                Run first loop cycle immediately',
         '  --stop-on-error            Stop loop after a cycle error',
         '  --auth                     Require session/role authorization',
@@ -122,4 +151,4 @@ function parseArgs(argv) {
 
 if (require.main === module) main();
 
-module.exports = { main, parseArgs, endpoints };
+module.exports = { main, parseArgs, endpoints, buildRuntimeLoopOptions, buildDatabaseOptions };
