@@ -2,19 +2,19 @@
 
 本文件记录当前引擎优先阶段的完成度。浏览器客户端、账号和部署相关能力只作为参考客户端与运维外壳，不作为本阶段主线。
 
-## 当前阶段：信息流 Runtime 接入
+## 当前阶段：文化与信仰扩散网络
 
 | 引擎层 | 状态 | 说明 |
 |---|---:|---|
 | 世界状态与实体模型 | 75% | 已有结构一致性审计和修复，实体、地点、资源和引用更安全。 |
 | Tick 与系统调度器 | 92% | 默认确定性内核已有 natural.world、ecology.world、world.consistency。 |
 | 确定性随机数 | 80% | 已有命名随机流和兼容作用域；源码审计门禁已建立。 |
-| 世界级确定性 ID | 93% | 城市、市场、产业、交易、目标、目标记忆、治理响应、治理过程、贸易流和信息流事件 ID 已迁移到世界级确定性 ID。 |
-| 模块化模拟管线 | 95% -> 96% | 已新增 knowledge.info_flow 系统，可通过 runtime helper 接入 deterministic kernel。 |
+| 世界级确定性 ID | 93% | 城市、市场、产业、交易、目标、目标记忆、治理响应、治理过程、贸易流、信息流和文化信仰流事件 ID 已迁移到世界级确定性 ID。 |
+| 模块化模拟管线 | 96% | 已新增 knowledge.info_flow 系统，可通过 runtime helper 接入 deterministic kernel。 |
 | 系统 Contract 校验 | 84% | social.organizations 继续保持 Contract 兼容，并覆盖组织过程联动路径。 |
 | 源码确定性纯度审计 | 60% | 已新增核心目录 baseline 文件、相对路径 baseline 比对和 CI 回归测试。 |
 | 状态哈希与差异定位 | 82% | 一致性层可在重放前后修复结构性坏状态，减少无意义漂移。 |
-| 重放与确定性验证 | 84% -> 86% | 信息流网络已可通过 deterministic runtime helper 进入 schedule order，并输出 report.infoFlow。 |
+| 重放与确定性验证 | 86% | 信息流网络已可通过 deterministic runtime helper 进入 schedule order，并输出 report.infoFlow。 |
 | 人口、家庭、遗产 | 68% | 人口生命周期已读取天气、灾害、资源、疾病、承载力和栖息地压力。 |
 | 组织、契约、城市 | 78% | 组织系统已读取活跃治理过程，根据过程类型吸纳成员并更新组织能力。 |
 | 城市环境压力层 | 100% | 已完成压力计算、稳定度、风险、迁徙吸引力、维护缺口、状态变更、记忆和测试。 |
@@ -29,7 +29,7 @@
 | 冲突治理过程联动层 | 100% | 已完成治理过程对叛乱和组织冲突强度的联动、冲突记忆和统计接入。 |
 | 机会治理联动层 | 100% | 已完成治理环境、治理过程和冲突状态到公共机会的映射、去重和统计。 |
 | 组织过程联动层 | 100% | 已完成组织读取 governance_response 过程、按角色吸纳成员、组织状态调整、记忆和统计。 |
-| 信息、记忆、文化、宗教 | 72% -> 78% | 信息流网络已进入 deterministic runtime helper，覆盖 schedule order、report.infoFlow 和 counters。 |
+| 信息、记忆、文化、宗教 | 78% -> 84% | 已新增文化与信仰扩散网络，覆盖城市组织文化互相影响、信仰影响城市文化、组织接入信仰网络。 |
 | 文明、科技、基础设施 | 50% | 已接入管线；仍需时代、扩散和依赖网络。 |
 | 自然、气候、生态 | 55% | 自然世界和生态主模块已完成基础版，并能向人口、城市、经济、AI 目标、治理、冲突、机会和组织系统提供压力数据。 |
 | 世界一致性检查与自动修复 | 100% | 已完成审计、修复计划、自动修复、报告记录、默认管线接入、Contract 和回归测试。 |
@@ -38,21 +38,21 @@
 ## 本批次新增
 
 ```text
-Info flow runtime integration
-info-flow-system-engine.js
-info-flow-runtime-engine.js
-info-flow-runtime-test.js
-knowledge.info_flow
-createInfoFlowDeterministicKernel
-runDeterministicSimulationTickWithInfoFlow
-report.infoFlow
-simulation counters: infoFlowLinks / Shared / Memories / Culture / Religion
-package.json 追加 info-flow runtime 回归测试
+Culture belief flow
+culture-belief-flow-engine.js
+culture-belief-flow-test.js
+CULTURE_BELIEF_FLOW.md
+world.cultureBeliefFlow
+buildCultureBeliefLinks
+applyCultureTraitTransfers
+applyBeliefCultureInfluence
+linkBeliefOrganizations
+package.json 追加 culture-belief-flow 回归测试
 ```
 
 ## 下一批建议
 
 ```text
-1. 如果平台允许，再把 info-flow 注册逻辑内联进 deterministic kernel 默认创建流程。
-2. 继续细化文化扩散和信仰组织网络。
+1. 将 culture-belief-flow 接入 info-flow runtime helper 或独立 runtime helper。
+2. 继续细化文明和科技扩散依赖网络。
 ```
