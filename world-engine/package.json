@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "test": "node tests/run-all.js && node tests/extra-engine-tests.js && node tests/performance-report-test.js && node tests/performance-report-cli-test.js && node tests/info-flow-test.js && node tests/info-flow-runtime-test.js && node tests/culture-belief-flow-test.js && node tests/culture-belief-flow-runtime-test.js && node tests/database-config-test.js && node tests/api-database-persistence-test.js && node tests/api-database-routes-test.js",
+    "test": "node tests/run-all.js && node tests/extra-engine-tests.js && node tests/performance-report-test.js && node tests/performance-report-cli-test.js && node tests/info-flow-test.js && node tests/info-flow-runtime-test.js && node tests/culture-belief-flow-test.js && node tests/culture-belief-flow-runtime-test.js && node tests/database-config-test.js && node tests/api-database-persistence-test.js && node tests/api-database-routes-test.js && node tests/runtime-database-autosave-test.js",
     "stress": "node tests/stability-1000-test.js",
     "demo": "node demo/run-demo.js",
     "templates": "node demo/template-demo.js",
