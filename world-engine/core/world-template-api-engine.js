@@ -19,6 +19,7 @@ const {
   loadWorldForApi,
   listWorldSavesForApi,
 } = require('./api-database-persistence-engine');
+const { getDatabaseStatus } = require('./database-engine');
 const {
   validateSession,
 } = require('./account-session-engine');
@@ -45,6 +46,10 @@ const PERSISTENCE_API_PATHS = new Set([
   '/load',
 ]);
 
+const DATABASE_ADMIN_API_PATHS = new Set([
+  '/admin/database',
+]);
+
 function createWorldTemplateApiServer(worldInput = null, options = {}) {
   const result = createBaseWorldApiServer(worldInput, options);
   const registry = options.templateRegistry || createWorldTemplateRegistry({
@@ -62,7 +67,7 @@ function createWorldTemplateApiServer(worldInput = null, options = {}) {
   result.server.on('request', (req, res) => {
     const parsed = new URL(req.url || '/', 'http://localhost');
     const pathname = normalizePath(parsed.pathname);
-    if (!TEMPLATE_API_PATHS.has(pathname) && !PERSISTENCE_API_PATHS.has(pathname)) {
+    if (!TEMPLATE_API_PATHS.has(pathname) && !PERSISTENCE_API_PATHS.has(pathname) && !DATABASE_ADMIN_API_PATHS.has(pathname)) {
       return baseRequestListener.call(result.server, req, res);
     }
     return handleTemplateApiRequest(req, res, parsed, pathname, result.api, result.options, registry);
@@ -87,6 +92,14 @@ async function handleTemplateApiRequest(req, res, parsed, pathname, api, options
     auth = getRequestAuth(api.getWorld(), req, parsed);
     req.apiAccountId = auth?.account?.id || null;
     requireWorldControlIfNeeded(options, auth);
+
+    if (method === 'GET' && pathname === '/admin/database') {
+      const request = persistenceRequestFromSearch(parsed);
+      return writeJson(res, 200, ok({
+        database: getDatabaseStatus(request.database),
+        loop: getRuntimeLoopSummary(api.runtimeLoop),
+      }));
+    }
 
     if (method === 'GET' && pathname === '/saves') {
       const result = listWorldSavesForApi(persistenceRequestFromSearch(parsed), options);
@@ -406,6 +419,7 @@ function sanitizeFilePart(value) {
 module.exports = {
   TEMPLATE_API_PATHS,
   PERSISTENCE_API_PATHS,
+  DATABASE_ADMIN_API_PATHS,
   createWorldTemplateApiServer,
   createWorldApiServer: createWorldTemplateApiServer,
   persistenceRequestFromSearch,
