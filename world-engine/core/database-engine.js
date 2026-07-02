@@ -21,6 +21,8 @@ function createDatabaseStore(options = {}) {
     loadWorld: (worldId = null, loadOptions = {}) => loadWorldFromDatabase(worldId, { ...loadOptions, database: config }),
     listWorlds: listOptions => listDatabaseWorlds({ ...(listOptions || {}), database: config }),
     appendEvent: event => appendDatabaseEvent(event, { database: config }),
+    listEvents: eventOptions => listDatabaseEvents({ ...(eventOptions || {}), database: config }),
+    clearEvents: eventOptions => clearDatabaseEvents({ ...(eventOptions || {}), database: config }),
   };
 }
 
@@ -110,6 +112,75 @@ function appendDatabaseEvent(input = {}, options = {}) {
   return event;
 }
 
+function listDatabaseEvents(options = {}) {
+  const config = loadDatabaseConfig(options.database || options);
+  if (config.provider === DATABASE_PROVIDERS.DISABLED) return [];
+  assertJsonlProvider(config);
+  const limit = Math.max(1, Number(options.limit || 100));
+  return filterDatabaseEvents(readJsonLines(config.eventsFile), options)
+    .sort(compareEventsDesc)
+    .slice(0, limit)
+    .map(summarizeDatabaseEvent);
+}
+
+function clearDatabaseEvents(options = {}) {
+  const config = loadDatabaseConfig(options.database || options);
+  if (config.provider === DATABASE_PROVIDERS.DISABLED) return disabledResult('clearEvents');
+  assertJsonlProvider(config);
+  ensureDatabaseFiles(config);
+  const events = readJsonLines(config.eventsFile);
+  const kept = [];
+  const removed = [];
+  for (const event of events) {
+    if (eventMatchesFilters(event, options)) removed.push(event);
+    else kept.push(event);
+  }
+  fs.writeFileSync(config.eventsFile, kept.map(item => JSON.stringify(item)).join('\n') + (kept.length ? '\n' : ''), 'utf8');
+  writeSchemaFile(config);
+  return {
+    file: config.eventsFile,
+    provider: config.provider,
+    removed: removed.length,
+    remaining: kept.length,
+    filters: eventFilterSummary(options),
+  };
+}
+
+function filterDatabaseEvents(events, options = {}) {
+  return (events || [])
+    .filter(event => event.recordType === 'world_event')
+    .filter(event => eventMatchesFilters(event, options));
+}
+
+function eventMatchesFilters(event, options = {}) {
+  if (!event || event.recordType !== 'world_event') return false;
+  if (options.worldId && event.worldId !== options.worldId) return false;
+  if (options.type && event.type !== options.type) return false;
+  if (options.tickFrom !== undefined && Number(event.tick || 0) < Number(options.tickFrom)) return false;
+  if (options.tickTo !== undefined && Number(event.tick || 0) > Number(options.tickTo)) return false;
+  return true;
+}
+
+function summarizeDatabaseEvent(event) {
+  return {
+    id: event.id,
+    sequence: event.sequence,
+    worldId: event.worldId || null,
+    tick: Number(event.tick || 0),
+    type: event.type || 'event',
+    payload: { ...(event.payload || {}) },
+  };
+}
+
+function eventFilterSummary(options = {}) {
+  return {
+    worldId: options.worldId || null,
+    type: options.type || null,
+    tickFrom: options.tickFrom ?? null,
+    tickTo: options.tickTo ?? null,
+  };
+}
+
 function ensureDatabaseFiles(config) {
   if (!config.autoCreate) return;
   fs.mkdirSync(path.dirname(config.worldsFile), { recursive: true });
@@ -156,6 +227,12 @@ function compareWorldRecordsDesc(left, right) {
   return Number(right.sequence || 0) - Number(left.sequence || 0);
 }
 
+function compareEventsDesc(left, right) {
+  const tick = Number(right.tick || 0) - Number(left.tick || 0);
+  if (tick) return tick;
+  return Number(right.sequence || 0) - Number(left.sequence || 0);
+}
+
 function summarizeWorldRecord(record, config) {
   return {
     file: config.worldsFile,
@@ -192,6 +269,8 @@ module.exports = {
   loadWorldFromDatabase,
   listDatabaseWorlds,
   appendDatabaseEvent,
+  listDatabaseEvents,
+  clearDatabaseEvents,
   ensureDatabaseFiles,
   readJsonLines,
 };
