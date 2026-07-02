@@ -71,6 +71,7 @@ function endpoints() {
     'POST /admin/loop/stop',
     'POST /admin/loop/config',
     'POST /admin/loop/step',
+    'GET /admin/database',
     'GET /admin/templates',
     'POST /admin/templates/reset',
     'POST /save',
