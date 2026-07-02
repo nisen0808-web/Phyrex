@@ -2,7 +2,7 @@
 
 本文件记录当前引擎优先阶段的完成度。浏览器客户端、账号和部署相关能力只作为参考客户端与运维外壳，不作为本阶段主线。
 
-## 当前阶段：API 数据库持久化适配
+## 当前阶段：API 数据库路由接入
 
 | 引擎层 | 状态 | 说明 |
 |---|---:|---|
@@ -30,7 +30,7 @@
 | 机会治理联动层 | 100% | 已完成治理环境、治理过程和冲突状态到公共机会的映射、去重和统计。 |
 | 组织过程联动层 | 100% | 已完成组织读取 governance_response 过程、按角色吸纳成员、组织状态调整、记忆和统计。 |
 | 信息、记忆、文化、宗教 | 88% | 文化与信仰扩散网络已进入 runtime helper，覆盖 schedule order、report.cultureBeliefFlow 和 counters。 |
-| 数据库配置与持久化 | 35% -> 50% | 已新增 API 持久化适配层，save/load/list 可在 file 和 database 模式之间切换。 |
+| 数据库配置与持久化 | 50% -> 65% | template API wrapper 已接入 /save、/load、/saves 的 file/database 双模式路由。 |
 | 文明、科技、基础设施 | 50% | 已接入管线；仍需时代、扩散和依赖网络。 |
 | 自然、气候、生态 | 55% | 自然世界和生态主模块已完成基础版，并能向人口、城市、经济、AI 目标、治理、冲突、机会和组织系统提供压力数据。 |
 | 世界一致性检查与自动修复 | 100% | 已完成审计、修复计划、自动修复、报告记录、默认管线接入、Contract 和回归测试。 |
@@ -39,22 +39,21 @@
 ## 本批次新增
 
 ```text
-API database persistence adapter
-api-database-persistence-engine.js
-api-database-persistence-test.js
-API_DATABASE_PERSISTENCE.md
-saveWorldForApi
-loadWorldForApi
-listWorldSavesForApi
-getApiPersistenceStatus
-file / database mode switch
-package.json 追加 api-database-persistence 回归测试
+API database route integration
+world-template-api-engine.js intercepts /save /load /saves
+api-database-routes-test.js
+API_DATABASE_ROUTES.md
+/save database mode
+/load database mode
+/saves database mode
+/save and /saves default file mode preserved
+package.json 追加 api-database-routes 回归测试
 ```
 
 ## 下一批建议
 
 ```text
-1. 将 api-server-engine.js 的 /save、/load、/saves 调用点替换成 API persistence adapter。
-2. 将 runtime loop autosave 接入 database store。
+1. 将 runtime loop autosave 接入 database store。
+2. 增加 database status/admin endpoint。
 3. 后续再增加 SQLite 或 Postgres 适配器。
 ```
