@@ -1,7 +1,10 @@
 'use strict';
 
 const { advanceWorldWithOfflineCommands } = require('./offline-command-engine');
-const { saveWorld } = require('./persistence-engine');
+const {
+  runRuntimeAutosave,
+  summarizeRuntimeAutosave,
+} = require('./runtime-autosave-engine');
 
 const RUNTIME_LOOP_STATUS = {
   STOPPED: 'stopped',
@@ -14,6 +17,8 @@ const DEFAULT_RUNTIME_LOOP_OPTIONS = {
   ticksPerCycle: 1,
   autosaveEveryTicks: 0,
   autosavePath: null,
+  autosaveMode: 'file',
+  autosaveDatabase: null,
   stopOnError: false,
   maxErrors: 50,
   immediate: false,
@@ -184,6 +189,8 @@ function getRuntimeLoopSummary(loop) {
     ticksPerCycle: Number(loop.options.ticksPerCycle || 1),
     autosaveEveryTicks: Number(loop.options.autosaveEveryTicks || 0),
     autosavePath: loop.options.autosavePath || null,
+    autosaveMode: loop.options.autosaveMode || 'file',
+    autosaveDatabase: summarizeAutosaveDatabase(loop.options.autosaveDatabase),
     cycles: loop.cycles,
     ticksRun: loop.ticksRun,
     busy: loop.busy,
@@ -224,10 +231,15 @@ function clearLoopTimer(loop) {
 
 function maybeAutosave(loop, world) {
   const every = Number(loop.options.autosaveEveryTicks || 0);
-  const file = loop.options.autosavePath;
-  if (!every || !file) return null;
+  if (!every) return null;
   if (Number(world.tick || 0) - Number(loop.lastAutosaveTick || 0) < every) return null;
-  const save = saveWorld(world, file, { reason: 'runtime_loop_autosave' });
+  const save = runRuntimeAutosave(world, {
+    mode: loop.options.autosaveMode || 'file',
+    path: loop.options.autosavePath,
+    database: loop.options.autosaveDatabase || {},
+    metadata: { loopCycle: loop.cycles },
+  });
+  if (!save) return null;
   loop.lastAutosaveTick = world.tick;
   loop.lastAutosave = save;
   return save;
@@ -254,6 +266,16 @@ function rememberCallbackError(loop, error) {
   while (loop.errors.length > Number(loop.options.maxErrors || 50)) loop.errors.shift();
 }
 
+function summarizeAutosaveDatabase(database = null) {
+  if (!database || typeof database !== 'object') return null;
+  return {
+    provider: database.provider || null,
+    directory: database.directory || null,
+    name: database.name || null,
+    enabled: Boolean(database.enabled),
+  };
+}
+
 function mergeOptions(base, patch) {
   const out = { ...(base || {}) };
   for (const [key, value] of Object.entries(patch || {})) {
@@ -276,4 +298,5 @@ module.exports = {
   configureRuntimeLoop,
   stepRuntimeLoop,
   getRuntimeLoopSummary,
+  maybeAutosave,
 };
