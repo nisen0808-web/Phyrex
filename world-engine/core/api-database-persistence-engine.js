@@ -73,12 +73,17 @@ function getApiPersistenceStatus(request = {}, options = {}) {
 function resolvePersistenceMode(request = {}, options = {}) {
   const requested = request.persistence || request.mode || request.storage || options.persistence || options.persistenceMode;
   if (requested) return normalizePersistenceMode(requested);
-  if (request.database || request.useDatabase || options.database?.enabled || options.useDatabase) return API_PERSISTENCE_MODE.DATABASE;
+  if (hasDatabaseOptions(request.database) || request.useDatabase || options.database?.enabled || options.useDatabase) return API_PERSISTENCE_MODE.DATABASE;
   return API_PERSISTENCE_MODE.FILE;
 }
 
 function resolveDatabaseOptions(request = {}, options = {}) {
-  return request.database || options.database || {};
+  return hasDatabaseOptions(request.database) ? request.database : options.database || {};
+}
+
+function hasDatabaseOptions(value) {
+  if (!value || typeof value !== 'object') return false;
+  return Object.values(value).some(item => item !== undefined && item !== null && item !== '');
 }
 
 function normalizePersistenceMode(value) {
@@ -96,5 +101,6 @@ module.exports = {
   getApiPersistenceStatus,
   resolvePersistenceMode,
   resolveDatabaseOptions,
+  hasDatabaseOptions,
   normalizePersistenceMode,
 };

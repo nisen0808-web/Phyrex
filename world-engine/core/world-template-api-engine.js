@@ -15,6 +15,11 @@ const {
 } = require('./world-template-engine');
 const { saveWorld } = require('./persistence-engine');
 const {
+  saveWorldForApi,
+  loadWorldForApi,
+  listWorldSavesForApi,
+} = require('./api-database-persistence-engine');
+const {
   validateSession,
 } = require('./account-session-engine');
 const {
@@ -34,6 +39,12 @@ const TEMPLATE_API_PATHS = new Set([
   '/admin/templates/reset',
 ]);
 
+const PERSISTENCE_API_PATHS = new Set([
+  '/saves',
+  '/save',
+  '/load',
+]);
+
 function createWorldTemplateApiServer(worldInput = null, options = {}) {
   const result = createBaseWorldApiServer(worldInput, options);
   const registry = options.templateRegistry || createWorldTemplateRegistry({
@@ -51,7 +62,7 @@ function createWorldTemplateApiServer(worldInput = null, options = {}) {
   result.server.on('request', (req, res) => {
     const parsed = new URL(req.url || '/', 'http://localhost');
     const pathname = normalizePath(parsed.pathname);
-    if (!TEMPLATE_API_PATHS.has(pathname)) {
+    if (!TEMPLATE_API_PATHS.has(pathname) && !PERSISTENCE_API_PATHS.has(pathname)) {
       return baseRequestListener.call(result.server, req, res);
     }
     return handleTemplateApiRequest(req, res, parsed, pathname, result.api, result.options, registry);
@@ -76,6 +87,49 @@ async function handleTemplateApiRequest(req, res, parsed, pathname, api, options
     auth = getRequestAuth(api.getWorld(), req, parsed);
     req.apiAccountId = auth?.account?.id || null;
     requireWorldControlIfNeeded(options, auth);
+
+    if (method === 'GET' && pathname === '/saves') {
+      const result = listWorldSavesForApi(persistenceRequestFromSearch(parsed), options);
+      return writeJson(res, 200, ok(result));
+    }
+
+    if (method === 'POST' && pathname === '/save') {
+      const body = await readJsonBody(req, options);
+      const result = saveWorldForApi(api.getWorld(), body || {}, options);
+      const save = result.save || {};
+      api.broadcast({
+        type: 'save',
+        worldId: api.getWorld().id,
+        tick: api.getWorld().tick,
+        mode: result.mode,
+        file: save.file || null,
+        provider: save.provider || null,
+      });
+      return writeJson(res, 200, ok({ mode: result.mode, ...save }));
+    }
+
+    if (method === 'POST' && pathname === '/load') {
+      const body = await readJsonBody(req, options);
+      const result = loadWorldForApi(body || {}, options);
+      if (!result.loaded) throw httpError(404, 'missing_save');
+      const loaded = result.loaded;
+      api.setWorld(loaded.world);
+      synchronizeLoopAfterWorldReset(api.runtimeLoop, loaded.world);
+      api.broadcast({
+        type: 'load',
+        worldId: loaded.worldId,
+        tick: loaded.tick,
+        mode: result.mode,
+      });
+      return writeJson(res, 200, ok({
+        mode: result.mode,
+        file: loaded.file || null,
+        provider: loaded.provider || null,
+        worldId: loaded.worldId,
+        tick: loaded.tick,
+        savedAt: loaded.savedAt,
+      }));
+    }
 
     if (method === 'GET' && pathname === '/admin/templates') {
       return writeJson(res, 200, ok({
@@ -174,6 +228,23 @@ async function handleTemplateApiRequest(req, res, parsed, pathname, api, options
       userAgent: req.headers['user-agent'] || null,
     });
   }
+}
+
+function persistenceRequestFromSearch(parsed) {
+  const params = parsed.searchParams;
+  const database = {
+    provider: params.get('dbProvider') || params.get('provider') || undefined,
+    directory: params.get('dbDir') || params.get('databaseDir') || undefined,
+    name: params.get('dbName') || params.get('databaseName') || undefined,
+    autoCreate: params.get('dbAutoCreate') || params.get('autoCreate') || undefined,
+  };
+  return {
+    persistence: params.get('persistence') || params.get('mode') || params.get('storage') || undefined,
+    useDatabase: params.get('useDatabase') || undefined,
+    dir: params.get('dir') || undefined,
+    worldId: params.get('worldId') || undefined,
+    database,
+  };
 }
 
 function listTemplateViews(registry) {
@@ -334,8 +405,10 @@ function sanitizeFilePart(value) {
 
 module.exports = {
   TEMPLATE_API_PATHS,
+  PERSISTENCE_API_PATHS,
   createWorldTemplateApiServer,
   createWorldApiServer: createWorldTemplateApiServer,
+  persistenceRequestFromSearch,
   listTemplateViews,
   templateView,
   summarizeCurrentWorld,
