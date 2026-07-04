@@ -7,6 +7,10 @@ const {
   buildRuntimeLoopOptions,
   buildDatabaseOptions,
 } = require('../demo/api-server');
+const {
+  parseArgs: parseSummaryArgs,
+  buildDatabaseOptions: buildSummaryDatabaseOptions,
+} = require('../demo/database-summary-cli');
 
 function main() {
   const args = parseArgs([
@@ -41,6 +45,23 @@ function main() {
 
   const fileLoop = buildRuntimeLoopOptions({ autosaveEvery: '10', autosaveMode: 'file' }, { savePath: 'fallback.json' });
   assert.strictEqual(fileLoop.autosavePath, 'fallback.json');
+
+  const summaryArgs = parseSummaryArgs([
+    '--db-provider', 'jsonl',
+    '--db-dir', 'world-engine/data/db',
+    '--db-name', 'world-engine',
+    '--output', 'world-engine/output/database-summary.json',
+    '--world-limit', '5',
+    '--event-limit', '10',
+    '--quiet',
+  ]);
+  assert.strictEqual(summaryArgs.dbProvider, 'jsonl');
+  assert.strictEqual(summaryArgs.output, 'world-engine/output/database-summary.json');
+  assert.strictEqual(summaryArgs.quiet, true);
+  const summaryDatabase = buildSummaryDatabaseOptions(summaryArgs);
+  assert.strictEqual(summaryDatabase.provider, 'jsonl');
+  assert.strictEqual(summaryDatabase.directory, 'world-engine/data/db');
+  assert.strictEqual(summaryDatabase.name, 'world-engine');
 
   assert.ok(endpoints().includes('GET /admin/database'));
   console.log('database cli autosave test passed');
