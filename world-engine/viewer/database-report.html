@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>World Engine Database Report</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>World Engine Database Report</h1>
+      <p>Viewer for database report output.</p>
+    </div>
+    <div class="toolbar">
+      <input id="database-report-url" type="text" value="/admin/database/check?dbProvider=jsonl&dbDir=world-engine/data/db&dbName=world-engine" aria-label="Database report URL">
+      <button id="load-database-report-button">Load Report</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="database-report-status" class="status">Loading database report...</section>
+    <section class="grid two-col">
+      <article class="card"><h2>Report Summary</h2><div id="databaseReport"></div></article>
+      <article class="card"><h2>Files</h2><div id="databaseReportFiles"></div></article>
+    </section>
+    <section class="grid two-col">
+      <article class="card"><h2>Warnings</h2><div id="databaseReportWarnings"></div></article>
+      <article class="card"><h2>Errors</h2><div id="databaseReportErrors"></div></article>
+    </section>
+    <section class="card"><h2>Raw Report</h2><pre id="databaseReportRaw"></pre></section>
+  </main>
+
+  <script src="./database-report.js"></script>
+</body>
+</html>

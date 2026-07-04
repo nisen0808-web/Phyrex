@@ -10,15 +10,19 @@ function main() {
   const indexPath = path.join(root, 'viewer', 'index.html');
   const appPath = path.join(root, 'viewer', 'app.js');
   const databaseAppPath = path.join(root, 'viewer', 'database-summary.js');
+  const databaseReportPath = path.join(root, 'viewer', 'database-report.html');
+  const databaseReportAppPath = path.join(root, 'viewer', 'database-report.js');
   const stylePath = path.join(root, 'viewer', 'styles.css');
   const serverPath = path.join(root, 'viewer', 'serve-viewer.js');
   const databaseSummaryPath = path.join(root, 'core', 'database-viewer-summary-engine.js');
 
-  for (const file of [indexPath, appPath, databaseAppPath, stylePath, serverPath, databaseSummaryPath]) assert.ok(fs.existsSync(file), `${file} should exist`);
+  for (const file of [indexPath, appPath, databaseAppPath, databaseReportPath, databaseReportAppPath, stylePath, serverPath, databaseSummaryPath]) assert.ok(fs.existsSync(file), `${file} should exist`);
 
   const html = fs.readFileSync(indexPath, 'utf8');
   const app = fs.readFileSync(appPath, 'utf8');
   const databaseApp = fs.readFileSync(databaseAppPath, 'utf8');
+  const databaseReport = fs.readFileSync(databaseReportPath, 'utf8');
+  const databaseReportApp = fs.readFileSync(databaseReportAppPath, 'utf8');
   const css = fs.readFileSync(stylePath, 'utf8');
   const server = fs.readFileSync(serverPath, 'utf8');
   const databaseSummary = fs.readFileSync(databaseSummaryPath, 'utf8');
@@ -54,9 +58,15 @@ function main() {
   assert.ok(databaseApp.includes('loadDatabaseSummary'), 'database viewer app should load summary');
   assert.ok(databaseApp.includes('renderDatabaseSummary'), 'database viewer app should render summary');
   assert.ok(databaseApp.includes('renderDatabaseHealth'), 'database viewer app should render health');
+  assert.ok(databaseReport.includes('database-report-url'), 'database report page should include report url input');
+  assert.ok(databaseReport.includes('databaseReportRaw'), 'database report page should include raw report mount');
+  assert.ok(databaseReportApp.includes('loadDatabaseReport'), 'database report app should load report');
+  assert.ok(databaseReportApp.includes('renderDatabaseReport'), 'database report app should render report');
+  assert.ok(databaseReportApp.includes('renderReportFiles'), 'database report app should render files');
   assert.ok(css.includes('.card'), 'viewer css should style cards');
   assert.ok(server.includes('http.createServer'), 'viewer server should create HTTP server');
   assert.ok(server.includes('output/demo-snapshot.json'), 'viewer server should mention default snapshot');
+  assert.ok(server.includes('viewer/database-report.html'), 'viewer server should mention database report page');
   assert.ok(databaseSummary.includes('buildDatabaseViewerSummary'), 'database viewer summary should expose builder');
   assert.ok(databaseSummary.includes('summarizeDatabaseHealth'), 'database viewer summary should expose health summary');
   assert.deepStrictEqual(summarizeRecentEventTypes([{ type: 'b' }, { type: 'a' }, { type: 'b' }]), [
