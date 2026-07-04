@@ -92,6 +92,7 @@ function endpoints() {
     'POST /admin/loop/step',
     'GET /admin/database',
     'GET /admin/database/events',
+    'GET /admin/database/summary',
     'GET /admin/templates',
     'POST /admin/templates/reset',
     'POST /save',
