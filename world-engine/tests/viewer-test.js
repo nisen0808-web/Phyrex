@@ -9,14 +9,16 @@ function main() {
   const root = path.join(__dirname, '..');
   const indexPath = path.join(root, 'viewer', 'index.html');
   const appPath = path.join(root, 'viewer', 'app.js');
+  const databaseAppPath = path.join(root, 'viewer', 'database-summary.js');
   const stylePath = path.join(root, 'viewer', 'styles.css');
   const serverPath = path.join(root, 'viewer', 'serve-viewer.js');
   const databaseSummaryPath = path.join(root, 'core', 'database-viewer-summary-engine.js');
 
-  for (const file of [indexPath, appPath, stylePath, serverPath, databaseSummaryPath]) assert.ok(fs.existsSync(file), `${file} should exist`);
+  for (const file of [indexPath, appPath, databaseAppPath, stylePath, serverPath, databaseSummaryPath]) assert.ok(fs.existsSync(file), `${file} should exist`);
 
   const html = fs.readFileSync(indexPath, 'utf8');
   const app = fs.readFileSync(appPath, 'utf8');
+  const databaseApp = fs.readFileSync(databaseAppPath, 'utf8');
   const css = fs.readFileSync(stylePath, 'utf8');
   const server = fs.readFileSync(serverPath, 'utf8');
   const databaseSummary = fs.readFileSync(databaseSummaryPath, 'utf8');
@@ -32,6 +34,10 @@ function main() {
   assert.ok(html.includes('questBoards'), 'viewer html should include quest board mount');
   assert.ok(html.includes('items'), 'viewer html should include items mount');
   assert.ok(html.includes('shops'), 'viewer html should include shops mount');
+  assert.ok(html.includes('database-url'), 'viewer html should include database summary url input');
+  assert.ok(html.includes('databaseSummary'), 'viewer html should include database summary mount');
+  assert.ok(html.includes('databaseHealth'), 'viewer html should include database health mount');
+  assert.ok(html.includes('database-summary.js'), 'viewer html should load database summary script');
   assert.ok(html.includes('raw'), 'viewer html should include raw snapshot mount');
   assert.ok(app.includes('loadSnapshot'), 'viewer app should load snapshots');
   assert.ok(app.includes('renderMetrics'), 'viewer app should render metrics');
@@ -45,6 +51,9 @@ function main() {
   assert.ok(app.includes('renderItems'), 'viewer app should render items');
   assert.ok(app.includes('renderShops'), 'viewer app should render shops');
   assert.ok(app.includes('escapeHtml'), 'viewer app should escape HTML');
+  assert.ok(databaseApp.includes('loadDatabaseSummary'), 'database viewer app should load summary');
+  assert.ok(databaseApp.includes('renderDatabaseSummary'), 'database viewer app should render summary');
+  assert.ok(databaseApp.includes('renderDatabaseHealth'), 'database viewer app should render health');
   assert.ok(css.includes('.card'), 'viewer css should style cards');
   assert.ok(server.includes('http.createServer'), 'viewer server should create HTTP server');
   assert.ok(server.includes('output/demo-snapshot.json'), 'viewer server should mention default snapshot');
