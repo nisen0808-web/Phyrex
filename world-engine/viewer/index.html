@@ -35,6 +35,18 @@
     </section>
 
     <section class="grid two-col">
+      <article class="card">
+        <h2>Database Summary</h2>
+        <div class="inline-toolbar">
+          <input id="database-url" type="text" value="/admin/database/summary?dbProvider=jsonl&dbDir=world-engine/data/db&dbName=world-engine" aria-label="Database summary URL">
+          <button id="load-database-button">Load Database</button>
+        </div>
+        <div id="databaseSummary"></div>
+      </article>
+      <article class="card"><h2>Database Health</h2><div id="databaseHealth"></div></article>
+    </section>
+
+    <section class="grid two-col">
       <article class="card"><h2>Players</h2><div id="players"></div></article>
       <article class="card"><h2>Recent Commands</h2><div id="commands"></div></article>
     </section>
