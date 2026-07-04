@@ -93,6 +93,7 @@ function endpoints() {
     'GET /admin/database',
     'GET /admin/database/events',
     'GET /admin/database/summary',
+    'GET /admin/database/check',
     'GET /admin/templates',
     'POST /admin/templates/reset',
     'POST /save',
