@@ -3,6 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { summarizeRecentEventTypes } = require('../core/database-viewer-summary-engine');
 
 function main() {
   const root = path.join(__dirname, '..');
@@ -49,6 +50,10 @@ function main() {
   assert.ok(server.includes('output/demo-snapshot.json'), 'viewer server should mention default snapshot');
   assert.ok(databaseSummary.includes('buildDatabaseViewerSummary'), 'database viewer summary should expose builder');
   assert.ok(databaseSummary.includes('summarizeDatabaseHealth'), 'database viewer summary should expose health summary');
+  assert.deepStrictEqual(summarizeRecentEventTypes([{ type: 'b' }, { type: 'a' }, { type: 'b' }]), [
+    { type: 'b', count: 2 },
+    { type: 'a', count: 1 },
+  ]);
 
   console.log('viewer smoke test passed');
 }
