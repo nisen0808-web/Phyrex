@@ -35,6 +35,14 @@ async function testDatabaseAdminStatusRoute() {
     assert.strictEqual(status.data.database.events, 0);
     assert.strictEqual(status.data.database.name, 'admin-status');
     assert.strictEqual(status.data.loop.worldId, 'db_admin_world');
+
+    const summaryRoute = `/admin/database/summary?dbProvider=jsonl&dbDir=${encodeURIComponent(dir)}&dbName=admin-status`;
+    const summary = await requestJson(port, 'GET', summaryRoute);
+    assert.strictEqual(summary.ok, true);
+    assert.strictEqual(summary.data.status.provider, 'jsonl');
+    assert.strictEqual(summary.data.totals.records, 1);
+    assert.strictEqual(summary.data.latestWorld.worldId, 'db_admin_world');
+    assert.strictEqual(summary.data.health.latestWorldId, 'db_admin_world');
   } finally {
     await close(server);
     fs.rmSync(dir, { recursive: true, force: true });
@@ -43,6 +51,7 @@ async function testDatabaseAdminStatusRoute() {
 
 function testEndpointList() {
   assert.ok(endpoints().includes('GET /admin/database'));
+  assert.ok(endpoints().includes('GET /admin/database/summary'));
 }
 
 function requestJson(port, method, route, body = null) {
