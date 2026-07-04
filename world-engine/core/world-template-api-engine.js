@@ -19,7 +19,7 @@ const {
   loadWorldForApi,
   listWorldSavesForApi,
 } = require('./api-database-persistence-engine');
-const { getDatabaseStatus } = require('./database-engine');
+const { getDatabaseStatus, listDatabaseEvents } = require('./database-engine');
 const {
   validateSession,
 } = require('./account-session-engine');
@@ -48,6 +48,7 @@ const PERSISTENCE_API_PATHS = new Set([
 
 const DATABASE_ADMIN_API_PATHS = new Set([
   '/admin/database',
+  '/admin/database/events',
 ]);
 
 function createWorldTemplateApiServer(worldInput = null, options = {}) {
@@ -98,6 +99,20 @@ async function handleTemplateApiRequest(req, res, parsed, pathname, api, options
       return writeJson(res, 200, ok({
         database: getDatabaseStatus(request.database),
         loop: getRuntimeLoopSummary(api.runtimeLoop),
+      }));
+    }
+
+    if (method === 'GET' && pathname === '/admin/database/events') {
+      const request = persistenceRequestFromSearch(parsed);
+      return writeJson(res, 200, ok({
+        database: getDatabaseStatus(request.database),
+        events: listDatabaseEvents({
+          database: request.database,
+          worldId: request.worldId,
+          type: parsed.searchParams.get('type') || undefined,
+          limit: Number(parsed.searchParams.get('limit') || 100),
+          order: parsed.searchParams.get('order') || 'desc',
+        }),
       }));
     }
 

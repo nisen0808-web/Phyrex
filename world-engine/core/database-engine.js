@@ -21,6 +21,7 @@ function createDatabaseStore(options = {}) {
     loadWorld: (worldId = null, loadOptions = {}) => loadWorldFromDatabase(worldId, { ...loadOptions, database: config }),
     listWorlds: listOptions => listDatabaseWorlds({ ...(listOptions || {}), database: config }),
     appendEvent: event => appendDatabaseEvent(event, { database: config }),
+    listEvents: listOptions => listDatabaseEvents({ ...(listOptions || {}), database: config }),
   };
 }
 
@@ -104,10 +105,28 @@ function appendDatabaseEvent(input = {}, options = {}) {
     tick: Number(input.tick || 0),
     type: input.type || 'event',
     payload: { ...(input.payload || {}) },
+    createdAt: input.createdAt || new Date().toISOString(),
   };
   appendJsonLine(config.eventsFile, event);
   writeSchemaFile(config);
   return event;
+}
+
+function listDatabaseEvents(options = {}) {
+  const config = loadDatabaseConfig(options.database || options);
+  if (config.provider === DATABASE_PROVIDERS.DISABLED) return [];
+  assertJsonlProvider(config);
+  const limit = Math.max(1, Math.min(1000, Number(options.limit || 100)));
+  const order = String(options.order || 'desc').toLowerCase();
+  const worldId = options.worldId || null;
+  const type = options.type || null;
+  const events = readJsonLines(config.eventsFile)
+    .filter(event => event.recordType === 'world_event')
+    .filter(event => !worldId || event.worldId === worldId)
+    .filter(event => !type || event.type === type)
+    .sort(compareEventRecordsDesc);
+  if (order === 'asc') events.reverse();
+  return events.slice(0, limit).map(summarizeEventRecord);
 }
 
 function ensureDatabaseFiles(config) {
@@ -129,7 +148,7 @@ function writeSchemaFile(config) {
     },
     records: {
       world_save: ['recordType', 'id', 'sequence', 'worldId', 'tick', 'schemaVersion', 'savedAt', 'metadata', 'envelope'],
-      world_event: ['recordType', 'id', 'sequence', 'worldId', 'tick', 'type', 'payload'],
+      world_event: ['recordType', 'id', 'sequence', 'worldId', 'tick', 'type', 'payload', 'createdAt'],
     },
   };
   fs.mkdirSync(path.dirname(config.schemaFile), { recursive: true });
@@ -156,6 +175,12 @@ function compareWorldRecordsDesc(left, right) {
   return Number(right.sequence || 0) - Number(left.sequence || 0);
 }
 
+function compareEventRecordsDesc(left, right) {
+  const sequence = Number(right.sequence || 0) - Number(left.sequence || 0);
+  if (sequence) return sequence;
+  return Number(right.tick || 0) - Number(left.tick || 0);
+}
+
 function summarizeWorldRecord(record, config) {
   return {
     file: config.worldsFile,
@@ -167,6 +192,18 @@ function summarizeWorldRecord(record, config) {
     schemaVersion: record.schemaVersion,
     savedAt: record.savedAt,
     metadata: { ...(record.metadata || {}) },
+  };
+}
+
+function summarizeEventRecord(event) {
+  return {
+    id: event.id,
+    sequence: event.sequence,
+    worldId: event.worldId,
+    tick: event.tick,
+    type: event.type,
+    payload: { ...(event.payload || {}) },
+    createdAt: event.createdAt || null,
   };
 }
 
@@ -192,6 +229,7 @@ module.exports = {
   loadWorldFromDatabase,
   listDatabaseWorlds,
   appendDatabaseEvent,
+  listDatabaseEvents,
   ensureDatabaseFiles,
   readJsonLines,
 };
