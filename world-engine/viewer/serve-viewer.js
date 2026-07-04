@@ -40,8 +40,9 @@ function main() {
 
   server.listen(port, () => {
     console.log(`World Engine Viewer: http://localhost:${port}/viewer/index.html`);
-    console.log(`Snapshot default:     http://localhost:${port}/output/demo-snapshot.json`);
-    console.log(`Performance report:  http://localhost:${port}/output/performance-report.json`);
+    console.log(`Database report:     http://localhost:${port}/viewer/database-report.html`);
+    console.log(`Snapshot default:    http://localhost:${port}/output/demo-snapshot.json`);
+    console.log(`Performance report: http://localhost:${port}/output/performance-report.json`);
     console.log('Generate snapshot first with: npm run snapshot');
     console.log('Generate performance report with: npm run performance:report');
   });
