@@ -66,6 +66,7 @@ function main() {
   assert.ok(css.includes('.card'), 'viewer css should style cards');
   assert.ok(server.includes('http.createServer'), 'viewer server should create HTTP server');
   assert.ok(server.includes('output/demo-snapshot.json'), 'viewer server should mention default snapshot');
+  assert.ok(server.includes('viewer/database-report.html'), 'viewer server should mention database report page');
   assert.ok(databaseSummary.includes('buildDatabaseViewerSummary'), 'database viewer summary should expose builder');
   assert.ok(databaseSummary.includes('summarizeDatabaseHealth'), 'database viewer summary should expose health summary');
   assert.deepStrictEqual(summarizeRecentEventTypes([{ type: 'b' }, { type: 'a' }, { type: 'b' }]), [
