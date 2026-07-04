@@ -11,6 +11,10 @@ const {
   parseArgs: parseSummaryArgs,
   buildDatabaseOptions: buildSummaryDatabaseOptions,
 } = require('../demo/database-summary-cli');
+const {
+  parseArgs: parseCheckArgs,
+  buildDatabaseOptions: buildCheckDatabaseOptions,
+} = require('../demo/database-check-cli');
 
 function main() {
   const args = parseArgs([
@@ -62,6 +66,21 @@ function main() {
   assert.strictEqual(summaryDatabase.provider, 'jsonl');
   assert.strictEqual(summaryDatabase.directory, 'world-engine/data/db');
   assert.strictEqual(summaryDatabase.name, 'world-engine');
+
+  const checkArgs = parseCheckArgs([
+    '--db-provider', 'jsonl',
+    '--db-dir', 'world-engine/data/db',
+    '--db-name', 'world-engine',
+    '--output', 'world-engine/output/database-check.json',
+    '--quiet',
+  ]);
+  assert.strictEqual(checkArgs.dbProvider, 'jsonl');
+  assert.strictEqual(checkArgs.output, 'world-engine/output/database-check.json');
+  assert.strictEqual(checkArgs.quiet, true);
+  const checkDatabase = buildCheckDatabaseOptions(checkArgs);
+  assert.strictEqual(checkDatabase.provider, 'jsonl');
+  assert.strictEqual(checkDatabase.directory, 'world-engine/data/db');
+  assert.strictEqual(checkDatabase.name, 'world-engine');
 
   assert.ok(endpoints().includes('GET /admin/database'));
   console.log('database cli autosave test passed');

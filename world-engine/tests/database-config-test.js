@@ -17,10 +17,16 @@ const {
   appendDatabaseEvent,
   getDatabaseStatus,
 } = require('../core/database-engine');
+const {
+  buildDatabaseCheckReport,
+  inspectJsonLineFile,
+  summarizeDatabaseCheckReport,
+} = require('../core/database-check-report-engine');
 
 function main() {
   testDatabaseConfig();
   testDatabaseStore();
+  testDatabaseCheckReport();
   console.log('database config test passed');
 }
 
@@ -71,6 +77,37 @@ function testDatabaseStore() {
     assert.strictEqual(status.records, 2);
     assert.strictEqual(status.events, 1);
     assert.ok(fs.existsSync(status.schemaFile));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function testDatabaseCheckReport() {
+  const dir = tempDir('phyrex-db-check-');
+  try {
+    const database = { provider: 'jsonl', directory: dir, name: 'check-test' };
+    const world = createWorld({ id: 'check_world', seed: 'check_seed' });
+    world.tick = 3;
+    saveWorldToDatabase(world, { database, reason: 'check_test' });
+    appendDatabaseEvent({ worldId: 'check_world', tick: 3, type: 'check.event', payload: { ok: true } }, { database });
+
+    const report = buildDatabaseCheckReport({ database });
+    assert.strictEqual(report.ok, true);
+    assert.strictEqual(report.counts.worlds, 1);
+    assert.strictEqual(report.counts.events, 1);
+    assert.strictEqual(report.files.worlds.recordTypes.world_save, 1);
+    assert.strictEqual(report.files.events.recordTypes.world_event, 1);
+
+    const summary = summarizeDatabaseCheckReport(report);
+    assert.strictEqual(summary.records, 1);
+    assert.strictEqual(summary.events, 1);
+    assert.strictEqual(summary.errors, 0);
+
+    const badFile = path.join(dir, 'bad.jsonl');
+    fs.writeFileSync(badFile, '{"recordType":"world_save","sequence":1}\nnot-json\n', 'utf8');
+    const bad = inspectJsonLineFile(badFile, { expectedRecordType: 'world_save' });
+    assert.strictEqual(bad.records, 1);
+    assert.strictEqual(bad.parseErrors.length, 1);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
