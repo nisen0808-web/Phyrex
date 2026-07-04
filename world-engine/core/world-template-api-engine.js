@@ -21,6 +21,7 @@ const {
 } = require('./api-database-persistence-engine');
 const { getDatabaseStatus, listDatabaseEvents } = require('./database-engine');
 const { buildDatabaseViewerSummary } = require('./database-viewer-summary-engine');
+const { buildDatabaseCheckReport } = require('./database-check-report-engine');
 const {
   validateSession,
 } = require('./account-session-engine');
@@ -51,6 +52,7 @@ const DATABASE_ADMIN_API_PATHS = new Set([
   '/admin/database',
   '/admin/database/events',
   '/admin/database/summary',
+  '/admin/database/check',
 ]);
 
 function createWorldTemplateApiServer(worldInput = null, options = {}) {
@@ -102,6 +104,11 @@ async function handleTemplateApiRequest(req, res, parsed, pathname, api, options
         database: getDatabaseStatus(request.database),
         loop: getRuntimeLoopSummary(api.runtimeLoop),
       }));
+    }
+
+    if (method === 'GET' && pathname === '/admin/database/check') {
+      const request = persistenceRequestFromSearch(parsed);
+      return writeJson(res, 200, ok(buildDatabaseCheckReport({ database: request.database })));
     }
 
     if (method === 'GET' && pathname === '/admin/database/summary') {
