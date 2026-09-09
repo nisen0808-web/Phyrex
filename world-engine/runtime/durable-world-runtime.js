@@ -107,7 +107,7 @@ async function createDurableWorldRuntime(options = {}) {
   let pending = null, inFlight = null, timer = null, closePromise = null;
   let running = false, closing = false, closed = false, blocked = false;
   let lastError = null, failures = 0, commits = 0, ticksCommitted = 0, commandsApplied = 0, observerErrors = 0;
-  let lastReceipt = null;
+  let prepareAttempts = 0, prepareCanRetry = false, lastReceipt = null;
 
   function summary() {
     return {
@@ -119,7 +119,7 @@ async function createDurableWorldRuntime(options = {}) {
         tickBefore: pending.tickBefore, tickAfter: pending.world.tick, attempts: pending.attempts,
         commands: pending.commandResults.length,
       } : null,
-      commits, ticksCommitted, commandsApplied, failures, observerErrors, lastError,
+      prepareAttempts, commits, ticksCommitted, commandsApplied, failures, observerErrors, lastError,
       lastReceipt: lastReceipt ? { ...lastReceipt } : null, configHash,
       commandProfile: COMMAND_PROFILE, maxCommandsPerBatch: MAX_COMMANDS_PER_BATCH,
     };
@@ -133,6 +133,14 @@ async function createDurableWorldRuntime(options = {}) {
     lastError = safeErrorCode(error);
     if (pending) pending.canRetry = canRetry;
     blocked = !canRetry || (pending?.attempts || 0) >= maxAttempts;
+    if (blocked) pause();
+  }
+  function rememberPrepareFailure(error) {
+    failures += 1;
+    lastError = safeErrorCode(error);
+    prepareAttempts += 1;
+    prepareCanRetry = retryable(error);
+    blocked = !prepareCanRetry || prepareAttempts >= maxAttempts;
     if (blocked) pause();
   }
   async function commitPending() {
@@ -153,6 +161,8 @@ async function createDurableWorldRuntime(options = {}) {
     lastReceipt = { id: saved.id, revision, tick: saved.tick, idempotent: saved.idempotent === true,
       commands: batch.commandResults.length };
     pending = null;
+    prepareAttempts = 0;
+    prepareCanRetry = false;
     blocked = false;
     lastError = null;
     commits += 1;
@@ -183,10 +193,18 @@ async function createDurableWorldRuntime(options = {}) {
           if (!Number.isSafeInteger(committed.tick + amount) || revision === Number.MAX_SAFE_INTEGER) {
             const error = runtimeError('COUNTER_EXHAUSTED'); rememberFailure(error, false); throw error;
           }
+          const candidate = getWorld();
+          let commands;
           try {
-            const candidate = getWorld();
-            const commands = typeof store.listPendingCommands === 'function'
+            commands = typeof store.listPendingCommands === 'function'
               ? await store.listPendingCommands(worldId, { limit: MAX_COMMANDS_PER_BATCH }) : [];
+            prepareAttempts = 0;
+            prepareCanRetry = false;
+          } catch (error) {
+            rememberPrepareFailure(error);
+            throw error;
+          }
+          try {
             const commandResults = executeDurableCommands(candidate, commands);
             await advance(candidate, amount, detachedJson(simulation));
             if (candidate.id !== worldId || candidate.tick !== committed.tick + amount) throw runtimeError('INVALID_ADVANCEMENT');
@@ -213,11 +231,19 @@ async function createDurableWorldRuntime(options = {}) {
   function retry() {
     try {
       assertOpen();
-      if (!pending || !pending.canRetry) throw runtimeError('NOT_RETRYABLE');
       if (inFlight) throw runtimeError('BUSY');
-      blocked = false;
-      pending.attempts = 0;
-      return exclusive(commitPending);
+      if (pending && pending.canRetry) {
+        blocked = false;
+        pending.attempts = 0;
+        return exclusive(commitPending);
+      }
+      if (!pending && prepareAttempts > 0 && prepareCanRetry) {
+        blocked = false;
+        prepareAttempts = 0;
+        prepareCanRetry = false;
+        return step(batchTicks);
+      }
+      throw runtimeError('NOT_RETRYABLE');
     } catch (error) { return Promise.reject(error); }
   }
   function schedule(delay) {
@@ -226,7 +252,9 @@ async function createDurableWorldRuntime(options = {}) {
     timer = setTimeout(async () => {
       timer = null;
       try { await step(); } catch (_) { /* failure is retained in summary */ }
-      const backoff = pending ? Math.min(maxRetryDelayMs, retryDelayMs * (2 ** Math.min(pending.attempts - 1, 20))) : intervalMs;
+      const attempts = pending ? pending.attempts : prepareAttempts;
+      const backoff = attempts > 0
+        ? Math.min(maxRetryDelayMs, retryDelayMs * (2 ** Math.min(attempts - 1, 20))) : intervalMs;
       schedule(backoff);
     }, delay);
   }
