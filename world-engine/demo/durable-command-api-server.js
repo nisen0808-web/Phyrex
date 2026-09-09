@@ -4,12 +4,12 @@ const { createDurableCommandApiServer } = require('../core/durable-command-api-e
 
 async function main(argv = process.argv.slice(2), env = process.env) {
   const args = parseArgs(argv);
+  if (!args) return null;
   const host = args.host || env.HOST || '127.0.0.1';
   const port = boundedPort(args.port || env.PORT || 8791);
-  const api = await createDurableCommandApiServer({
-    env,
-    maxBodyBytes: args.maxBodyBytes ? Number(args.maxBodyBytes) : undefined,
-  });
+  const apiOptions = { env };
+  if (args.maxBodyBytes !== undefined) apiOptions.maxBodyBytes = Number(args.maxBodyBytes);
+  const api = await createDurableCommandApiServer(apiOptions);
   let stopping = false;
   const shutdown = async signal => {
     if (stopping) return;
