@@ -37,7 +37,7 @@ async function main() {
   const pass = name => { groups += 1; console.log(`PASS ${name}`); };
   try {
     const versions = await Promise.all([a.migrate(), b.migrate()]);
-    assert.strictEqual(versions.reduce((sum, r) => sum + r.applied, 0), 1);
+    assert.strictEqual(versions.reduce((sum, r) => sum + r.applied, 0), MIGRATIONS.length);
     assert.strictEqual((await a.migrate()).applied, 0);
     pass('concurrent and repeatable schema migration');
 
