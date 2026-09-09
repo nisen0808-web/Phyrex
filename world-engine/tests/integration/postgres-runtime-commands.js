@@ -97,14 +97,14 @@ async function main() {
     await seed('command_race');
     await enqueueWait('command_race', 'wait-race');
     const one = await create('command_race'), two = await create('command_race');
-    const raced = await Promise.allSettled([one.step(), two.step()]);
+    const raced = await Promise.allSettled([one.step(1), two.step(2)]);
     assert.strictEqual(raced.filter(item => item.status === 'fulfilled').length, 1);
     assert.strictEqual(raced.filter(item => item.status === 'rejected').length, 1);
     assert.strictEqual(raced.find(item => item.status === 'rejected').reason.code, 'WORLD_DB_REVISION_CONFLICT');
     const raceWorld = await store.loadWorld('command_race');
     assert.strictEqual(raceWorld.world.commands.stats.submitted, 1);
     assert.strictEqual((await store.getCommand('command_race', 'wait-race')).status, 'applied');
-    pass('two runtimes may read one pending command but only one revision can consume it');
+    pass('different competing runtime candidates cannot consume one pending command into two revisions');
 
     await seed('late_command');
     await enqueueWait('late_command', 'first');
