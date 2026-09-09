@@ -1,0 +1,49 @@
+name: Materialize command API store fence
+
+on:
+  push:
+    branches: [feature/postgres-command-api]
+    paths: ['.github/workflows/command-api-store-fence.yml']
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/postgres-command-api
+          fetch-depth: 0
+      - name: Add expected-world-revision fencing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('world-engine/storage/postgres/store.js')
+          s = p.read_text()
+          old = """  async function enqueueCommand(input) {\n    const command = captureInboxCommand(input);\n    await ensureReady();\n    return transaction(async client => {\n      const world = await client.query(`SELECT 1 FROM ${schema}.worlds WHERE world_id=$1 AND latest_sequence IS NOT NULL`, [command.worldId]);\n      if (!world.rows.length) throw databaseError('MISSING_WORLD', 'Command world does not have a committed checkpoint');\n"""
+          new = """  async function enqueueCommand(input, commandOptions = {}) {\n    const command = captureInboxCommand(input);\n    const expectedWorldRevision = commandOptions.expectedWorldRevision === undefined\n      ? null : safeInteger(commandOptions.expectedWorldRevision, 'expectedWorldRevision', 1);\n    await ensureReady();\n    return transaction(async client => {\n      const world = await client.query(`SELECT revision, latest_sequence FROM ${schema}.worlds WHERE world_id=$1 FOR SHARE`, [command.worldId]);\n      if (!world.rows.length || world.rows[0].latest_sequence === null) throw databaseError('MISSING_WORLD', 'Command world does not have a committed checkpoint');\n      const revision = fromSqlInteger(world.rows[0].revision, 'world revision');\n      if (expectedWorldRevision !== null && revision !== expectedWorldRevision) {\n        const error = databaseError('REVISION_CONFLICT', 'World revision changed; re-authorize before submitting command');\n        error.expectedRevision = expectedWorldRevision; error.actualRevision = revision;\n        throw error;\n      }\n"""
+          if s.count(old) != 1:
+              raise SystemExit('enqueue anchor mismatch')
+          s = s.replace(old, new)
+          old = """  async function getCommand(worldId, commandId) {\n    const selectedWorld = textId(worldId, 'command worldId');\n    const selectedCommand = textId(commandId, 'command id', 256);\n    await ensureReady();\n    return transaction(async client => {\n      const result = await client.query(`SELECT * FROM ${schema}.world_commands WHERE world_id=$1 AND command_id=$2`, [selectedWorld, selectedCommand]);\n      return result.rows.length ? summarizeCommand(result.rows[0]) : null;\n    }, true);\n  }\n"""
+          new = """  async function getCommand(worldId, commandId, commandOptions = {}) {\n    const selectedWorld = textId(worldId, 'command worldId');\n    const selectedCommand = textId(commandId, 'command id', 256);\n    const expectedWorldRevision = commandOptions.expectedWorldRevision === undefined\n      ? null : safeInteger(commandOptions.expectedWorldRevision, 'expectedWorldRevision', 1);\n    await ensureReady();\n    return transaction(async client => {\n      if (expectedWorldRevision !== null) {\n        const world = await client.query(`SELECT revision FROM ${schema}.worlds WHERE world_id=$1 AND latest_sequence IS NOT NULL`, [selectedWorld]);\n        if (!world.rows.length) throw databaseError('MISSING_WORLD', 'Command world does not have a committed checkpoint');\n        const revision = fromSqlInteger(world.rows[0].revision, 'world revision');\n        if (revision !== expectedWorldRevision) {\n          const error = databaseError('REVISION_CONFLICT', 'World revision changed; re-authorize before reading command');\n          error.expectedRevision = expectedWorldRevision; error.actualRevision = revision;\n          throw error;\n        }\n      }\n      const result = await client.query(`SELECT * FROM ${schema}.world_commands WHERE world_id=$1 AND command_id=$2`, [selectedWorld, selectedCommand]);\n      return result.rows.length ? summarizeCommand(result.rows[0]) : null;\n    }, true);\n  }\n"""
+          if s.count(old) != 1:
+              raise SystemExit('get anchor mismatch')
+          p.write_text(s.replace(old, new))
+          PY
+          node --check world-engine/storage/postgres/store.js
+          git diff --check
+      - name: Commit store fence
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add world-engine/storage/postgres/store.js
+          git commit -m 'Fence durable command access by authorized world revision'
+          git push origin HEAD:feature/postgres-command-api
