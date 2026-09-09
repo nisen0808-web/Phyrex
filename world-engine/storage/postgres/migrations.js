@@ -1,0 +1,56 @@
+'use strict';
+const crypto = require('crypto');
+const { databaseError } = require('./config');
+
+// Published SQL is immutable: changes require a new numbered migration.
+const MIGRATIONS = [{ version: 1, name: 'transactional_world_checkpoints', sql: `
+CREATE TABLE __SCHEMA__.worlds (
+  world_id text PRIMARY KEY CHECK (length(world_id) BETWEEN 1 AND 200),
+  revision bigint NOT NULL DEFAULT 0 CHECK (revision BETWEEN 0 AND 9007199254740991),
+  latest_sequence bigint,
+  updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE TABLE __SCHEMA__.world_saves (
+  sequence bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY CHECK (sequence <= 9007199254740991),
+  world_id text NOT NULL REFERENCES __SCHEMA__.worlds(world_id),
+  revision bigint NOT NULL CHECK (revision BETWEEN 1 AND 9007199254740991),
+  tick bigint NOT NULL CHECK (tick BETWEEN 0 AND 9007199254740991),
+  save_schema integer NOT NULL CHECK (save_schema > 0),
+  request_id text NOT NULL CHECK (length(request_id) BETWEEN 1 AND 128),
+  request_hash text NOT NULL CHECK (request_hash ~ '^[0-9a-f]{64}$'),
+  payload_digest text NOT NULL CHECK (payload_digest ~ '^[0-9a-f]{64}$'),
+  envelope jsonb NOT NULL CHECK (jsonb_typeof(envelope) = 'object'),
+  saved_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  UNIQUE (world_id, revision), UNIQUE (world_id, request_id), UNIQUE (world_id, sequence),
+  UNIQUE (world_id, revision, sequence)
+);
+ALTER TABLE __SCHEMA__.worlds ADD CONSTRAINT worlds_latest_save
+  FOREIGN KEY (world_id, revision, latest_sequence) REFERENCES __SCHEMA__.world_saves(world_id, revision, sequence)
+  DEFERRABLE INITIALLY DEFERRED;
+CREATE TABLE __SCHEMA__.world_events (
+  sequence bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY CHECK (sequence <= 9007199254740991),
+  world_id text NOT NULL REFERENCES __SCHEMA__.worlds(world_id),
+  save_sequence bigint,
+  event_id text NOT NULL CHECK (length(event_id) BETWEEN 1 AND 256),
+  tick bigint NOT NULL CHECK (tick BETWEEN 0 AND 9007199254740991),
+  type text NOT NULL CHECK (length(type) BETWEEN 1 AND 128),
+  payload jsonb NOT NULL CHECK (jsonb_typeof(payload) = 'object'),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  UNIQUE (world_id, event_id),
+  FOREIGN KEY (world_id, save_sequence) REFERENCES __SCHEMA__.world_saves(world_id, sequence)
+);
+CREATE INDEX world_events_world_sequence ON __SCHEMA__.world_events(world_id, sequence DESC);
+CREATE INDEX world_events_type_sequence ON __SCHEMA__.world_events(type, sequence DESC);
+` }].map(m => Object.freeze({ ...m, checksum: crypto.createHash('sha256').update(m.sql).digest('hex') }));
+Object.freeze(MIGRATIONS);
+function checkMigrationHistory(rows) {
+  if (!Array.isArray(rows) || rows.length > MIGRATIONS.length) throw databaseError('SCHEMA_MISMATCH', 'Unsupported database migration version');
+  rows.forEach((row, index) => {
+    const expected = MIGRATIONS[index];
+    if (Number(row.version) !== expected.version || row.name !== expected.name || row.checksum !== expected.checksum) {
+      throw databaseError('SCHEMA_MISMATCH', 'Database migration history is incompatible');
+    }
+  });
+  return rows.length;
+}
+module.exports = { MIGRATIONS, checkMigrationHistory };

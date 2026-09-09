@@ -1,0 +1,63 @@
+name: World Engine PostgreSQL
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  postgres:
+    name: postgres-node-${{ matrix.node }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: world_engine_ci
+          POSTGRES_USER: world_engine
+          POSTGRES_PASSWORD: ci-only-ephemeral-password
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U world_engine -d world_engine_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install locked JavaScript driver
+        run: npm ci --prefix world-engine --ignore-scripts
+      - name: Audit production dependencies
+        run: npm audit --prefix world-engine --omit=dev --audit-level=high
+      - name: Run real PostgreSQL transaction and concurrency tests
+        env:
+          WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
+        run: |
+          mkdir -p world-engine/output/ci
+          npm --prefix world-engine run test:postgres 2>&1 | tee world-engine/output/ci/postgres.log
+          grep -F 'postgres integration completed 14 scenario groups: 14 passed, 0 failed' world-engine/output/ci/postgres.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: postgres-node-${{ matrix.node }}-logs
+          path: world-engine/output/ci/postgres.log
+          if-no-files-found: warn
