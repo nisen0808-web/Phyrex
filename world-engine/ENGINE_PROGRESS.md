@@ -1,6 +1,6 @@
 # Engine Development Progress
 
-当前主线为 MUD 世界模拟、确定性和持久化可靠性。不新增 UI、登录或部署功能。
+当前主线为 MUD 世界模拟、确定性和持久化可靠性。不新增 UI 或生产部署功能。
 
 ## 已验收主线
 
@@ -19,25 +19,34 @@ PR #65 已合并，提交 56f28c3b。验收 head f25f5d2 的完整回归 87/87�
 PostgreSQL 18 存储 14/14、命令 inbox 8/8、durable runtime 11/11 均在 Node 20/22
 通过，100/1000 tick 通过。Migration 2、幂等命令入队与 checkpoint 同事务确认已验收。
 
+PR #66 已合并，提交 482079ef。验收 head 7be27ad 的完整回归 88/88，真实
+PostgreSQL 18 存储 14/14、命令 inbox 8/8、durable runtime 11/11、runtime-command
+7/7 均在 Node 20/22 通过，100/1000 tick 通过。运行器已按 FIFO 在隔离候选世界消费
+pending commands；读取或提交的短暂数据库故障均有界重试，不重复执行命令。
+
 ## 当前开发层
 
-Durable runtime 现在在创建新 batch 时读取最多 100 条 pending commands，按数据库
-sequence FIFO 顺序调用现有 `executePlayerCommand`，再推进确定性模拟。命令执行发生
-在隔离候选世界中，SQL checkpoint 未确认前不会发布给读取者。
+认证后的异步 PostgreSQL command API：POST 只向 durable inbox 入队，GET 只读取
+pending/applied 状态。HTTP handler 不调用 `executePlayerCommand`，不会直接修改世界内存。
+世界状态仍只由 durable runtime 在事务确认后发布。
 
-命令结果与世界 checkpoint、revision、latest pointer 和事件一起提交。运行器重试时
-保留同一候选世界、commandResults、requestId 与 expectedRevision，不重新读取 inbox、
-不重新执行命令，也不会重复消耗随机数或 ID。确定性拒绝（例如 missing_player）会作为
-终态结果提交，避免坏命令永久堵塞队列。
+每次 POST/GET 都从最新 PostgreSQL checkpoint 验证 Bearer session。普通账号只能访问
+`account.playerIds` 中的玩家，GM/Admin 沿用现有 privileged player 权限。POST 还要求目标
+player 在最新 checkpoint 中真实存在。
 
-运行器配置 fingerprint 升级为 version 2，包含固定 command profile；允许 #64 写入的
-精确 version-1 fingerprint 单向升级一次，其他 simulation 配置变化继续拒绝。命令每批
-固定上限 100，不开放为启动参数，避免历史存档升级时产生未记录的确定性差异。
+授权决定绑定世界 revision。`enqueueCommand` 在 PostgreSQL transaction 中对 world row
+使用 `FOR SHARE`，确认授权时看到的 revision 仍是当前 revision；并发 checkpoint 会与该锁
+协调。revision 已变化时 HTTP adapter 重新加载最新 world/session/ownership 再决定，避免
+“撤权已提交但旧授权请求仍入队”。GET command 也带授权 revision 做一致性检查。
 
-新增受控存储契约覆盖命令执行顺序、拒绝结果、重试不重放、late-arrival 延后、legacy
-fingerprint 升级、模拟失败不确认和 batch 上限。真实 PostgreSQL 18 专项覆盖实际命令
-消费、lost acknowledgement、SQL trigger rollback、双运行器竞争、late-arrival 和重启
-后不重复执行。当前等待最终远端 Node 20/22 和完整回归验收。
+响应不暴露 command input digest、原始 input、SQL 错误文本或连接配置；默认不开 CORS，
+使用 no-store/nosniff/no-referrer 安全头。命令 body 默认上限 64 KiB，服务默认绑定
+127.0.0.1:8791，数据库 URL/TLS 仍只走已有 WORLD_ENGINE_* 环境配置。
+
+受控测试覆盖 401/403、GM、幂等冲突、pending/applied polling、body limit 和授权撤销竞态。
+真实 PostgreSQL 18 测试覆盖 HTTP enqueue -> runtime consume -> GET applied，全程确认 HTTP
+不会在 runtime checkpoint 前修改世界；还覆盖 direct revision fence 和真实撤权竞态。
+当前等待最终远端 Node 20/22、完整回归、1000 tick 和 PostgreSQL 五层专项验收。
 
 | 能力 | 当前实现与边界 |
 |---|---|
@@ -46,12 +55,14 @@ fingerprint 升级、模拟失败不确认和 batch 上限。真实 PostgreSQL 1
 | PostgreSQL 存储 | #63 已验收真实驱动、迁移、原子存档、冲突、幂等与校验。 |
 | PostgreSQL 世界运行器 | #64 已验收提交后发布、失败重试、持续运行、停机与真实 SQL 重启续跑。 |
 | PostgreSQL 命令 inbox | #65 已验收 Migration 2、持久命令入队、查询和 checkpoint 同事务确认。 |
-| Runtime 命令消费 | 本层已实现隔离执行、固定 FIFO batch、事务确认与 retry reuse；等待最终 SQL 验收。 |
-| 现有 HTTP 与玩家操作 | 尚未切换；下一层把 HTTP 变成命令提交/结果查询适配器，不直接修改 live world。 |
-| 生产运行 | 未配置生产数据库，未验收备份恢复、保留策略、主从复制、领导者租约与部署。 |
+| Runtime 命令消费 | #66 已验收 FIFO 隔离执行、事务确认、retry reuse 与 read-backoff。 |
+| Durable command HTTP API | 本层已实现认证入队与结果轮询、revision-fenced authorization；等待远端验收。 |
+| 旧同步 HTTP 玩家操作 | 保持兼容，尚未重定向到 durable API；不会在本层静默改变语义。 |
+| 生产运行 | 未配置生产数据库，未验收网关限流、备份恢复、保留策略、领导者租约与部署。 |
 
-下一节点是异步 HTTP command adapter：POST 只做 durable enqueue，GET 查询 pending/applied
-结果；权限层必须绑定 session/account 到允许的 playerId，不能信任任意 caller playerId。
+下一节点在本层验收后优先做 command API 的请求限流/审计与生产边界，再决定是否逐步把旧
+`POST /players/:playerId/actions` 迁移为 durable enqueue。迁移必须保持兼容或明确版本化，
+不会直接替换现有同步语义。
 
-不使用没有统一验收分母的百分比。实现与边界见 POSTGRES_COMMAND_INBOX.md、
-POSTGRES_DATABASE.md 和 POSTGRES_DURABLE_RUNTIME.md。
+不使用没有统一验收分母的百分比。实现与边界见 POSTGRES_COMMAND_API.md、
+POSTGRES_COMMAND_INBOX.md、POSTGRES_DATABASE.md 和 POSTGRES_DURABLE_RUNTIME.md。
