@@ -19,9 +19,18 @@ function apiError(statusCode, code) {
 }
 
 async function createDurableCommandApiServer(options = {}) {
-  const config = { ...DEFAULT_DURABLE_COMMAND_API_OPTIONS, ...(options || {}) };
-  const maxBodyBytes = boundedInteger(config.maxBodyBytes, 1024, 1024 * 1024, 'maxBodyBytes');
-  const authorizationAttempts = boundedInteger(config.authorizationAttempts, 1, 10, 'authorizationAttempts');
+  const maxBodyBytes = boundedInteger(
+    options.maxBodyBytes ?? DEFAULT_DURABLE_COMMAND_API_OPTIONS.maxBodyBytes,
+    1024,
+    1024 * 1024,
+    'maxBodyBytes',
+  );
+  const authorizationAttempts = boundedInteger(
+    options.authorizationAttempts ?? DEFAULT_DURABLE_COMMAND_API_OPTIONS.authorizationAttempts,
+    1,
+    10,
+    'authorizationAttempts',
+  );
   const ownsStore = !options.store || options.closeStore === true;
   const store = options.store || createPostgresDatabaseStore({ ...(options.database || {}), env: options.env });
   if (store.provider !== 'postgres' || !['loadWorld', 'enqueueCommand', 'getCommand', 'summary', 'close'].every(key => typeof store[key] === 'function')) {
@@ -65,7 +74,10 @@ async function handleRequest(req, res, store, options) {
   if (route.kind === 'submit') {
     if (method !== 'POST') throw apiError(405, 'method_not_allowed');
     const contentType = String(req.headers['content-type'] || '').split(';', 1)[0].trim().toLowerCase();
-    if (contentType !== 'application/json') throw apiError(415, 'json_required');
+    if (contentType !== 'application/json') {
+      req.resume();
+      throw apiError(415, 'json_required');
+    }
     const body = await readJsonBody(req, options.maxBodyBytes);
     if (!isObject(body)) throw apiError(400, 'invalid_command');
     if (typeof body.id !== 'string' || !body.id) throw apiError(400, 'command_id_required');
@@ -156,11 +168,6 @@ function parseCommandRoute(pathname) {
       && segments[3] === 'players' && segments[5] === 'commands') {
     return { kind: 'submit', worldId: segments[2], playerId: segments[4] };
   }
-  if (segments.length === 6 && segments[0] === 'durable' && segments[1] === 'worlds'
-      && segments[3] === 'commands') {
-    return { kind: 'status', worldId: segments[2], commandId: segments[4] };
-  }
-  // Status has five logical segments; tolerate a single trailing slash because empty segments were removed.
   if (segments.length === 5 && segments[0] === 'durable' && segments[1] === 'worlds'
       && segments[3] === 'commands') {
     return { kind: 'status', worldId: segments[2], commandId: segments[4] };
