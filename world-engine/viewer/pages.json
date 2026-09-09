@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "world",
+      "title": "World Viewer",
+      "href": "./index.html"
+    },
+    {
+      "id": "report",
+      "title": "Report Viewer",
+      "href": "./database-report.html"
+    }
+  ]
+}

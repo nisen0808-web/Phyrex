@@ -12,17 +12,19 @@ function main() {
   const databaseAppPath = path.join(root, 'viewer', 'database-summary.js');
   const databaseReportPath = path.join(root, 'viewer', 'database-report.html');
   const databaseReportAppPath = path.join(root, 'viewer', 'database-report.js');
+  const pagesPath = path.join(root, 'viewer', 'pages.json');
   const stylePath = path.join(root, 'viewer', 'styles.css');
   const serverPath = path.join(root, 'viewer', 'serve-viewer.js');
   const databaseSummaryPath = path.join(root, 'core', 'database-viewer-summary-engine.js');
 
-  for (const file of [indexPath, appPath, databaseAppPath, databaseReportPath, databaseReportAppPath, stylePath, serverPath, databaseSummaryPath]) assert.ok(fs.existsSync(file), `${file} should exist`);
+  for (const file of [indexPath, appPath, databaseAppPath, databaseReportPath, databaseReportAppPath, pagesPath, stylePath, serverPath, databaseSummaryPath]) assert.ok(fs.existsSync(file), `${file} should exist`);
 
   const html = fs.readFileSync(indexPath, 'utf8');
   const app = fs.readFileSync(appPath, 'utf8');
   const databaseApp = fs.readFileSync(databaseAppPath, 'utf8');
   const databaseReport = fs.readFileSync(databaseReportPath, 'utf8');
   const databaseReportApp = fs.readFileSync(databaseReportAppPath, 'utf8');
+  const pages = JSON.parse(fs.readFileSync(pagesPath, 'utf8'));
   const css = fs.readFileSync(stylePath, 'utf8');
   const server = fs.readFileSync(serverPath, 'utf8');
   const databaseSummary = fs.readFileSync(databaseSummaryPath, 'utf8');
@@ -63,6 +65,9 @@ function main() {
   assert.ok(databaseReportApp.includes('loadDatabaseReport'), 'database report app should load report');
   assert.ok(databaseReportApp.includes('renderDatabaseReport'), 'database report app should render report');
   assert.ok(databaseReportApp.includes('renderReportFiles'), 'database report app should render files');
+  assert.strictEqual(pages.version, 1);
+  assert.ok(pages.pages.some(page => page.href === './index.html'));
+  assert.ok(pages.pages.some(page => page.href === './database-report.html'));
   assert.ok(css.includes('.card'), 'viewer css should style cards');
   assert.ok(server.includes('http.createServer'), 'viewer server should create HTTP server');
   assert.ok(server.includes('output/demo-snapshot.json'), 'viewer server should mention default snapshot');
