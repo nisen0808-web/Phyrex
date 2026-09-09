@@ -13,6 +13,10 @@ on:
       - '.github/workflows/world-engine-tests.yml'
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -27,19 +31,26 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Run database recovery regression
+        run: node world-engine/tests/database-startup-recovery-test.js
+
       - name: Root npm test
+        if: ${{ !cancelled() }}
         run: |
           mkdir -p world-engine/output/ci
           npm test 2>&1 | tee world-engine/output/ci/root-npm-test.log
 
       - name: World engine npm test
+        if: ${{ !cancelled() }}
         working-directory: world-engine
         run: |
           mkdir -p output/ci
           npm test 2>&1 | tee output/ci/world-engine-npm-test.log
 
       - name: Direct fast stability test
+        if: ${{ !cancelled() }}
         run: |
+          mkdir -p world-engine/output/ci
           node world-engine/tests/stability-100-test.js 2>&1 | tee world-engine/output/ci/stability-100.log
 
       - name: Upload test logs
