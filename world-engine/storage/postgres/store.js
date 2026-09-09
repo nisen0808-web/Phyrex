@@ -142,12 +142,20 @@ function createPostgresDatabaseStore(options = {}) {
       return result.rows.map(row => summarizeSave(row));
     }, true);
   }
-  async function enqueueCommand(input) {
+  async function enqueueCommand(input, commandOptions = {}) {
     const command = captureInboxCommand(input);
+    const expectedWorldRevision = commandOptions.expectedWorldRevision === undefined
+      ? null : safeInteger(commandOptions.expectedWorldRevision, 'expectedWorldRevision', 1);
     await ensureReady();
     return transaction(async client => {
-      const world = await client.query(`SELECT 1 FROM ${schema}.worlds WHERE world_id=$1 AND latest_sequence IS NOT NULL`, [command.worldId]);
-      if (!world.rows.length) throw databaseError('MISSING_WORLD', 'Command world does not have a committed checkpoint');
+      const world = await client.query(`SELECT revision, latest_sequence FROM ${schema}.worlds WHERE world_id=$1 FOR SHARE`, [command.worldId]);
+      if (!world.rows.length || world.rows[0].latest_sequence === null) throw databaseError('MISSING_WORLD', 'Command world does not have a committed checkpoint');
+      const revision = fromSqlInteger(world.rows[0].revision, 'world revision');
+      if (expectedWorldRevision !== null && revision !== expectedWorldRevision) {
+        const error = databaseError('REVISION_CONFLICT', 'World revision changed; re-authorize before submitting command');
+        error.expectedRevision = expectedWorldRevision; error.actualRevision = revision;
+        throw error;
+      }
       const inserted = await client.query(`INSERT INTO ${schema}.world_commands
         (world_id,command_id,player_id,input,input_digest) VALUES ($1,$2,$3,$4::jsonb,$5)
         ON CONFLICT (world_id,command_id) DO NOTHING RETURNING *`,
@@ -161,11 +169,23 @@ function createPostgresDatabaseStore(options = {}) {
       return { ...previous, idempotent: true };
     });
   }
-  async function getCommand(worldId, commandId) {
+  async function getCommand(worldId, commandId, commandOptions = {}) {
     const selectedWorld = textId(worldId, 'command worldId');
     const selectedCommand = textId(commandId, 'command id', 256);
+    const expectedWorldRevision = commandOptions.expectedWorldRevision === undefined
+      ? null : safeInteger(commandOptions.expectedWorldRevision, 'expectedWorldRevision', 1);
     await ensureReady();
     return transaction(async client => {
+      if (expectedWorldRevision !== null) {
+        const world = await client.query(`SELECT revision FROM ${schema}.worlds WHERE world_id=$1 AND latest_sequence IS NOT NULL`, [selectedWorld]);
+        if (!world.rows.length) throw databaseError('MISSING_WORLD', 'Command world does not have a committed checkpoint');
+        const revision = fromSqlInteger(world.rows[0].revision, 'world revision');
+        if (revision !== expectedWorldRevision) {
+          const error = databaseError('REVISION_CONFLICT', 'World revision changed; re-authorize before reading command');
+          error.expectedRevision = expectedWorldRevision; error.actualRevision = revision;
+          throw error;
+        }
+      }
       const result = await client.query(`SELECT * FROM ${schema}.world_commands WHERE world_id=$1 AND command_id=$2`, [selectedWorld, selectedCommand]);
       return result.rows.length ? summarizeCommand(result.rows[0]) : null;
     }, true);
