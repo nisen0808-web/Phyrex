@@ -100,6 +100,22 @@ async function main() {
   }
 
   {
+    const f = fixture(); f.ledger.commands.push(command(1, 'read-retry'));
+    const read = f.store.listPendingCommands; let first = true;
+    f.store.listPendingCommands = async (...args) => { if (first) { first = false; f.ledger.reads += 1; throw fail('WORLD_DB_UNAVAILABLE'); } return read(...args); };
+    const runtime = await createDurableWorldRuntime(f.runtimeOptions);
+    await assert.rejects(runtime.step());
+    assert.strictEqual(runtime.summary().prepareAttempts, 1);
+    assert.strictEqual(runtime.summary().pending, null);
+    assert.strictEqual(f.simulations(), 0);
+    assert.strictEqual(runtime.getWorld().tick, 0);
+    await runtime.retry();
+    assert.strictEqual(f.ledger.reads, 2); assert.strictEqual(f.simulations(), 1);
+    assert.strictEqual(runtime.getWorld().commands.byId['read-retry'].status, 'completed');
+    await runtime.close(); pass('transient inbox read failure retries before candidate creation without simulating partial work');
+  }
+
+  {
     const f = fixture(); f.ledger.commands.push(command(1, 'first-batch'));
     const gate = deferred(), entered = deferred(), save = f.store.saveWorld;
     f.store.saveWorld = async (...args) => { entered.resolve(); await gate.promise; return save(...args); };
