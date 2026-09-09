@@ -79,9 +79,11 @@ async function main() {
     await enqueueWait('command_rollback', 'wait-rollback');
     const rollback = await create('command_rollback');
     await raw.query(`CREATE FUNCTION ${quoted}.reject_runtime_command() RETURNS trigger LANGUAGE plpgsql AS $$
-      BEGIN IF NEW.world_id='command_rollback' AND NEW.status='applied' THEN RAISE EXCEPTION 'intentional command rollback'; END IF; RETURN NEW; END $$`);
+      BEGIN IF NEW.world_id='command_rollback' AND NEW.status='applied' THEN
+        RAISE EXCEPTION 'intentional command rollback' USING ERRCODE='40001';
+      END IF; RETURN NEW; END $$`);
     await raw.query(`CREATE TRIGGER reject_runtime_command BEFORE UPDATE ON ${quoted}.world_commands FOR EACH ROW EXECUTE FUNCTION ${quoted}.reject_runtime_command()`);
-    await assert.rejects(rollback.step(), error => error.code === 'WORLD_DB_SQL_ERROR');
+    await assert.rejects(rollback.step(), error => error.code === 'WORLD_DB_SQL_ERROR' && error.sqlState === '40001');
     assert.strictEqual(rollback.getWorld().commands?.byId?.['wait-rollback'], undefined);
     assert.strictEqual((await store.getCommand('command_rollback', 'wait-rollback')).status, 'pending');
     assert.strictEqual((await store.loadWorld('command_rollback')).revision, 1);
@@ -90,7 +92,7 @@ async function main() {
     await rollback.retry();
     assert.strictEqual((await store.getCommand('command_rollback', 'wait-rollback')).status, 'applied');
     assert.strictEqual(rollback.getWorld().commands.stats.submitted, 1);
-    pass('SQL command acknowledgement failure rolls back world and command, then retries without re-execution');
+    pass('retryable SQL command acknowledgement failure rolls back world and command, then reuses the same candidate');
 
     await seed('command_race');
     await enqueueWait('command_race', 'wait-race');
