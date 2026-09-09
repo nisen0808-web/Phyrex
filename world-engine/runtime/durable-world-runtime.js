@@ -7,12 +7,13 @@ const {
   createCultureBeliefFlowDeterministicKernel,
   runDeterministicSimulationTickWithCultureBeliefFlow,
 } = require('../core/culture-belief-flow-runtime-engine');
-
+const { executePlayerCommand } = require('../core/command-engine');
 const { repairLoadedWorld } = require('../core/persistence-engine');
-
 const { canonicalWorldCopy, canonicalizeWorldInPlace } = require('./canonical-world');
 
-const DURABLE_RUNTIME_VERSION = 1;
+const DURABLE_RUNTIME_VERSION = 2;
+const COMMAND_PROFILE = 'postgres-inbox-v1';
+const MAX_COMMANDS_PER_BATCH = 100;
 
 function runtimeError(code) {
   const error = new Error(`Durable runtime: ${code}`);
@@ -35,13 +36,31 @@ function freezeJson(value) {
   return value;
 }
 function advanceDeterministicBatch(world, ticks, simulation = {}) {
-  // Kernel registries are per-batch; all continuation state lives in the world.
   const kernel = createCultureBeliefFlowDeterministicKernel();
   for (let index = 0; index < ticks; index += 1) {
     canonicalizeWorldInPlace(world);
     const report = runDeterministicSimulationTickWithCultureBeliefFlow(world, simulation, kernel);
     if (!report.kernel || report.kernel.failed !== 0) throw runtimeError('SIMULATION_FAILED');
   }
+}
+function executeDurableCommands(world, commands = []) {
+  const results = [];
+  for (const durable of commands) {
+    if (world.commands?.byId?.[durable.id]) throw runtimeError('COMMAND_ID_COLLISION');
+    const execution = executePlayerCommand(world, durable.playerId, { ...detachedJson(durable.input), id: durable.id });
+    results.push({
+      sequence: durable.sequence,
+      id: durable.id,
+      playerId: durable.playerId,
+      inputDigest: durable.inputDigest,
+      result: {
+        status: execution.command.status,
+        outcome: detachedJson(execution.result),
+        updatedAt: execution.command.updatedAt,
+      },
+    });
+  }
+  return results;
 }
 
 async function createDurableWorldRuntime(options = {}) {
@@ -60,7 +79,9 @@ async function createDurableWorldRuntime(options = {}) {
   const profile = options.advance ? textId(options.simulationId, 'custom simulationId') : 'culture-info-v1';
   const advance = options.advance || advanceDeterministicBatch;
   const onCommit = options.onCommit;
-  const configHash = digest({ version: DURABLE_RUNTIME_VERSION, profile, simulation });
+  const legacyConfigHash = digest({ version: 1, profile, simulation });
+  const configHash = digest({ version: DURABLE_RUNTIME_VERSION, profile, simulation,
+    commands: { profile: COMMAND_PROFILE, maxPerBatch: MAX_COMMANDS_PER_BATCH } });
   const ownsStore = !options.store || options.closeStore === true;
   const store = options.store || createPostgresDatabaseStore({ ...(options.database || {}), env: options.env });
   let committed, revision;
@@ -76,7 +97,7 @@ async function createDurableWorldRuntime(options = {}) {
     revision = safeInteger(loaded.revision, 'loaded revision', 1);
     safeInteger(loaded.world.tick, 'loaded tick');
     const previousConfig = loaded.metadata?.durableRuntime?.configHash;
-    if (previousConfig && previousConfig !== configHash) throw runtimeError('CONFIG_MISMATCH');
+    if (previousConfig && previousConfig !== configHash && previousConfig !== legacyConfigHash) throw runtimeError('CONFIG_MISMATCH');
     committed = freezeJson(canonicalWorldCopy(loaded.world));
   } catch (error) {
     if (ownsStore && typeof store.close === 'function') await store.close().catch(() => {});
@@ -85,8 +106,8 @@ async function createDurableWorldRuntime(options = {}) {
 
   let pending = null, inFlight = null, timer = null, closePromise = null;
   let running = false, closing = false, closed = false, blocked = false;
-  let lastError = null, failures = 0, commits = 0, ticksCommitted = 0, observerErrors = 0;
-  let lastReceipt = null;
+  let lastError = null, failures = 0, commits = 0, ticksCommitted = 0, commandsApplied = 0, observerErrors = 0;
+  let prepareAttempts = 0, prepareCanRetry = false, lastReceipt = null;
 
   function summary() {
     return {
@@ -96,9 +117,11 @@ async function createDurableWorldRuntime(options = {}) {
       running, busy: Boolean(inFlight), pending: pending ? {
         requestId: pending.saveOptions.requestId, expectedRevision: pending.saveOptions.expectedRevision,
         tickBefore: pending.tickBefore, tickAfter: pending.world.tick, attempts: pending.attempts,
+        commands: pending.commandResults.length,
       } : null,
-      commits, ticksCommitted, failures, observerErrors, lastError,
+      prepareAttempts, commits, ticksCommitted, commandsApplied, failures, observerErrors, lastError,
       lastReceipt: lastReceipt ? { ...lastReceipt } : null, configHash,
+      commandProfile: COMMAND_PROFILE, maxCommandsPerBatch: MAX_COMMANDS_PER_BATCH,
     };
   }
   function getWorld() { return detachedJson(committed); }
@@ -112,13 +135,20 @@ async function createDurableWorldRuntime(options = {}) {
     blocked = !canRetry || (pending?.attempts || 0) >= maxAttempts;
     if (blocked) pause();
   }
+  function rememberPrepareFailure(error) {
+    failures += 1;
+    lastError = safeErrorCode(error);
+    prepareAttempts += 1;
+    prepareCanRetry = retryable(error);
+    blocked = !prepareCanRetry || prepareAttempts >= maxAttempts;
+    if (blocked) pause();
+  }
   async function commitPending() {
     if (!pending) return null;
     const batch = pending;
     batch.attempts += 1;
     let saved;
     try {
-      // Defensive copies stop a driver/caller from altering the retry candidate.
       saved = await store.saveWorld(detachedJson(batch.world), detachedJson(batch.saveOptions));
       if (saved?.worldId !== worldId || saved.revision !== revision + 1 || saved.tick !== batch.world.tick
           || saved.id !== batch.saveOptions.requestId) throw runtimeError('INVALID_COMMIT_RECEIPT');
@@ -128,17 +158,22 @@ async function createDurableWorldRuntime(options = {}) {
     }
     committed = batch.world;
     revision = saved.revision;
-    lastReceipt = { id: saved.id, revision, tick: saved.tick, idempotent: saved.idempotent === true };
+    lastReceipt = { id: saved.id, revision, tick: saved.tick, idempotent: saved.idempotent === true,
+      commands: batch.commandResults.length };
     pending = null;
+    prepareAttempts = 0;
+    prepareCanRetry = false;
     blocked = false;
     lastError = null;
     commits += 1;
     ticksCommitted += batch.ticks;
+    commandsApplied += batch.commandResults.length;
     const result = { worldId, tickBefore: batch.tickBefore, tickAfter: committed.tick,
-      ticks: batch.ticks, revision, requestId: saved.id, idempotent: saved.idempotent === true };
+      ticks: batch.ticks, commands: batch.commandResults.length, revision, requestId: saved.id,
+      idempotent: saved.idempotent === true };
     if (typeof onCommit === 'function') {
       try { await onCommit({ ...result }, getWorld()); }
-      catch (_) { observerErrors += 1; } // A failed observer cannot uncommit or replay a batch.
+      catch (_) { observerErrors += 1; }
     }
     return result;
   }
@@ -158,22 +193,37 @@ async function createDurableWorldRuntime(options = {}) {
           if (!Number.isSafeInteger(committed.tick + amount) || revision === Number.MAX_SAFE_INTEGER) {
             const error = runtimeError('COUNTER_EXHAUSTED'); rememberFailure(error, false); throw error;
           }
+          const candidate = getWorld();
+          let commands;
           try {
-            const candidate = getWorld();
+            commands = typeof store.listPendingCommands === 'function'
+              ? await store.listPendingCommands(worldId, { limit: MAX_COMMANDS_PER_BATCH }) : [];
+            prepareAttempts = 0;
+            prepareCanRetry = false;
+          } catch (error) {
+            rememberPrepareFailure(error);
+            throw error;
+          }
+          try {
+            const commandResults = executeDurableCommands(candidate, commands);
             await advance(candidate, amount, detachedJson(simulation));
             if (candidate.id !== worldId || candidate.tick !== committed.tick + amount) throw runtimeError('INVALID_ADVANCEMENT');
             repairLoadedWorld(candidate);
             const world = freezeJson(canonicalWorldCopy(candidate));
-            const requestId = `runtime:${digest({ world, revision, configHash })}`;
-            pending = { world, tickBefore: committed.tick, ticks: amount, attempts: 0, canRetry: true,
+            const frozenCommandResults = freezeJson(detachedJson(commandResults));
+            const requestId = `runtime:${digest({ world, revision, configHash, commandResults: frozenCommandResults })}`;
+            pending = { world, commandResults: frozenCommandResults, tickBefore: committed.tick,
+              ticks: amount, attempts: 0, canRetry: true,
               saveOptions: freezeJson({ requestId, expectedRevision: revision, reason: 'durable_runtime_batch',
-                metadata: { durableRuntime: { version: DURABLE_RUNTIME_VERSION, configHash, profile } },
-                events: [{ type: 'runtime.batch_committed', payload: { tickBefore: committed.tick, ticks: amount, configHash } }],
+                metadata: { durableRuntime: { version: DURABLE_RUNTIME_VERSION, configHash, profile,
+                  commandProfile: COMMAND_PROFILE } },
+                events: [{ type: 'runtime.batch_committed', payload: { tickBefore: committed.tick, ticks: amount,
+                  commands: frozenCommandResults.length, configHash } }],
+                commandResults: frozenCommandResults,
               }),
             };
           } catch (error) { rememberFailure(error, false); throw error; }
         }
-        // A retained batch is always resolved before any new simulation.
         return commitPending();
       });
     } catch (error) { return Promise.reject(error); }
@@ -181,11 +231,19 @@ async function createDurableWorldRuntime(options = {}) {
   function retry() {
     try {
       assertOpen();
-      if (!pending || !pending.canRetry) throw runtimeError('NOT_RETRYABLE');
       if (inFlight) throw runtimeError('BUSY');
-      blocked = false;
-      pending.attempts = 0;
-      return exclusive(commitPending);
+      if (pending && pending.canRetry) {
+        blocked = false;
+        pending.attempts = 0;
+        return exclusive(commitPending);
+      }
+      if (!pending && prepareAttempts > 0 && prepareCanRetry) {
+        blocked = false;
+        prepareAttempts = 0;
+        prepareCanRetry = false;
+        return step(batchTicks);
+      }
+      throw runtimeError('NOT_RETRYABLE');
     } catch (error) { return Promise.reject(error); }
   }
   function schedule(delay) {
@@ -194,7 +252,9 @@ async function createDurableWorldRuntime(options = {}) {
     timer = setTimeout(async () => {
       timer = null;
       try { await step(); } catch (_) { /* failure is retained in summary */ }
-      const backoff = pending ? Math.min(maxRetryDelayMs, retryDelayMs * (2 ** Math.min(pending.attempts - 1, 20))) : intervalMs;
+      const attempts = pending ? pending.attempts : prepareAttempts;
+      const backoff = attempts > 0
+        ? Math.min(maxRetryDelayMs, retryDelayMs * (2 ** Math.min(attempts - 1, 20))) : intervalMs;
       schedule(backoff);
     }, delay);
   }
@@ -226,4 +286,5 @@ async function createDurableWorldRuntime(options = {}) {
   return Object.freeze({ version: DURABLE_RUNTIME_VERSION, step, retry, start, pause, close, getWorld, summary });
 }
 
-module.exports = { DURABLE_RUNTIME_VERSION, createDurableWorldRuntime, advanceDeterministicBatch, retryable };
+module.exports = { DURABLE_RUNTIME_VERSION, COMMAND_PROFILE, MAX_COMMANDS_PER_BATCH,
+  createDurableWorldRuntime, advanceDeterministicBatch, executeDurableCommands, retryable };

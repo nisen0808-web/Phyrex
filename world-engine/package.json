@@ -23,7 +23,8 @@
     "test:postgres": "node tests/integration/postgres-store.js",
     "test:postgres:commands": "node tests/integration/postgres-command-inbox.js",
     "runtime:postgres": "node demo/durable-runtime-cli.js",
-    "test:postgres:runtime": "node tests/integration/postgres-durable-runtime.js"
+    "test:postgres:runtime": "node tests/integration/postgres-durable-runtime.js",
+    "test:postgres:runtime-commands": "node tests/integration/postgres-runtime-commands.js"
   },
   "dependencies": {
     "pg": "8.23.0"

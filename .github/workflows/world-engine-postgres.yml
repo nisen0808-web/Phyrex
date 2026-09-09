@@ -69,6 +69,13 @@ jobs:
           mkdir -p world-engine/output/ci
           npm --prefix world-engine run test:postgres:runtime 2>&1 | tee world-engine/output/ci/postgres-runtime.log
           grep -F 'postgres durable runtime completed 11 scenario groups: 11 passed, 0 failed' world-engine/output/ci/postgres-runtime.log
+      - name: Run real PostgreSQL runtime command tests
+        env:
+          WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
+        run: |
+          mkdir -p world-engine/output/ci
+          npm --prefix world-engine run test:postgres:runtime-commands 2>&1 | tee world-engine/output/ci/postgres-runtime-commands.log
+          grep -F 'postgres runtime commands completed 7 scenario groups: 7 passed, 0 failed' world-engine/output/ci/postgres-runtime-commands.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
