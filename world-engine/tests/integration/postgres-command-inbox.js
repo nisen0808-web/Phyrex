@@ -119,7 +119,7 @@ async function main() {
     assert.ok(summary.commands >= 4);
     assert.ok(summary.pendingCommands >= 1);
     await assert.rejects(a.listCommands({ worldId: world.id, status: 'bad' }), e => e.code === 'WORLD_DB_INVALID_INPUT');
-    await assert.rejects(a.listCommands({ worldId: world.id, limit: 0 }), e => e.code === 'WORLD_DB_INVALID_INPUT');
+    await assert.rejects(a.listCommands({ worldId: world.id, limit: 0 }), e => e.code === 'WORLD_DB_INVALID_CONFIG');
     pass('database summary exposes bounded command backlog without unbounded reads');
 
     console.log(`postgres command inbox completed ${groups} scenario groups: ${groups} passed, 0 failed`);
