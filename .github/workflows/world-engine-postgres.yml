@@ -55,6 +55,13 @@ jobs:
           mkdir -p world-engine/output/ci
           npm --prefix world-engine run test:postgres 2>&1 | tee world-engine/output/ci/postgres.log
           grep -F 'postgres integration completed 14 scenario groups: 14 passed, 0 failed' world-engine/output/ci/postgres.log
+      - name: Run real PostgreSQL command inbox tests
+        env:
+          WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
+        run: |
+          mkdir -p world-engine/output/ci
+          npm --prefix world-engine run test:postgres:commands 2>&1 | tee world-engine/output/ci/postgres-commands.log
+          grep -F 'postgres command inbox completed 8 scenario groups: 8 passed, 0 failed' world-engine/output/ci/postgres-commands.log
       - name: Run real PostgreSQL durable runtime tests
         env:
           WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
