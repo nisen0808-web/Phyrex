@@ -122,8 +122,9 @@ function createFaction(input = {}) {
 
 function createEvent(input = {}) {
   if (!input.type) throw new Error('Event requires type');
+  if (!input.id) throw new Error('Event requires an id allocated by its world');
   return {
-    id: input.id || `event_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    id: input.id,
     type: input.type,
     status: input.status || 'pending',
     tick: input.tick || 0,
@@ -139,8 +140,9 @@ function createEvent(input = {}) {
 
 function createAction(input = {}) {
   if (!input.type) throw new Error('Action requires type');
+  if (!input.id) throw new Error('Action requires an id allocated by its world');
   return {
-    id: input.id || `action_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    id: input.id,
     type: input.type,
     actorId: input.actorId || null,
     targetId: input.targetId || null,

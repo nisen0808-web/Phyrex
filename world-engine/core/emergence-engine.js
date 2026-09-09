@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const { createInformation, INFORMATION_TYPES } = require('./information-engine');
 const { createMemory } = require('./memory-engine');
 const { createProcess, PROCESS_TYPES } = require('./process-engine');
@@ -43,7 +45,7 @@ function ensureEmergenceState(world) {
 
 function createEmergence(world, input = {}) {
   const state = ensureEmergenceState(world);
-  const id = input.id || `emergence_${world.tick}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'emergence', 'emergence.create');
   const emergence = {
     id,
     type: input.type,

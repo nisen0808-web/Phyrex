@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const { assignQuestToPlayer, getPlayerQuests } = require('./quest-engine');
 const { getPlayerView } = require('./player-engine');
 const { recordPlayerJournal, JOURNAL_TYPES } = require('./player-journal-engine');
@@ -55,7 +57,7 @@ function seedQuestBoard(world, locationId, options = {}) {
 function createBoardItem(world, locationId, input = {}) {
   const state = ensureQuestBoardState(world);
   const item = {
-    id: input.id || `board_${locationId}_${input.type}_${world.tick}_${Math.random().toString(16).slice(2)}`,
+    id: input.id || nextWorldId(world, 'board', 'quest-board.create'),
     locationId,
     type: input.type || BOARD_ITEM_TYPES.WORK,
     status: input.status || BOARD_ITEM_STATUS.OPEN,

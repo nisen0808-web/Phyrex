@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const INFRASTRUCTURE_STATUS = {
   PLANNED: 'planned',
   BUILDING: 'building',
@@ -61,7 +63,7 @@ function createInfrastructure(world, input = {}) {
   if (!city) throw new Error(`Missing city ${input.cityId}`);
   const def = DEFAULT_INFRASTRUCTURE_DEFS[input.type] || { cost: 100, buildProgress: 50, maintenance: 1, effects: {} };
   const state = ensureInfrastructureState(world);
-  const id = input.id || `infra_${world.tick}_${input.cityId}_${input.type}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'infra', 'infrastructure.create');
   const item = {
     id,
     cityId: input.cityId,

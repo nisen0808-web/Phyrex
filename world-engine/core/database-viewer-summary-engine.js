@@ -1,5 +1,7 @@
 'use strict';
 
+const { wallClockIso } = require('../platform/runtime-clock');
+
 const {
   getDatabaseStatus,
   listDatabaseWorlds,
@@ -21,7 +23,7 @@ function buildDatabaseViewerSummary(options = {}) {
   });
   return {
     version: DATABASE_VIEWER_SUMMARY_VERSION,
-    generatedAt: new Date().toISOString(),
+    generatedAt: wallClockIso(),
     status,
     totals: {
       worlds: worlds.length,

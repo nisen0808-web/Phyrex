@@ -7,9 +7,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   test-node-20:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,10 +26,13 @@ jobs:
         run: |
           node --version
           npm --version
+      - name: Run database recovery regression
+        run: node world-engine/tests/database-startup-recovery-test.js
       - name: Run complete test suite
+        if: ${{ !cancelled() }}
         run: |
           mkdir -p world-engine/output/ci
-          npm test 2>&1 | tee world-engine/output/ci/node20.log
+          npm --prefix world-engine test 2>&1 | tee world-engine/output/ci/node20.log
       - name: Upload Node 20 logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -34,6 +42,7 @@ jobs:
 
   test-node-22:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,10 +54,13 @@ jobs:
         run: |
           node --version
           npm --version
+      - name: Run database recovery regression
+        run: node world-engine/tests/database-startup-recovery-test.js
       - name: Run complete test suite
+        if: ${{ !cancelled() }}
         run: |
           mkdir -p world-engine/output/ci
-          npm test 2>&1 | tee world-engine/output/ci/node22.log
+          npm --prefix world-engine test 2>&1 | tee world-engine/output/ci/node22.log
       - name: Upload Node 22 logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -58,6 +70,7 @@ jobs:
 
   stress:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4

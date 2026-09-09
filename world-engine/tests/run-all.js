@@ -1,88 +1,42 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const tests = [
-  'smoke-test.js',
-  'information-memory-test.js',
-  'identity-culture-test.js',
-  'religion-civilization-test.js',
-  'desire-opportunity-test.js',
-  'process-emergence-test.js',
-  'governance-conflict-test.js',
-  'governance-environment-response-test.js',
-  'technology-infrastructure-test.js',
-  'snapshot-test.js',
-  'viewer-test.js',
-  'player-command-test.js',
-  'shell-engine-test.js',
-  'shell-script-test.js',
-  'quest-tutorial-report-test.js',
-  'map-alias-test.js',
-  'query-content-test.js',
-  'journal-encounter-board-test.js',
-  'item-inventory-shop-test.js',
-  'persistence-offline-runtime-test.js',
-  'api-server-test.js',
-  'account-session-api-test.js',
-  'api-permission-test.js',
-  'api-admin-audit-test.js',
-  'client-web-test.js',
-  'browser-gameplay-test.js',
-  'browser-onboarding-test.js',
-  'browser-character-control-test.js',
-  'runtime-loop-test.js',
-  'browser-admin-console-test.js',
-  'browser-save-manager-test.js',
-  'browser-action-queue-test.js',
-  'browser-command-palette-test.js',
-  'world-template-api-test.js',
-  'browser-world-insights-test.js',
-  'password-credential-engine-test.js',
-  'session-token-hash-test.js',
-  'request-throttle-test.js',
-  'deterministic-random-engine-test.js',
-  'system-scheduler-engine-test.js',
-  'system-contract-engine-test.js',
-  'modular-simulation-pipeline-test.js',
-  'simulation-pipeline-contracts-test.js',
-  'source-purity-engine-test.js',
-  'natural-world-basic-test.js',
-  'natural-world-pipeline-test.js',
-  'ecology-engine-test.js',
-  'ecology-pipeline-test.js',
-  'population-environment-pressure-test.js',
-  'city-environment-pressure-test.js',
-  'economy-environment-linkage-test.js',
-  'ai-environment-goals-test.js',
-  'world-consistency-engine-test.js',
-  'world-consistency-pipeline-test.js',
-  'replay-determinism-test.js',
-  'world-template-test.js',
-  'stability-100-test.js',
-];
+function discoverTests(directory = __dirname) {
+  // The long stress test has its own mandatory CI job. All other regression
+  // scripts, including future additions, run from both npm entrypoints.
+  return fs.readdirSync(directory)
+    .filter(name => name.endsWith('-test.js') && name !== 'stability-1000-test.js')
+    .sort();
+}
 
-const results = [];
-
-for (const test of tests) {
-  const file = path.join(__dirname, test);
-  const result = spawnSync(process.execPath, [file], { encoding: 'utf8' });
-  const passed = result.status === 0;
-  results.push({ test, passed, status: result.status, stdout: result.stdout, stderr: result.stderr });
-
-  if (passed) {
-    console.log(`PASS ${test}`);
-  } else {
-    console.error(`FAIL ${test}`);
-    if (result.stdout) console.error(result.stdout);
-    if (result.stderr) console.error(result.stderr);
+function main() {
+  const tests = discoverTests();
+  if (!tests.length) throw new Error('No world-engine regression tests discovered');
+  const results = [];
+  for (const test of tests) {
+    const result = spawnSync(process.execPath, [path.join(__dirname, test)], {
+      encoding: 'utf8', timeout: 180000, maxBuffer: 8 * 1024 * 1024,
+    });
+    const passed = result.status === 0 && !result.error;
+    results.push({ test, passed });
+    if (passed) {
+      console.log(`PASS ${test}`);
+    } else {
+      console.error(`FAIL ${test}`);
+      if (result.error) console.error(result.error.message);
+      if (result.signal) console.error(`Terminated by ${result.signal}`);
+      if (result.stdout) console.error(result.stdout);
+      if (result.stderr) console.error(result.stderr);
+    }
   }
+  const failed = results.filter(result => !result.passed);
+  console.log(`world-engine test runner completed ${tests.length} tests: ${tests.length - failed.length} passed, ${failed.length} failed`);
+  if (failed.length) process.exitCode = 1;
+  return results;
 }
 
-const failed = results.filter(result => !result.passed);
-console.log(`world-engine test runner completed ${tests.length} tests: ${tests.length - failed.length} passed, ${failed.length} failed`);
-
-if (failed.length) {
-  process.exitCode = 1;
-}
+if (require.main === module) main();
+module.exports = { discoverTests, main };

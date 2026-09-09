@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const LIFE_EVENT_TYPES = {
   BIRTH: 'birth',
   GOAL_ASSIGNED: 'goal_assigned',
@@ -71,7 +73,7 @@ function createLifeEvent(world, input = {}) {
   const importance = clampImportance(input.importance ?? EVENT_IMPORTANCE[input.type] ?? 10);
 
   return {
-    id: input.id || `life_${world.tick}_${input.entityId}_${Math.random().toString(16).slice(2)}`,
+    id: input.id || nextWorldId(world, 'life', 'history.create'),
     entityId: input.entityId,
     type: input.type,
     tick: input.tick ?? world.tick,

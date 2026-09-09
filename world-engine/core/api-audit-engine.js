@@ -1,5 +1,7 @@
 'use strict';
 
+const { wallClockIso } = require('../platform/runtime-clock');
+
 const DEFAULT_AUDIT_OPTIONS = {
   maxEntries: 1000,
   maxErrors: 200,
@@ -27,7 +29,7 @@ function recordApiRequest(world, input = {}, options = {}) {
   const entry = {
     id: input.id || `api_${world.tick}_${state.stats.requests + 1}`,
     tick: world.tick,
-    at: input.at || new Date().toISOString(),
+    at: input.at || wallClockIso(),
     method: input.method || 'GET',
     path: input.path || '/',
     statusCode: Number(input.statusCode || 200),

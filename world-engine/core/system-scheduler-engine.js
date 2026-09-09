@@ -198,6 +198,8 @@ function ensureSchedulerState(world) {
     };
   }
   const state = world.kernel;
+  // Older partial saves may carry performance data before scheduler metadata.
+  if (state.version === undefined) state.version = SCHEDULER_STATE_VERSION;
   if (state.version !== SCHEDULER_STATE_VERSION) {
     throw new Error(`Unsupported scheduler state version ${state.version}`);
   }

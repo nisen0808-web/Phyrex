@@ -1,5 +1,7 @@
 'use strict';
 
+const { wallClockIso } = require('../platform/runtime-clock');
+
 const fs = require('fs');
 const path = require('path');
 const { createSaveEnvelope, migrateSaveEnvelope, repairLoadedWorld } = require('./persistence-engine');
@@ -31,8 +33,8 @@ function getDatabaseStatus(options = {}) {
     ...getDatabaseConfigSummary(config),
     engineVersion: DATABASE_ENGINE_VERSION,
     supported: config.provider === DATABASE_PROVIDERS.JSONL || config.provider === DATABASE_PROVIDERS.DISABLED,
-    records: config.provider === DATABASE_PROVIDERS.JSONL && fs.existsSync(config.worldsFile) ? readJsonLines(config.worldsFile).length : 0,
-    events: config.provider === DATABASE_PROVIDERS.JSONL && fs.existsSync(config.eventsFile) ? readJsonLines(config.eventsFile).length : 0,
+    records: config.provider === DATABASE_PROVIDERS.JSONL ? readWorldSaveRecords(config.worldsFile).length : 0,
+    events: config.provider === DATABASE_PROVIDERS.JSONL ? readJsonLines(config.eventsFile).length : 0,
   };
 }
 
@@ -41,9 +43,9 @@ function saveWorldToDatabase(world, options = {}) {
   const config = loadDatabaseConfig(options.database || options);
   if (config.provider === DATABASE_PROVIDERS.DISABLED) return disabledResult('saveWorld');
   assertJsonlProvider(config);
-  ensureDatabaseFiles(config);
+  const records = readWorldSaveRecords(config.worldsFile);
+  const sequence = (records.length ? records[records.length - 1].sequence : 0) + 1;
   const envelope = createSaveEnvelope(world, { ...(options || {}), reason: options.reason || 'database_save' });
-  const sequence = readJsonLines(config.worldsFile).length + 1;
   const record = {
     recordType: 'world_save',
     id: `world_save_${sanitize(envelope.worldId)}_${Number(envelope.tick || 0)}_${sequence}`,
@@ -55,6 +57,8 @@ function saveWorldToDatabase(world, options = {}) {
     metadata: { ...(envelope.metadata || {}) },
     envelope,
   };
+  validateWorldSaveRecord(record);
+  ensureDatabaseFiles(config);
   appendJsonLine(config.worldsFile, record);
   writeSchemaFile(config);
   return summarizeWorldRecord(record, config);
@@ -64,13 +68,15 @@ function loadWorldFromDatabase(worldId = null, options = {}) {
   const config = loadDatabaseConfig(options.database || options);
   if (config.provider === DATABASE_PROVIDERS.DISABLED) return null;
   assertJsonlProvider(config);
-  const records = readJsonLines(config.worldsFile)
-    .filter(record => record.recordType === 'world_save')
-    .filter(record => !worldId || record.worldId === worldId)
-    .sort(compareWorldRecordsDesc);
-  const record = records[0] || null;
-  if (!record) return null;
-  const migrated = migrateSaveEnvelope(record.envelope);
+  const records = readWorldSaveRecords(config.worldsFile);
+  const record = records.slice().reverse().find(item => worldId === null || item.worldId === worldId);
+  return record ? restoreWorldSaveRecord(record, config) : null;
+}
+
+function restoreWorldSaveRecord(record, config) {
+  validateWorldSaveRecord(record);
+  // Repair only a detached copy. Reading a save must not mutate a caller's record.
+  const migrated = migrateSaveEnvelope(JSON.parse(JSON.stringify(record.envelope)));
   repairLoadedWorld(migrated.world);
   return {
     ...summarizeWorldRecord(record, config),
@@ -84,11 +90,37 @@ function listDatabaseWorlds(options = {}) {
   if (config.provider === DATABASE_PROVIDERS.DISABLED) return [];
   assertJsonlProvider(config);
   const latest = new Map();
-  for (const record of readJsonLines(config.worldsFile).filter(item => item.recordType === 'world_save')) {
-    const previous = latest.get(record.worldId);
-    if (!previous || compareWorldRecordsDesc(record, previous) < 0) latest.set(record.worldId, record);
-  }
+  for (const record of readWorldSaveRecords(config.worldsFile)) latest.set(record.worldId, record);
   return Array.from(latest.values()).sort(compareWorldRecordsDesc).map(record => summarizeWorldRecord(record, config));
+}
+
+function readWorldSaveRecords(file) {
+  let previousSequence = 0;
+  const ids = new Set();
+  return readJsonLines(file, record => {
+    validateWorldSaveRecord(record);
+    if (record.sequence <= previousSequence) throw new Error('world_sequence_not_increasing');
+    if (ids.has(record.id)) throw new Error('duplicate_world_record_id');
+    previousSequence = record.sequence;
+    ids.add(record.id);
+  });
+}
+
+function validateWorldSaveRecord(record) {
+  if (!isObject(record) || record.recordType !== 'world_save') throw new Error('invalid_world_record_type');
+  if (typeof record.id !== 'string' || !record.id.trim()) throw new Error('invalid_world_record_id');
+  if (!Number.isSafeInteger(record.sequence) || record.sequence < 1) throw new Error('invalid_world_sequence');
+  if (typeof record.worldId !== 'string' || !record.worldId.trim()) throw new Error('invalid_world_id');
+  if (!Number.isSafeInteger(record.tick) || record.tick < 0) throw new Error('invalid_world_tick');
+  if (!Number.isSafeInteger(record.schemaVersion) || record.schemaVersion < 1) throw new Error('invalid_world_schema');
+  const envelope = record.envelope;
+  if (!isObject(envelope) || !isObject(envelope.world)) throw new Error('invalid_world_envelope');
+  if (envelope.schemaVersion !== record.schemaVersion || envelope.worldId !== record.worldId || envelope.tick !== record.tick) {
+    throw new Error('world_envelope_header_mismatch');
+  }
+  if (envelope.world.id !== record.worldId || envelope.world.tick !== record.tick) throw new Error('world_state_header_mismatch');
+  if (!isObject(envelope.world.entities) || !isObject(envelope.world.locations)) throw new Error('invalid_world_collections');
+  return record;
 }
 
 function appendDatabaseEvent(input = {}, options = {}) {
@@ -105,7 +137,7 @@ function appendDatabaseEvent(input = {}, options = {}) {
     tick: Number(input.tick || 0),
     type: input.type || 'event',
     payload: { ...(input.payload || {}) },
-    createdAt: input.createdAt || new Date().toISOString(),
+    createdAt: input.createdAt || wallClockIso(),
   };
   appendJsonLine(config.eventsFile, event);
   writeSchemaFile(config);
@@ -131,8 +163,8 @@ function listDatabaseEvents(options = {}) {
 
 function ensureDatabaseFiles(config) {
   if (!config.autoCreate) return;
-  fs.mkdirSync(path.dirname(config.worldsFile), { recursive: true });
   for (const file of [config.worldsFile, config.eventsFile]) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
     if (!fs.existsSync(file)) fs.writeFileSync(file, '', 'utf8');
   }
 }
@@ -142,10 +174,7 @@ function writeSchemaFile(config) {
   const schema = {
     version: DATABASE_ENGINE_VERSION,
     provider: config.provider,
-    files: {
-      worlds: path.basename(config.worldsFile),
-      events: path.basename(config.eventsFile),
-    },
+    files: { worlds: path.basename(config.worldsFile), events: path.basename(config.eventsFile) },
     records: {
       world_save: ['recordType', 'id', 'sequence', 'worldId', 'tick', 'schemaVersion', 'savedAt', 'metadata', 'envelope'],
       world_event: ['recordType', 'id', 'sequence', 'worldId', 'tick', 'type', 'payload', 'createdAt'],
@@ -160,19 +189,39 @@ function appendJsonLine(file, value) {
   fs.appendFileSync(file, `${JSON.stringify(value)}\n`, 'utf8');
 }
 
-function readJsonLines(file) {
-  if (!file || !fs.existsSync(file)) return [];
-  return fs.readFileSync(file, 'utf8')
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean)
-    .map(line => JSON.parse(line));
+function readJsonLines(file, validate = null) {
+  if (!file) return [];
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+  const records = [];
+  text.split(/\r?\n/).forEach((line, index) => {
+    if (!line.trim()) return;
+    try {
+      const record = JSON.parse(line);
+      if (!isObject(record)) throw new Error('record_must_be_object');
+      if (validate) validate(record);
+      records.push(record);
+    } catch (cause) {
+      // Do not echo raw JSON: save payloads can contain private world/account data.
+      const reason = cause instanceof SyntaxError ? 'invalid_json' : cause.message;
+      const error = new Error(`DATABASE_INVALID_RECORD:${path.basename(file)}:line_${index + 1}:${reason}`);
+      error.code = 'DATABASE_INVALID_RECORD';
+      error.file = file;
+      error.line = index + 1;
+      throw error;
+    }
+  });
+  return records;
 }
 
 function compareWorldRecordsDesc(left, right) {
-  const tick = Number(right.tick || 0) - Number(left.tick || 0);
-  if (tick) return tick;
-  return Number(right.sequence || 0) - Number(left.sequence || 0);
+  // Tick may decrease after a deliberate rollback. Sequence is append order.
+  return right.sequence - left.sequence;
 }
 
 function compareEventRecordsDesc(left, right) {
@@ -207,10 +256,12 @@ function summarizeEventRecord(event) {
   };
 }
 
+function isObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
 function assertJsonlProvider(config) {
-  if (config.provider !== DATABASE_PROVIDERS.JSONL) {
-    throw new Error(`Database provider ${config.provider} requires an external adapter`);
-  }
+  if (config.provider !== DATABASE_PROVIDERS.JSONL) throw new Error(`Database provider ${config.provider} requires an external adapter`);
 }
 
 function disabledResult(operation) {
@@ -232,4 +283,7 @@ module.exports = {
   listDatabaseEvents,
   ensureDatabaseFiles,
   readJsonLines,
+  readWorldSaveRecords,
+  restoreWorldSaveRecord,
+  validateWorldSaveRecord,
 };

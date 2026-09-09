@@ -1,5 +1,9 @@
 'use strict';
 
+const { randomFloat } = require('./random-engine');
+
+const { nextWorldId } = require('./world-id-engine');
+
 const { createEvent } = require('./schema');
 const {
   applyEventRelationshipEffects,
@@ -41,7 +45,7 @@ function processEvents(world, options = {}) {
     });
 
     for (const next of result.generatedEvents || []) {
-      const created = createEvent({ ...next, tick: world.tick, causeIds: [event.id, ...(next.causeIds || [])] });
+      const created = createEvent({ ...next, id: next.id || nextWorldId(world, 'event', 'event.generated'), tick: world.tick, causeIds: [event.id, ...(next.causeIds || [])] });
       world.events.push(created);
       generated.push(created);
     }
@@ -164,7 +168,7 @@ function handleDamageEvent(world, event, options = {}) {
 function scheduleRandomEvents(world, options = {}) {
   const generated = [];
   const chance = Number(options.chance || 0.03);
-  const random = options.random || Math.random;
+  const random = options.random || (() => randomFloat(world, 'event.incident'));
 
   if (random() > chance) return generated;
 
@@ -176,6 +180,7 @@ function scheduleRandomEvents(world, options = {}) {
   const location = world.locations[actor.locationId] || locations[Math.floor(random() * locations.length)];
 
   const event = createEvent({
+    id: nextWorldId(world, 'event', 'event.incident'),
     type: 'world.random_incident',
     tick: world.tick,
     actorIds: [actor.id],

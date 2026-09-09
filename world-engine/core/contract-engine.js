@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const { changeRelationship } = require('./relationship-engine');
 const { recordLifeEvent, LIFE_EVENT_TYPES } = require('./history-engine');
 const { getSpecies } = require('./species-engine');
@@ -137,7 +139,7 @@ function createContract(world, input = {}) {
   if (!world.entities[input.subjectId]) throw new Error(`Missing subject ${input.subjectId}`);
 
   const template = DEFAULT_CONTRACT_TEMPLATES[input.type] || {};
-  const id = input.id || `contract_${world.tick}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'contract', 'contract.create');
   const duration = input.durationTicks ?? template.defaultDuration ?? null;
   const contract = {
     id,

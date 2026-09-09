@@ -1,5 +1,9 @@
 'use strict';
 
+const { randomChance } = require('./random-engine');
+
+const { nextWorldId } = require('./world-id-engine');
+
 const INFORMATION_STATUS = {
   ACTIVE: 'active',
   EXPIRED: 'expired',
@@ -56,7 +60,7 @@ function ensureInformationState(world) {
 function createInformation(world, input = {}) {
   if (!input.content && !input.summary) throw new Error('Information requires content or summary');
   const state = ensureInformationState(world);
-  const id = input.id || `info_${world.tick}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'info', 'information.create');
   const item = {
     id,
     type: input.type || INFORMATION_TYPES.FACT,
@@ -189,7 +193,7 @@ function spreadInformation(world, options = {}) {
         if (targetId === sourceId) continue;
         for (const entry of known.slice(0, 6)) {
           const item = state.items[entry.informationId];
-          if (!item || Math.random() > spreadProbability(item, entry, options)) continue;
+          if (!item || !randomChance(world, spreadProbability(item, entry, options), 'information.spread')) continue;
           const targetItem = maybeMutateRumor(world, item, options);
           revealInformation(world, targetItem.id, 'entity', targetId, {
             confidence: Math.max(5, entry.confidence - item.secrecy * 0.1 - 5),
@@ -210,7 +214,7 @@ function spreadInformation(world, options = {}) {
 function maybeMutateRumor(world, item, options = {}) {
   const state = ensureInformationState(world);
   if (item.type === INFORMATION_TYPES.SECRET) return item;
-  if (Math.random() > (options.rumorMutationChance ?? DEFAULT_INFORMATION_OPTIONS.rumorMutationChance)) return item;
+  if (!randomChance(world, options.rumorMutationChance ?? DEFAULT_INFORMATION_OPTIONS.rumorMutationChance, 'information.mutation')) return item;
 
   const rumor = createInformation(world, {
     type: INFORMATION_TYPES.RUMOR,

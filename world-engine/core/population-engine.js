@@ -45,6 +45,12 @@ function ensurePopulationState(world) {
   }
   if (!world.population.options) world.population.options = { ...DEFAULT_POPULATION_OPTIONS };
   if (!world.population.environment) world.population.environment = createEmptyEnvironmentSummary();
+  if (!world.population.indexes || typeof world.population.indexes !== 'object') world.population.indexes = {};
+  for (const key of ['byAgeGroup', 'byGeneration']) {
+    if (!world.population.indexes[key] || typeof world.population.indexes[key] !== 'object') world.population.indexes[key] = {};
+  }
+  if (!Number.isFinite(world.population.births)) world.population.births = 0;
+  if (!Number.isFinite(world.population.deaths)) world.population.deaths = 0;
   return world.population;
 }
 

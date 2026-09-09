@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const {
   ingestGovernanceResponsesAsProcesses,
   updateGovernanceProcessProgress,
@@ -59,7 +61,8 @@ function ensureProcessState(world) {
 
 function createProcess(world, input = {}) {
   const state = ensureProcessState(world);
-  const id = input.id || `process_${world.tick}_${Math.random().toString(16).slice(2)}`;
+  let id = input.id || nextWorldId(world, 'process', 'process.create');
+  while (!input.id && state.byId[id]) id = nextWorldId(world, 'process', 'process.create');
   const process = {
     id,
     type: input.type || PROCESS_TYPES.LIFE_ARC,
@@ -82,11 +85,19 @@ function createProcess(world, input = {}) {
   state.byId[id] = process;
   state.stats.created += 1;
   indexProcess(world, process);
+  const limits = { ...DEFAULT_PROCESS_OPTIONS, ...(world.simulation?.options?.process || {}), ...(state.retention || {}) };
+  // Emergence and conflict may create processes after this tick's process
+  // system has run. Enforce retention at every insertion, not only per tick.
+  pruneProcesses(world, { ...limits, protectedId: id });
   return process;
 }
 
 function processProcessesTick(world, options = {}) {
   const config = { ...DEFAULT_PROCESS_OPTIONS, ...(options || {}) };
+  ensureProcessState(world).retention = {
+    maxProcesses: processLimit(config.maxProcesses, DEFAULT_PROCESS_OPTIONS.maxProcesses),
+    maxInactiveProcesses: processLimit(config.maxInactiveProcesses, DEFAULT_PROCESS_OPTIONS.maxInactiveProcesses),
+  };
   const created = [];
   const updated = [];
   const resolved = [];
@@ -195,6 +206,8 @@ function describeProcessFromMemory(world, memory) {
 }
 
 function inferProcessType(type, payload = {}) {
+  // Registration is bookkeeping, not a life event or an unfolding process.
+  if (type === 'entity.registered' || type === 'location.registered') return null;
   if (type.includes('government.response') || type.includes('governance.response') || payload.responseId) return PROCESS_TYPES.GOVERNANCE_RESPONSE;
   if (type.includes('contract.broken') || type.includes('damaged')) return PROCESS_TYPES.CONFLICT;
   if (type.includes('goal.completed')) return PROCESS_TYPES.RISE;
@@ -260,26 +273,32 @@ function updateProcessProgress(world, processId, options = {}) {
 
 function pruneProcesses(world, options = {}) {
   const state = ensureProcessState(world);
+  const maxProcesses = processLimit(options.maxProcesses, DEFAULT_PROCESS_OPTIONS.maxProcesses);
+  const maxInactive = processLimit(options.maxInactiveProcesses, DEFAULT_PROCESS_OPTIONS.maxInactiveProcesses);
   const all = Object.values(state.byId);
-  const inactive = all.filter(p => p.status !== PROCESS_STATUS.ACTIVE).sort((a, b) => (b.resolvedAt || b.lastUpdatedAt) - (a.resolvedAt || a.lastUpdatedAt));
-  const keepInactive = new Set(inactive.slice(0, options.maxInactiveProcesses || DEFAULT_PROCESS_OPTIONS.maxInactiveProcesses).map(p => p.id));
-  const remove = [];
-
-  for (const process of inactive) {
-    if (!keepInactive.has(process.id)) remove.push(process.id);
+  const compareOldest = (a, b) => Number(a.resolvedAt ?? a.lastUpdatedAt ?? 0) - Number(b.resolvedAt ?? b.lastUpdatedAt ?? 0)
+    || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  const inactive = all.filter(p => p.status !== PROCESS_STATUS.ACTIVE).sort(compareOldest);
+  const remove = new Set(inactive.slice(0, Math.max(0, inactive.length - maxInactive)).map(p => p.id));
+  const overflow = all.length - remove.size - maxProcesses;
+  if (overflow > 0) {
+    const candidates = all.filter(p => !remove.has(p.id)).sort((a, b) => (
+      Number(a.id === options.protectedId) - Number(b.id === options.protectedId)
+      || Number(a.status === PROCESS_STATUS.ACTIVE) - Number(b.status === PROCESS_STATUS.ACTIVE)
+      || compareOldest(a, b)
+    ));
+    for (const process of candidates.slice(0, overflow)) remove.add(process.id);
   }
-
-  const remainingCount = all.length - remove.length;
-  if (remainingCount > (options.maxProcesses || DEFAULT_PROCESS_OPTIONS.maxProcesses)) {
-    const candidates = all
-      .filter(p => !remove.includes(p.id))
-      .sort((a, b) => a.lastUpdatedAt - b.lastUpdatedAt);
-    for (const process of candidates.slice(0, remainingCount - options.maxProcesses)) remove.push(process.id);
-  }
-
   for (const id of remove) delete state.byId[id];
-  state.stats.pruned += remove.length;
-  return remove;
+  state.stats.pruned += remove.size;
+  if (remove.size) rebuildProcessIndexes(world);
+  return [...remove];
+}
+
+function processLimit(value, fallback) {
+  const limit = Number(value ?? fallback);
+  if (!Number.isSafeInteger(limit) || limit < 0) throw new Error('Process limits must be non-negative safe integers');
+  return limit;
 }
 
 function findActiveProcess(world, type, ownerType, ownerId, key) {

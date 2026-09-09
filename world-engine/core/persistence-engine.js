@@ -1,5 +1,7 @@
 'use strict';
 
+const { wallClockNow, wallClockIso } = require('../platform/runtime-clock');
+
 const fs = require('fs');
 const path = require('path');
 const { repairAccountSessionState } = require('./account-session-engine');
@@ -18,7 +20,7 @@ const DEFAULT_PERSISTENCE_OPTIONS = {
 function createSaveEnvelope(world, options = {}) {
   if (!world) throw new Error('createSaveEnvelope requires world');
   repairEngineState(world);
-  const now = new Date().toISOString();
+  const now = wallClockIso();
   return {
     schemaVersion: PERSISTENCE_SCHEMA_VERSION,
     savedAt: now,
@@ -172,7 +174,7 @@ function deleteTransientSetCaches(value, seen = new Set()) {
 }
 
 function createBackupFile(filePath, maxBackups) {
-  const backup = `${filePath}.bak.${Date.now()}`;
+  const backup = `${filePath}.bak.${wallClockNow()}`;
   fs.copyFileSync(filePath, backup);
   const dir = path.dirname(filePath);
   const base = path.basename(filePath);
