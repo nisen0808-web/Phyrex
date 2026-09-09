@@ -1,0 +1,27 @@
+name: Durable runtime source archive
+on:
+  push:
+    branches: [feature/postgres-durable-runtime]
+    paths: [.github/workflows/durable-runtime-source.yml]
+permissions:
+  contents: read
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Archive tracked source
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/runtime-source"
+          git archive --format=tar HEAD > "$RUNNER_TEMP/runtime-source/source.tar"
+          git rev-parse HEAD > "$RUNNER_TEMP/runtime-source/commit.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: durable-runtime-source
+          path: ${{ runner.temp }}/runtime-source/
+          retention-days: 1
+          if-no-files-found: error
