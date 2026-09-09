@@ -10,6 +10,8 @@ const {
 
 const { repairLoadedWorld } = require('../core/persistence-engine');
 
+const { canonicalWorldCopy, canonicalizeWorldInPlace } = require('./canonical-world');
+
 const DURABLE_RUNTIME_VERSION = 1;
 
 function runtimeError(code) {
@@ -36,6 +38,7 @@ function advanceDeterministicBatch(world, ticks, simulation = {}) {
   // Kernel registries are per-batch; all continuation state lives in the world.
   const kernel = createCultureBeliefFlowDeterministicKernel();
   for (let index = 0; index < ticks; index += 1) {
+    canonicalizeWorldInPlace(world);
     const report = runDeterministicSimulationTickWithCultureBeliefFlow(world, simulation, kernel);
     if (!report.kernel || report.kernel.failed !== 0) throw runtimeError('SIMULATION_FAILED');
   }
@@ -47,8 +50,11 @@ async function createDurableWorldRuntime(options = {}) {
   const batchTicks = integer(options.ticksPerBatch, 1, 1, maxTicks, 'ticks per batch');
   const intervalMs = integer(options.intervalMs, 1000, 10, 3600000, 'runtime interval');
   const retryDelayMs = integer(options.retryDelayMs, 250, 10, 60000, 'retry delay');
-  const maxRetryDelayMs = integer(options.maxRetryDelayMs, 10000, retryDelayMs, 3600000, 'max retry delay');
+  const maxRetryDelayMs = integer(options.maxRetryDelayMs, Math.max(10000, retryDelayMs), retryDelayMs, 3600000, 'max retry delay');
   const maxAttempts = integer(options.maxCommitAttempts, 5, 1, 100, 'max commit attempts');
+  if (options.simulation !== undefined && (!options.simulation || typeof options.simulation !== 'object' || Array.isArray(options.simulation))) {
+    throw runtimeError('INVALID_SIMULATION_OPTIONS');
+  }
   const simulation = freezeJson(detachedJson(options.simulation || {}));
   if (options.advance !== undefined && typeof options.advance !== 'function') throw runtimeError('INVALID_ADVANCE');
   const profile = options.advance ? textId(options.simulationId, 'custom simulationId') : 'culture-info-v1';
@@ -71,7 +77,7 @@ async function createDurableWorldRuntime(options = {}) {
     safeInteger(loaded.world.tick, 'loaded tick');
     const previousConfig = loaded.metadata?.durableRuntime?.configHash;
     if (previousConfig && previousConfig !== configHash) throw runtimeError('CONFIG_MISMATCH');
-    committed = freezeJson(detachedJson(loaded.world));
+    committed = freezeJson(canonicalWorldCopy(loaded.world));
   } catch (error) {
     if (ownsStore && typeof store.close === 'function') await store.close().catch(() => {});
     throw error;
@@ -157,7 +163,7 @@ async function createDurableWorldRuntime(options = {}) {
             await advance(candidate, amount, detachedJson(simulation));
             if (candidate.id !== worldId || candidate.tick !== committed.tick + amount) throw runtimeError('INVALID_ADVANCEMENT');
             repairLoadedWorld(candidate);
-            const world = freezeJson(detachedJson(candidate));
+            const world = freezeJson(canonicalWorldCopy(candidate));
             const requestId = `runtime:${digest({ world, revision, configHash })}`;
             pending = { world, tickBefore: committed.tick, ticks: amount, attempts: 0, canRetry: true,
               saveOptions: freezeJson({ requestId, expectedRevision: revision, reason: 'durable_runtime_batch',

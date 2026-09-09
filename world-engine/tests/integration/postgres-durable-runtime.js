@@ -5,6 +5,7 @@ const path = require('path');
 const { fork, spawn } = require('child_process');
 const { Pool } = require('pg');
 const { createWorld } = require('../../core/world-engine');
+const { buildDemoWorld } = require('../../demo/run-demo');
 const { repairLoadedWorld } = require('../../core/persistence-engine');
 const { createPostgresDatabaseStore } = require('../../core/postgres-database-engine');
 const { createDurableWorldRuntime, advanceDeterministicBatch } = require('../../core/durable-runtime-engine');
@@ -145,6 +146,19 @@ async function main() {
 
     await assert.rejects(create('cli_restart', { simulation: { autoNovel: false } }), e => e.code === 'WORLD_RUNTIME_CONFIG_MISMATCH');
     pass('restart refuses a different persisted simulation configuration');
+    const populated = buildDemoWorld(); populated.id = 'populated';
+    await store.saveWorld(populated, { requestId: 'seed:populated', expectedRevision: 0 });
+    const populatedExpected = (await store.loadWorld('populated')).world;
+    for (let n = 0; n < 2; n += 1) { advanceDeterministicBatch(populatedExpected, 2); repairLoadedWorld(populatedExpected); }
+    for (let n = 0; n < 2; n += 1) {
+      const processResult = await childCli(['--world-id', 'populated', '--ticks-per-batch', '2'], env);
+      assert.strictEqual(processResult.code, 0, processResult.stderr);
+    }
+    const populatedRestored = await store.loadWorld('populated');
+    assert.strictEqual(populatedRestored.revision, 3);
+    assert.strictEqual(digest(populatedRestored.world), digest(populatedExpected));
+    assert.ok(Object.keys(populatedRestored.world.entities).length >= 36);
+    pass('populated 36-entity world survives real JSONB and process restart with identical full state');
     console.log(`postgres durable runtime completed ${groups} scenario groups: ${groups} passed, 0 failed`);
   } finally {
     await Promise.all(runtimes.map(r => r.close({ flush: false }).catch(() => {})));

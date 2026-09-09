@@ -102,11 +102,14 @@ function scoreRelationship(world, fromId, toId) {
 }
 
 function decayRelationships(world, rate = 0.01) {
-  for (const relation of Object.values(world.relationships)) {
+  // Event processing passes an options object; direct callers may pass a number.
+  const amount = Number(rate && typeof rate === 'object' ? (rate.rate ?? 0.01) : rate);
+  if (!Number.isFinite(amount) || amount < 0) throw new RangeError('Relationship decay rate must be finite and nonnegative');
+  for (const relation of Object.values(world.relationships || {})) {
     for (const key of RELATION_KEYS) {
-      relation[key] = relation[key] > 0
-        ? Math.max(0, relation[key] - rate)
-        : Math.min(0, relation[key] + rate);
+      const value = Number(relation[key] ?? 0);
+      if (!Number.isFinite(value)) throw new RangeError('Relationship values must be finite');
+      relation[key] = value > 0 ? Math.max(0, value - amount) : Math.min(0, value + amount);
     }
   }
 }

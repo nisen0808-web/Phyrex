@@ -93,11 +93,12 @@ into this runner.
 ## Verification
 
 `tests/durable-runtime-test.js` adds 13 controlled-store lifecycle groups to the
-normal discovery runner (85 scripts). These are contract tests, not SQL evidence.
-`tests/integration/postgres-durable-runtime.js` adds 10 real PostgreSQL groups:
+normal discovery runner (86 scripts). These are contract tests, not SQL evidence.
+`tests/integration/postgres-durable-runtime.js` adds 11 real PostgreSQL groups:
 commit visibility, lost acknowledgement, SQL-trigger rollback, competing runtimes,
 independent competing processes, two CLI process restarts with full-state equality,
-SIGTERM, required startup, shutdown flush, and configuration mismatch. Missing test
+SIGTERM, required startup, shutdown flush, configuration mismatch, and a 36-entity
+world restart. Missing test
 DB configuration fails. Only isolated random schemas in named test databases are
 removed. Both Node 20 and Node 22 execute this suite in the mandatory PostgreSQL
 workflow; all previous 14 store groups, 100/1000-tick gates remain unchanged.
@@ -107,3 +108,18 @@ workflow; all previous 14 store groups, 100/1000-tick gates remain unchanged.
 Async HTTP/player-command integration; persisted external command ingestion/outbox;
 production credentials/roles, retention, backup/restore, leader leases and HA.
 SQL commit consistency is implemented here; production operation is not claimed.
+
+## JSONB ordering regression
+
+PostgreSQL JSONB does not preserve object-key insertion order. The runner now
+canonicalizes object keys before every default-pipeline tick while preserving array
+order. This prevents derived indexes and result digests from changing on restart
+and makes checkpoint batch size independent of ordering. Five additional local
+ordering contracts cover empty/populated worlds, batching and input validation.
+
+Populated-world validation also exposed an existing event/relationship interface
+mismatch: event processing passed `{}` to a numeric decay-rate parameter, creating
+NaN relationship values. Decay now accepts either numeric rates or `{rate}`, keeps
+explicit zero, and rejects non-finite inputs. Storage validation was not weakened.
+
+Reference: https://www.postgresql.org/docs/18/datatype-json.html

@@ -61,7 +61,7 @@ jobs:
         run: |
           mkdir -p world-engine/output/ci
           npm --prefix world-engine run test:postgres:runtime 2>&1 | tee world-engine/output/ci/postgres-runtime.log
-          grep -F 'postgres durable runtime completed 10 scenario groups: 10 passed, 0 failed' world-engine/output/ci/postgres-runtime.log
+          grep -F 'postgres durable runtime completed 11 scenario groups: 11 passed, 0 failed' world-engine/output/ci/postgres-runtime.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
