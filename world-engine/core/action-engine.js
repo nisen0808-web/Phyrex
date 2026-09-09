@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const { clamp, createEvent } = require('./schema');
 
 const DEFAULT_ACTION_HANDLERS = {
@@ -235,7 +237,7 @@ function pushEvent(world, input, options = {}) {
   if (typeof options.emitEvent === 'function') {
     return options.emitEvent(world, input);
   }
-  const event = createEvent({ ...input, tick: input.tick ?? world.tick });
+  const event = createEvent({ ...input, id: input.id || nextWorldId(world, 'event', 'action.event'), tick: input.tick ?? world.tick });
   world.events.push(event);
   return event;
 }

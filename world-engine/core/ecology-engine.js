@@ -48,6 +48,9 @@ const DEFAULT_ECOLOGY_OPTIONS = {
 function ensureEcologyState(world, options = {}) {
   if (!world.ecology || typeof world.ecology !== 'object') world.ecology = createEcologyState(world, options);
   const state = world.ecology;
+  // Unversioned partial state is a supported legacy shape; explicit future
+  // versions must still be rejected rather than silently downgraded.
+  if (state.version === undefined) state.version = ECOLOGY_VERSION;
   if (state.version !== ECOLOGY_VERSION) throw new Error(`Unsupported ecology state version ${state.version}`);
   if (!state.habitats || typeof state.habitats !== 'object') state.habitats = { byLocation: {}, history: [], stats: emptyStats() };
   if (!state.populations || typeof state.populations !== 'object') state.populations = { byKey: {}, byLocation: {}, stats: emptyStats() };
@@ -55,6 +58,15 @@ function ensureEcologyState(world, options = {}) {
   if (!state.migration || typeof state.migration !== 'object') state.migration = { events: [], pressure: {}, stats: emptyStats() };
   if (!state.disease || typeof state.disease !== 'object') state.disease = { outbreaks: [], byPopulation: {}, stats: emptyStats() };
   if (!state.stats || typeof state.stats !== 'object') state.stats = emptyStats();
+  const defaults = createEcologyState(world, options);
+  for (const section of ['habitats', 'populations', 'foodWeb', 'migration', 'disease']) {
+    for (const [key, value] of Object.entries(defaults[section])) {
+      const current = state[section][key];
+      if (Array.isArray(value) ? !Array.isArray(current) : !current || typeof current !== 'object' || Array.isArray(current)) {
+        state[section][key] = value;
+      }
+    }
+  }
   return state;
 }
 
@@ -106,6 +118,7 @@ function processHabitats(world, options = {}) {
       aridity: round(aridity, 3),
       food: round(food, 3),
       water: round(water, 3),
+      resources: { ...resources },
       hazard: round(clamp(hazard, 0, 1), 3),
       suitability: {},
     };
@@ -299,11 +312,19 @@ function calculateCarryingCapacity(habitat, profile = {}, options = {}) {
 
 function habitatSuitability(habitat, profile = {}) {
   const biomeAffinity = (profile.habitats || []).includes(habitat.biome) ? 1 : 0.35;
-  const foodFactor = clamp(Number(habitat.food || 0) / 120, 0, 1);
-  const waterFactor = clamp(Number(habitat.water || 0) / 100, 0, 1);
-  const fertility = Number(habitat.fertility || 0.4);
+  const resources = { ...(habitat.resources || {}), food: habitat.food ?? habitat.resources?.food ?? 0, water: habitat.water ?? habitat.resources?.water ?? 0 };
+  const reference = { food: 120, water: 100, herbs: 40, ore: 60 };
+  const diet = Object.entries(profile.diet || { food: 0.7, water: 0.3 })
+    .filter(([, weight]) => Number.isFinite(Number(weight)) && Number(weight) > 0);
+  const totalWeight = diet.reduce((sum, [, weight]) => sum + Number(weight), 0);
+  const dietarySupport = totalWeight ? diet.reduce((sum, [resource, weight]) => (
+    sum + Number(weight) * clamp(Number(resources[resource] ?? 0) / (reference[resource] || 100), 0, 1)
+  ), 0) / totalWeight : 1;
+  const fertility = clamp(Number(habitat.fertility ?? 0.4), 0, 1);
   const hazardPenalty = Number(habitat.hazard || 0) * 0.55;
-  return clamp(biomeAffinity * 0.45 + foodFactor * 0.2 + waterFactor * 0.15 + fertility * 0.25 - hazardPenalty, 0, 1);
+  // Environmental abundance supports a species within its habitat affinity;
+  // water and fertile soil must not outweigh every desert specialist's diet.
+  return clamp(biomeAffinity * (0.55 + dietarySupport * 0.3 + fertility * 0.15) - hazardPenalty, 0, 1);
 }
 
 function calculatePopulationGrowth(population, profile, habitat, pressure, random) {
@@ -335,7 +356,7 @@ function chooseMigrationDestination(world, state, population, config, random) {
 function rebuildPopulationLocationIndex(state) {
   state.populations.byLocation = {};
   for (const pop of Object.values(state.populations.byKey || {})) {
-    if (pop.population <= 0) continue;
+    if (!pop || !pop.locationId || !pop.speciesId || !Number.isFinite(Number(pop.population)) || Number(pop.population) < 0) continue;
     if (!state.populations.byLocation[pop.locationId]) state.populations.byLocation[pop.locationId] = [];
     if (!state.populations.byLocation[pop.locationId].includes(pop.speciesId)) state.populations.byLocation[pop.locationId].push(pop.speciesId);
   }

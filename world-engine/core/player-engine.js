@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const { registerEntity, recordMemory } = require('./world-engine');
 const { assignSpecies } = require('./species-engine');
 
@@ -39,7 +41,7 @@ function ensurePlayerState(world) {
 
 function createPlayer(world, input = {}) {
   const state = ensurePlayerState(world);
-  const id = input.id || `player_${world.tick}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'player', 'player.create');
   if (state.byId[id]) throw new Error(`Player already exists: ${id}`);
 
   const player = {

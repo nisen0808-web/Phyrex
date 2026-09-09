@@ -1,5 +1,9 @@
 'use strict';
 
+const { randomChance } = require('./random-engine');
+
+const { nextWorldId } = require('./world-id-engine');
+
 const RELIGION_STATUS = {
   ACTIVE: 'active',
   DECLINING: 'declining',
@@ -47,7 +51,7 @@ function ensureReligionState(world) {
 
 function createReligion(world, input = {}) {
   const state = ensureReligionState(world);
-  const id = input.id || `religion_${world.tick}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'religion', 'religion.create');
   const religion = {
     id,
     name: input.name || inferReligionName(input),
@@ -171,7 +175,7 @@ function spreadReligions(world, options = {}) {
       for (const candidateId of entityIds) {
         if (religion.believers.includes(candidateId)) continue;
         const chance = calculateConversionChance(world, religion, candidateId, localBelievers.length, options);
-        if (Math.random() < chance) {
+        if (randomChance(world, chance, 'religion.spread')) {
           addBeliever(world, religion.id, candidateId, { source: 'local_spread' });
           ensureReligionState(world).stats.spread += 1;
           spread.push({ religionId: religion.id, entityId: candidateId });

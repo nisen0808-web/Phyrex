@@ -1,5 +1,9 @@
 'use strict';
 
+const { formatTimestamp } = require('../platform/runtime-clock');
+
+const { deterministicNow } = require('./random-engine');
+
 const { createWorld, registerLocation, connectLocations, registerEntity } = require('./world-engine');
 const { assignSpecies } = require('./species-engine');
 const { createOrganization, addOrganizationMember } = require('./organization-engine');
@@ -81,7 +85,7 @@ function createWorldFromTemplate(registry, templateId, options = {}) {
     id: template.id,
     name: template.name,
     version: template.version,
-    createdAt: new Date().toISOString(),
+    createdAt: formatTimestamp(deterministicNow(world, 'world.template.created')),
   };
 
   const initialize = options.initialize !== false;

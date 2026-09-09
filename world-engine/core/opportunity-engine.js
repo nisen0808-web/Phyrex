@@ -1,5 +1,9 @@
 'use strict';
 
+const { randomChance, randomPick } = require('./random-engine');
+
+const { nextWorldId } = require('./world-id-engine');
+
 const { createInformation, revealInformation, INFORMATION_TYPES } = require('./information-engine');
 const { createMemory } = require('./memory-engine');
 const { generateGovernanceOpportunities } = require('./opportunity-governance-engine');
@@ -47,7 +51,7 @@ function ensureOpportunityState(world) {
 
 function createOpportunity(world, input = {}) {
   const state = ensureOpportunityState(world);
-  const id = input.id || `opp_${world.tick}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'opp', 'opportunity.create');
   const opportunity = {
     id,
     type: input.type || OPPORTUNITY_TYPES.RESOURCE_DISCOVERY,
@@ -105,8 +109,8 @@ function generateOpportunities(world, options = {}) {
 function generateResourceDiscoveries(world, options = {}) {
   const out = [];
   for (const location of Object.values(world.locations || {})) {
-    if (Math.random() > (options.discoveryChance || DEFAULT_OPPORTUNITY_OPTIONS.discoveryChance)) continue;
-    const resource = pickResource(location);
+    if (!randomChance(world, options.discoveryChance ?? DEFAULT_OPPORTUNITY_OPTIONS.discoveryChance, 'opportunity.discovery')) continue;
+    const resource = pickResource(world, location);
     out.push(createOpportunity(world, {
       type: OPPORTUNITY_TYPES.RESOURCE_DISCOVERY,
       title: `resource discovery: ${resource}`,
@@ -164,7 +168,7 @@ function generatePowerVacuumOpportunities(world, options = {}) {
 function generateCrisisOpportunities(world, options = {}) {
   const out = [];
   for (const city of Object.values(world.cities?.byId || {})) {
-    if (Math.random() > (options.crisisChance || DEFAULT_OPPORTUNITY_OPTIONS.crisisChance)) continue;
+    if (!randomChance(world, options.crisisChance ?? DEFAULT_OPPORTUNITY_OPTIONS.crisisChance, 'opportunity.crisis')) continue;
     const lowFood = Number(world.economy?.markets?.global?.resources?.food?.supply || 0) < Math.max(100, city.population * 2);
     const lowSecurity = Number(city.security || 0) < 35;
     if (!lowFood && !lowSecurity) continue;
@@ -210,7 +214,7 @@ function claimOpportunities(world, options = {}) {
     const candidates = findOpportunityCandidates(world, opportunity);
     for (const entity of candidates) {
       const chance = calculateClaimChance(world, opportunity, entity, options);
-      if (Math.random() > chance) continue;
+      if (!randomChance(world, chance, 'opportunity.rumor_lead')) continue;
       claimOpportunity(world, opportunity.id, entity.id);
       claimed.push({ opportunityId: opportunity.id, entityId: entity.id });
       break;
@@ -351,10 +355,10 @@ function recordOpportunityMemory(world, opportunity, type, payload = {}) {
   return memory;
 }
 
-function pickResource(location) {
+function pickResource(world, location) {
   const keys = Object.keys(location.resources || {});
-  if (keys.length) return keys[Math.floor(Math.random() * keys.length)];
-  return ['food', 'wood', 'stone', 'metal'][Math.floor(Math.random() * 4)];
+  if (keys.length) return randomPick(world, keys, 'opportunity.resource');
+  return randomPick(world, ['food', 'wood', 'stone', 'metal'], 'opportunity.resource');
 }
 
 function countIndex(index) {

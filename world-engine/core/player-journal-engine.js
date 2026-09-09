@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const { recordMemory } = require('./world-engine');
 const { getPlayerView } = require('./player-engine');
 
@@ -36,7 +38,7 @@ function recordPlayerJournal(world, playerId, input = {}, options = {}) {
   const view = getPlayerView(world, playerId);
   const active = view?.activeEntity || null;
   const entry = {
-    id: input.id || `journal_${world.tick}_${playerId}_${state.byPlayer[playerId].length + 1}_${Math.random().toString(16).slice(2)}`,
+    id: input.id || nextWorldId(world, 'journal', 'player-journal.create'),
     tick: input.tick ?? world.tick,
     playerId,
     entityId: input.entityId || active?.id || null,

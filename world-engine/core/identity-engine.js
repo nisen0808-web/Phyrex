@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const IDENTITY_STATUS = {
   ACTIVE: 'active',
   INACTIVE: 'inactive',
@@ -72,7 +74,7 @@ function createIdentity(world, input = {}) {
   if (!world.entities[input.entityId]) throw new Error(`Missing entity ${input.entityId}`);
   const type = input.type || IDENTITY_TYPES.MEMBER;
   const defaults = DEFAULT_IDENTITY_WEIGHTS[type] || {};
-  const id = input.id || `identity_${world.tick}_${input.entityId}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'identity', 'identity.create');
   const identity = {
     id,
     entityId: input.entityId,

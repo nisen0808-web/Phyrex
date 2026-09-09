@@ -20,22 +20,32 @@ function processOrganizationLinkedProcesses(world, organization, options = {}, h
   const processes = getActiveLinkedProcesses(world, organization);
   const actions = [];
   let recruits = 0;
+  const work = [];
   for (const process of processes) {
     const responseType = String(process.payload?.responseType || '');
     const effect = applyOrganizationProcessEffect(world, organization, process, responseType);
     if (effect) actions.push(effect);
     const role = roleForProcess(organization, responseType);
-    if (!role) continue;
-    const limit = Math.max(0, Number(config.maxProcessRecruitsPerOrganizationTick || 0) - recruits);
-    if (limit <= 0) continue;
-    const candidates = rankProcessRecruitCandidates(world, organization, process, role)
-      .filter(item => item.score >= Number(config.minProcessRecruitScore || DEFAULT_ORGANIZATION_PROCESS_LINK_OPTIONS.minProcessRecruitScore))
-      .slice(0, limit);
-    for (const candidate of candidates) {
+    if (role) work.push({ process, responseType, role });
+  }
+  const limit = Math.max(0, Math.floor(Number(config.maxProcessRecruitsPerOrganizationTick ?? 0)));
+  const minimum = Number(config.minProcessRecruitScore ?? DEFAULT_ORGANIZATION_PROCESS_LINK_OPTIONS.minProcessRecruitScore);
+  // Allocate one recruit per eligible process per round, so relief cannot
+  // consume the entire organization-wide budget before mobilization runs.
+  while (recruits < limit && work.length) {
+    let progressed = false;
+    for (const { process, responseType, role } of work) {
+      if (recruits >= limit) break;
+      const candidate = rankProcessRecruitCandidates(world, organization, process, role)
+        .find(item => item.score >= minimum);
+      if (!candidate) continue;
       helpers.addOrganizationMember(world, organization.id, candidate.entity.id, { role, createContract: true });
+      if (!organization.members.includes(candidate.entity.id)) continue;
       recruits += 1;
+      progressed = true;
       actions.push({ type: 'process_recruit', processId: process.id, responseType, entityId: candidate.entity.id, role, score: round(candidate.score) });
     }
+    if (!progressed) break;
   }
   if (actions.length && helpers.recordOrganizationMemory) {
     helpers.recordOrganizationMemory(world, organization, 'organization.process_link', { actions });

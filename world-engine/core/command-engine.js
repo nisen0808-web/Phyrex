@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const { enqueueAction, recordMemory } = require('./world-engine');
 const { assignGoal } = require('./goal-engine');
 const { addOrganizationMember, getOrganization } = require('./organization-engine');
@@ -164,7 +166,7 @@ function dispatchCommand(world, command, options = {}) {
 function normalizeCommand(world, playerId, input = {}) {
   if (!input.type) throw new Error('Command requires type');
   return {
-    id: input.id || `cmd_${world.tick}_${playerId}_${Math.random().toString(16).slice(2)}`,
+    id: input.id || nextWorldId(world, 'cmd', 'command.create'),
     playerId,
     type: input.type,
     status: 'submitted',

@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const CIVILIZATION_STATUS = {
   ACTIVE: 'active',
   DECLINING: 'declining',
@@ -35,7 +37,7 @@ function ensureCivilizationState(world) {
 
 function createCivilization(world, input = {}) {
   const state = ensureCivilizationState(world);
-  const id = input.id || `civ_${world.tick}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'civ', 'civilization.create');
   const civilization = {
     id,
     name: input.name || inferCivilizationName(world, input),

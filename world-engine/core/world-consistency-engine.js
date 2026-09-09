@@ -190,7 +190,10 @@ function auditEcology(world, locations, push) {
       push({ code: 'invalid_ecology_population', path: `ecology.populations.byKey.${key}`, message: 'Ecology population must be object', action: 'remove_ecology_population', data: { key } });
       continue;
     }
-    if (!locations[pop.locationId]) push({ code: 'ecology_population_missing_location', path: `ecology.populations.byKey.${key}.locationId`, message: 'Ecology population references missing location', action: 'remove_ecology_population', data: { key } });
+    if (!locations[pop.locationId]) {
+      push({ code: 'ecology_population_missing_location', path: `ecology.populations.byKey.${key}.locationId`, message: 'Ecology population references missing location', action: 'remove_ecology_population', data: { key } });
+      continue; // Do not queue numeric repairs after deleting this record.
+    }
     if (!Number.isFinite(Number(pop.population)) || Number(pop.population) < 0) push({ code: 'invalid_ecology_population_value', path: `ecology.populations.byKey.${key}.population`, message: 'Ecology population must be non-negative finite number', action: 'clamp_ecology_population', data: { key } });
     if (!Number.isFinite(Number(pop.carryingCapacity)) || Number(pop.carryingCapacity) < 0) push({ code: 'invalid_ecology_capacity_value', path: `ecology.populations.byKey.${key}.carryingCapacity`, message: 'Ecology capacity must be non-negative finite number', action: 'clamp_ecology_capacity', data: { key } });
     if (locations[pop.locationId] && pop.speciesId) addUnique(expectedByLocation, pop.locationId, pop.speciesId);
@@ -206,24 +209,29 @@ function auditSimulationAndKernel(world, push, config) {
   if ((world.kernel?.contracts?.recentViolations || []).length > config.contractViolationLimit) push({ code: 'contract_violations_over_limit', path: 'kernel.contracts.recentViolations', message: 'Contract violations exceed limit', action: 'trim_contract_violations' });
 }
 
+function finiteOrZero(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
 function applyRepair(world, issue, config) {
   const action = issue.action;
   if (!action) return null;
   ensureBaseMaps(world);
   switch (action) {
-    case 'normalize_tick': world.tick = Math.max(0, Number(world.tick || 0)); break;
+    case 'normalize_tick': world.tick = Math.max(0, finiteOrZero(world.tick)); break;
     case 'create_map': setPath(world, issue.path, {}); break;
     case 'create_fallback_location': world.locations.void = { id: 'void', name: 'Void', resources: {} }; break;
     case 'replace_location': world.locations[issue.path.split('.')[1]] = { id: issue.path.split('.')[1], name: issue.path.split('.')[1], resources: {} }; break;
     case 'fix_location_id': world.locations[issue.data.locationId].id = issue.data.locationId; break;
     case 'create_resource_map': setPath(world, issue.path, {}); break;
-    case 'clamp_resource': world.locations[issue.data.locationId].resources[issue.data.resource] = Math.max(0, Number(world.locations[issue.data.locationId].resources[issue.data.resource] || 0)); break;
+    case 'clamp_resource': world.locations[issue.data.locationId].resources[issue.data.resource] = Math.max(0, finiteOrZero(world.locations[issue.data.locationId].resources[issue.data.resource])); break;
     case 'remove_missing_neighbor': removeFromArray(world.locations[issue.data.locationId].neighbors, issue.data.neighborId); break;
     case 'remove_invalid_entity': delete world.entities[issue.data.entityId]; break;
     case 'fix_entity_id': world.entities[issue.data.entityId].id = issue.data.entityId; break;
     case 'set_entity_alive': world.entities[issue.data.entityId].status = 'alive'; break;
     case 'move_entity_to_fallback': ensureFallbackLocation(world, issue.data.fallbackLocationId); world.entities[issue.data.entityId].locationId = issue.data.fallbackLocationId; break;
-    case 'clamp_entity_stat': world.entities[issue.data.entityId].stats[issue.data.stat] = Number(world.entities[issue.data.entityId].stats[issue.data.stat]) || 0; break;
+    case 'clamp_entity_stat': world.entities[issue.data.entityId].stats[issue.data.stat] = finiteOrZero(world.entities[issue.data.entityId].stats[issue.data.stat]); break;
     case 'rebuild_population_indexes': rebuildPopulationIndexes(world); break;
     case 'remove_weather_location': delete world.natural.weather.byLocation[issue.data.locationId]; break;
     case 'remove_active_disaster': delete world.natural.disasters.active[issue.data.id]; break;
@@ -231,8 +239,8 @@ function applyRepair(world, issue, config) {
     case 'trim_natural_disaster_history': trimArray(world.natural.disasters.history, config.naturalDisasterHistoryLimit); break;
     case 'remove_habitat_location': delete world.ecology.habitats.byLocation[issue.data.locationId]; break;
     case 'remove_ecology_population': delete world.ecology.populations.byKey[issue.data.key]; break;
-    case 'clamp_ecology_population': world.ecology.populations.byKey[issue.data.key].population = Math.max(0, Number(world.ecology.populations.byKey[issue.data.key].population) || 0); break;
-    case 'clamp_ecology_capacity': world.ecology.populations.byKey[issue.data.key].carryingCapacity = Math.max(0, Number(world.ecology.populations.byKey[issue.data.key].carryingCapacity) || 0); break;
+    case 'clamp_ecology_population': world.ecology.populations.byKey[issue.data.key].population = Math.max(0, finiteOrZero(world.ecology.populations.byKey[issue.data.key].population)); break;
+    case 'clamp_ecology_capacity': world.ecology.populations.byKey[issue.data.key].carryingCapacity = Math.max(0, finiteOrZero(world.ecology.populations.byKey[issue.data.key].carryingCapacity)); break;
     case 'rebuild_ecology_location_index': rebuildEcologyLocationIndex(world); break;
     case 'trim_memory': trimArray(world.memory, config.memoryLimit); break;
     case 'trim_simulation_reports': trimArray(world.simulation.reports, config.simulationReportLimit); break;
@@ -306,7 +314,8 @@ function rebuildPopulationIndexes(world) {
   world.population.indexes.byAgeGroup = {};
   world.population.indexes.byGeneration = {};
   for (const [entityId, entity] of Object.entries(world.entities || {})) {
-    const demo = entity.demographics || {};
+    const demo = entity?.demographics;
+    if (!demo) continue;
     addUnique(world.population.indexes.byAgeGroup, demo.ageGroup || 'unknown', entityId);
     addUnique(world.population.indexes.byGeneration, String(demo.generation || 1), entityId);
   }
@@ -316,7 +325,7 @@ function rebuildEcologyLocationIndex(world) {
   if (!world.ecology?.populations) return;
   world.ecology.populations.byLocation = {};
   for (const pop of Object.values(world.ecology.populations.byKey || {})) {
-    if (!pop || pop.population <= 0 || !pop.locationId || !pop.speciesId) continue;
+    if (!pop || !world.locations?.[pop.locationId] || !pop.speciesId) continue;
     addUnique(world.ecology.populations.byLocation, pop.locationId, pop.speciesId);
   }
   for (const list of Object.values(world.ecology.populations.byLocation)) list.sort();

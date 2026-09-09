@@ -1,5 +1,7 @@
 'use strict';
 
+const { wallClockNow } = require('../platform/runtime-clock');
+
 const http = require('http');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -103,8 +105,8 @@ function createWorldApiServer(worldInput = null, options = {}) {
   });
 
   const server = http.createServer(async (req, res) => {
-    const started = Date.now();
-    req.apiRequestId = `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const started = wallClockNow();
+    req.apiRequestId = `req_${crypto.randomUUID()}`;
     let errorMessage = null;
     try {
       await handleApiRequest(req, res, api, opts);
@@ -117,7 +119,7 @@ function createWorldApiServer(worldInput = null, options = {}) {
         method: req.method,
         path: normalizePath((req.url || '/').split('?')[0]),
         statusCode: res.statusCode || 200,
-        durationMs: Date.now() - started,
+        durationMs: wallClockNow() - started,
         accountId: req.apiAccountId || null,
         playerId: req.apiPlayerId || null,
         error: errorMessage,

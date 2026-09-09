@@ -63,6 +63,9 @@ function applySecurityCrackdownToConflict(_world, conflict, process, config) {
 }
 
 function applyMobilizationToConflict(_world, conflict, process, config) {
+  // Mobilization supports external collective conflict; domestic revolt has
+  // its own suppression response and must not also be escalated here.
+  if (!['organization_rivalry', 'war', 'resource_conflict', 'religious_conflict'].includes(conflict.type)) return null;
   const governmentId = process.payload?.governmentId;
   const organizationId = process.payload?.organizationId;
   if (!governmentId && !organizationId) return null;

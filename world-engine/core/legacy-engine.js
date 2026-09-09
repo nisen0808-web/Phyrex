@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const { changeRelationship, getRelationship } = require('./relationship-engine');
 const { getFamily, getFamilyChronicle, updateFamilyStatuses } = require('./family-engine');
 const { recordLifeEvent, LIFE_EVENT_TYPES } = require('./history-engine');
@@ -274,7 +276,7 @@ function inheritGoals(world, record, heir, share, options = {}) {
     if (share < (options.minGoalShare || 0.2)) continue;
     const inherited = {
       ...goal,
-      id: `goal_${world.tick}_${heir.id}_${Math.random().toString(16).slice(2)}`,
+      id: nextWorldId(world, 'goal', 'legacy.create'),
       priority: Math.max(30, Math.round(Number(goal.priority || 50) * share * 0.8)),
       progress: 0,
       createdAt: world.tick,

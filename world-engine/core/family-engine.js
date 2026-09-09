@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const { recordLifeEvent, LIFE_EVENT_TYPES } = require('./history-engine');
 
 const DEFAULT_FAMILY_OPTIONS = {
@@ -36,7 +38,7 @@ function ensureFamilyState(world) {
 function createFamily(world, input = {}) {
   ensureFamilyState(world);
   const founder = input.founderId ? world.entities[input.founderId] : null;
-  const id = input.id || `family_${world.tick}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'family', 'family.create');
   const family = {
     id,
     name: normalizeFamilyName(input.name || inferFamilyName(founder, id)),

@@ -1,5 +1,7 @@
 'use strict';
 
+const { wallClockNow } = require('../platform/runtime-clock');
+
 const DEFAULT_AUTH_SECURITY_OPTIONS = {
   maxLoginAttempts: 5,
   loginWindowMs: 15 * 60 * 1000,
@@ -22,7 +24,7 @@ function createAuthSecurityState(options = {}) {
   };
 }
 
-function inspectLoginAttempt(state, key, now = Date.now()) {
+function inspectLoginAttempt(state, key, now = wallClockNow()) {
   const entry = state.loginAttempts.get(String(key || 'unknown'));
   if (!entry) return { allowed: true, attempts: 0, retryAfterMs: 0 };
   if (entry.lockedUntil && entry.lockedUntil > now) {
@@ -40,7 +42,7 @@ function inspectLoginAttempt(state, key, now = Date.now()) {
   return { allowed: true, attempts: entry.attempts, retryAfterMs: 0 };
 }
 
-function recordLoginFailure(state, key, now = Date.now()) {
+function recordLoginFailure(state, key, now = wallClockNow()) {
   const normalizedKey = String(key || 'unknown');
   let entry = state.loginAttempts.get(normalizedKey);
   if (!entry || now - entry.windowStartedAt >= state.options.loginWindowMs) {
@@ -61,7 +63,7 @@ function recordLoginSuccess(state, key) {
   state.loginAttempts.delete(String(key || 'unknown'));
 }
 
-function consumeRegistrationAttempt(state, key, now = Date.now()) {
+function consumeRegistrationAttempt(state, key, now = wallClockNow()) {
   const normalizedKey = String(key || 'unknown');
   let entry = state.registrationWindows.get(normalizedKey);
   if (!entry || now - entry.windowStartedAt >= state.options.registrationWindowMs) {

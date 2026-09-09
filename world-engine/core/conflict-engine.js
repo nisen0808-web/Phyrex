@@ -1,5 +1,9 @@
 'use strict';
 
+const { randomChance } = require('./random-engine');
+
+const { nextWorldId } = require('./world-id-engine');
+
 const { createProcess, PROCESS_TYPES } = require('./process-engine');
 const { createInformation, INFORMATION_TYPES } = require('./information-engine');
 const { applyGovernanceProcessConflictEffects } = require('./conflict-governance-process-engine');
@@ -48,7 +52,7 @@ function ensureConflictState(world) {
 
 function createConflict(world, input = {}) {
   const state = ensureConflictState(world);
-  const id = input.id || `conflict_${world.tick}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'conflict', 'conflict.create');
   const conflict = {
     id,
     type: input.type || CONFLICT_TYPES.PERSONAL,
@@ -108,7 +112,7 @@ function processConflictTick(world, options = {}) {
       escalated.push(conflict.id);
       announceConflict(world, conflict, 'conflict.escalated');
     }
-    if (conflict.status === CONFLICT_STATUS.ACTIVE && Math.random() < config.battleChance) {
+    if (conflict.status === CONFLICT_STATUS.ACTIVE && randomChance(world, config.battleChance, 'conflict.battle')) {
       battles.push(resolveBattle(world, conflict.id, config));
     }
     if (conflict.intensity <= config.resolveThreshold || sidePower(world, conflict.sideA) <= 0 || sidePower(world, conflict.sideB) <= 0) {
@@ -231,7 +235,7 @@ function resolveBattle(world, conflictId) {
   const powerA = sidePower(world, conflict.sideA);
   const powerB = sidePower(world, conflict.sideB);
   const total = Math.max(1, powerA + powerB);
-  const sideAWins = Math.random() < powerA / total;
+  const sideAWins = randomChance(world, powerA / total, 'conflict.outcome');
   const winner = sideAWins ? 'A' : 'B';
   const loserSide = sideAWins ? conflict.sideB : conflict.sideA;
   const casualties = applyBattleCasualties(world, loserSide, Math.max(1, Math.round(conflict.intensity / 50)));

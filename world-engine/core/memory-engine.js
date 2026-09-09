@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const MEMORY_SCOPE = {
   ENTITY: 'entity',
   FAMILY: 'family',
@@ -52,7 +54,7 @@ function createMemory(world, input = {}) {
   if (!input.ownerType || !input.ownerId) throw new Error('Memory requires ownerType and ownerId');
   if (!input.summary) throw new Error('Memory requires summary');
   const state = ensureMemoryState(world);
-  const id = input.id || `mem_${world.tick}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'mem', 'memory.create');
   const memory = {
     id,
     ownerType: input.ownerType,

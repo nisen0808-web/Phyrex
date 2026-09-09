@@ -1,5 +1,7 @@
 'use strict';
 
+const { wallClockIso } = require('../platform/runtime-clock');
+
 const fs = require('fs');
 const path = require('path');
 const { createSaveEnvelope, migrateSaveEnvelope, repairLoadedWorld } = require('./persistence-engine');
@@ -135,7 +137,7 @@ function appendDatabaseEvent(input = {}, options = {}) {
     tick: Number(input.tick || 0),
     type: input.type || 'event',
     payload: { ...(input.payload || {}) },
-    createdAt: input.createdAt || new Date().toISOString(),
+    createdAt: input.createdAt || wallClockIso(),
   };
   appendJsonLine(config.eventsFile, event);
   writeSchemaFile(config);

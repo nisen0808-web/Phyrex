@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const ITEM_TYPES = {
   MATERIAL: 'material',
   CONSUMABLE: 'consumable',
@@ -144,7 +146,7 @@ function createItemInstance(world, input = {}) {
   const quantity = Math.max(1, Number(input.quantity || 1));
   const ownerType = input.ownerType || null;
   const ownerId = input.ownerId || null;
-  const id = input.id || `item_${world.tick}_${definition.id}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'item', 'item.create');
   const instance = {
     id,
     definitionId: definition.id,

@@ -63,3 +63,19 @@ The restart test restores tick 17, advances through HTTP to tick 18 with databas
 Fix the five base regressions and the 1000 tick process-cap failure, then execute the full extended package chain and inspect the latest-head logs. Passing the focused recovery suite is not a substitute for passing the full engine.
 
 JSONL persistence remains a synchronous, single-writer prototype. SQLite/PostgreSQL drivers, SQL migrations, transactions, concurrent writer protection, durability checksums, bounded storage growth, and production backup/restore acceptance have not been implemented or verified in this PR.
+
+## Follow-up repair (local verification; remote gate still pending)
+
+The five historical base regressions and the process-cap defect have now been
+reproduced and repaired locally. The newly unblocked extended suite exposed
+additional governance-process, mobilization-scope, recruitment-budget,
+partial-scheduler-state, and purity-baseline failures; these were also repaired.
+
+The unified discovery runner executes 83 regression scripts, all passing on
+local Node 22.16.0. The empty core purity baseline is retained, with no added
+suppression directives or ignored core modules. An eight-group hardening test
+covers the changed invariants. See ENGINE_HARDENING.md.
+
+This section supersedes the earlier "remaining acceptance work" implementation
+status, not the historical log evidence. Remote latest-head Node 20/22, the full
+World Engine Tests workflow and 1000-tick stress must still pass before merging.

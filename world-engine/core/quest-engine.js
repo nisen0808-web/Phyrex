@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const { recordMemory } = require('./world-engine');
 const { getPlayer, getActivePlayerCharacter } = require('./player-engine');
 const { getPlayerCommands } = require('./command-engine');
@@ -90,7 +92,7 @@ function createQuest(world, input = {}) {
   if (!input.playerId) throw new Error('Quest requires playerId');
   if (!input.title) throw new Error('Quest requires title');
   const state = ensureQuestState(world);
-  const id = input.id || `quest_${world.tick}_${input.playerId}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'quest', 'quest.create');
   if (state.byId[id]) return state.byId[id];
 
   const quest = {

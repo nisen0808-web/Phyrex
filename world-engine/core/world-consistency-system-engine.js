@@ -30,7 +30,7 @@ function registerWorldConsistencySystem(registry, options = {}) {
       const result = runWorldConsistencyCheck(context.world, optionsForRun);
       frame.report.consistency = result;
       addCounter(frame.simulation, 'consistencyChecks', 1);
-      addCounter(frame.simulation, 'consistencyIssues', result.issueCount);
+      addCounter(frame.simulation, 'consistencyIssues', result.beforeIssues ?? result.issueCount);
       addCounter(frame.simulation, 'consistencyRepairs', result.repairedCount);
       return result;
     },

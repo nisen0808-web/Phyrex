@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const { recordLifeEvent, LIFE_EVENT_TYPES } = require('./history-engine');
 const { createContract, CONTRACT_TYPES } = require('./contract-engine');
 const { processOrganizationLinkedProcesses } = require('./organization-process-link-engine');
@@ -54,7 +56,7 @@ function ensureOrganizationState(world) {
 function createOrganization(world, input = {}) {
   if (!input.type) throw new Error('Organization requires type');
   const template = DEFAULT_ORG_TEMPLATES[input.type] || {};
-  const id = input.id || `org_${world.tick}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'org', 'organization.create');
   const leaderId = input.leaderId || null;
   const leader = leaderId ? world.entities[leaderId] : null;
 

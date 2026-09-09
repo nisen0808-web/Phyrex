@@ -1,5 +1,7 @@
 'use strict';
 
+const { wallClockNow } = require('../platform/runtime-clock');
+
 const path = require('path');
 const { URL } = require('url');
 const {
@@ -85,7 +87,7 @@ function createWorldTemplateApiServer(worldInput = null, options = {}) {
 }
 
 async function handleTemplateApiRequest(req, res, parsed, pathname, api, options, registry) {
-  const started = Date.now();
+  const started = wallClockNow();
   const method = req.method || 'GET';
   let errorMessage = null;
   let auth = null;
@@ -271,7 +273,7 @@ async function handleTemplateApiRequest(req, res, parsed, pathname, api, options
       method,
       path: pathname,
       statusCode: res.statusCode || 200,
-      durationMs: Date.now() - started,
+      durationMs: wallClockNow() - started,
       accountId: req.apiAccountId || auth?.account?.id || null,
       route: pathname,
       error: errorMessage,

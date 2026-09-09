@@ -68,9 +68,9 @@ function createSettlement(world, input = {}) {
     foundedTick: input.foundedTick ?? world.tick,
     population: Number(input.population || 0),
     wealth: Number(input.wealth || 0),
-    infrastructure: Number(input.infrastructure || 5),
-    security: Number(input.security || 50),
-    culture: Number(input.culture || 5),
+    infrastructure: Number(input.infrastructure ?? 5),
+    security: Number(input.security ?? 50),
+    culture: Number(input.culture ?? 5),
     stability: Number(input.stability ?? 70),
     risk: Number(input.risk || 0),
     migrationAppeal: Number(input.migrationAppeal ?? 50),
@@ -181,7 +181,8 @@ function calculateCityPressure(world, settlement, options = {}) {
   const infrastructurePressure = calculateInfrastructurePressure(settlement);
   const securityPressure = clamp(1 - Number(settlement.security || 0) / 100, 0, 1);
   const maintenance = calculateCityMaintenance(settlement, resourcePressure, disasterRisk, ecologyPressure);
-  const riskScore = clamp(resourcePressure.total * 0.25 + populationPressure * 0.18 + disasterRisk * 0.22 + ecologyPressure * 0.14 + infrastructurePressure * 0.13 + securityPressure * 0.08, 0, 1);
+  const baseRisk = clamp(resourcePressure.total * 0.25 + populationPressure * 0.18 + disasterRisk * 0.22 + ecologyPressure * 0.14 + infrastructurePressure * 0.13 + securityPressure * 0.08, 0, 1);
+  const riskScore = clamp(1 - (1 - baseRisk) * (1 - maintenance.gap * 0.35), 0, 1);
   const wealthPerCapita = settlement.population > 0 ? Number(settlement.wealth || 0) / settlement.population : Number(settlement.wealth || 0);
   const stability = clamp(100 - riskScore * 85 - maintenance.gap * 18 + Number(settlement.security || 0) * 0.18 + Number(settlement.infrastructure || 0) * 0.12 + Math.min(20, wealthPerCapita * 0.2), 0, 100);
   const migrationAppeal = clamp(stability * 0.55 + Number(settlement.security || 0) * 0.2 + Math.min(25, wealthPerCapita * 0.25) - resourcePressure.total * 35 - disasterRisk * 25, 0, 100);
@@ -238,7 +239,17 @@ function calculateCityResourcePressure(settlement, resources, config) { const po
 function calculateCityDisasterRisk(world, locationId, weather) { const weatherRisk = weatherRiskScore(weather.type, weather.severity); const activeDisasterRisk = Object.values(world.natural?.disasters?.active || {}).filter(disaster => disaster.locationId === locationId).reduce((sum, disaster) => sum + Number(disaster.severity || 0) * 0.55, 0); return clamp(weatherRisk + activeDisasterRisk, 0, 1); }
 function calculateCityEcologyPressure(habitat, population) { const suitability = habitat ? Number(habitat.suitability?.human ?? habitat.suitability?.sentient ?? 0.5) : 0.5; const carryingPressure = population ? clamp(Math.max(0, Number(population.pressure || 0) - 1), 0, 2) / 2 : 0; const diseaseLoad = population ? clamp(Number(population.diseaseLoad || 0), 0, 1) : 0; const healthPenalty = population ? clamp(1 - Number(population.health ?? 0.75), 0, 1) : 0; return clamp((1 - suitability) * 0.35 + carryingPressure * 0.35 + diseaseLoad * 0.2 + healthPenalty * 0.1, 0, 1); }
 function calculateInfrastructurePressure(settlement) { const desired = Math.max(5, Math.sqrt(Math.max(1, Number(settlement.population || 0))) * 2); return clamp(1 - Number(settlement.infrastructure || 0) / desired, 0, 1); }
-function calculateCityMaintenance(settlement, resourcePressure, disasterRisk, ecologyPressure) { const demand = Number(settlement.infrastructure || 0) * (0.02 + disasterRisk * 0.06 + resourcePressure.total * 0.03) + Number(settlement.population || 0) * 0.004; const capacity = Number(settlement.wealth || 0) * 0.002 + Number(settlement.security || 0) * 0.03 + (settlement.organizationIds || []).length * 1.5 + (settlement.industryIds || []).length * 1.2 + Math.max(0, 1 - ecologyPressure) * 2; const gap = demand <= 0 ? 0 : clamp((demand - capacity) / demand, 0, 1); return { demand: round(demand, 3), capacity: round(capacity, 3), gap: round(gap, 3) }; }
+function calculateCityMaintenance(settlement, resourcePressure, disasterRisk, ecologyPressure) {
+  const demand = Number(settlement.infrastructure || 0) * (0.02 + disasterRisk * 0.06 + resourcePressure.total * 0.03) + Number(settlement.population || 0) * 0.004;
+  const funding = Math.max(0, Number(settlement.wealth || 0)) * 0.002;
+  const serviceCapacity = Number(settlement.security || 0) * 0.03 + (settlement.organizationIds || []).length * 1.5 + (settlement.industryIds || []).length * 1.2 + Math.max(0, 1 - ecologyPressure) * 2;
+  // Security and ecosystem health enable repair work, but do not create funds.
+  // Both available funding and actual service capacity constrain maintenance.
+  const availability = (1 - clamp(disasterRisk, 0, 1) * 0.6) * (1 - clamp(resourcePressure.total, 0, 1) * 0.5);
+  const capacity = Math.min(funding, Math.max(0, serviceCapacity)) * availability;
+  const gap = demand <= 0 ? 0 : clamp((demand - capacity) / demand, 0, 1);
+  return { demand: round(demand, 3), capacity: round(capacity, 3), gap: round(gap, 3) };
+}
 function inferCityStatus(pressure) { if (pressure.stability <= 20 || pressure.riskScore >= 0.85) return CITY_STATUS.FAILING; if (pressure.stability <= 40 || pressure.riskScore >= 0.68) return CITY_STATUS.DECLINING; if (pressure.stability <= 60 || pressure.riskScore >= 0.45) return CITY_STATUS.STRAINED; return CITY_STATUS.ACTIVE; }
 function weatherRiskScore(type, severity) { const base = { clear: 0, cloudy: 0.02, rain: 0.08, storm: 0.55, snow: 0.22, drought: 0.6, heatwave: 0.55, cold_snap: 0.45 }[type] || 0.03; return clamp(base + Number(severity || 0) * 0.3, 0, 1); }
 function findOrganizationsAtLocation(world, locationId) { return Object.values(world.organizations?.byId || {}).filter(org => org.homeLocationId === locationId && org.status !== 'dissolved').map(org => org.id); }

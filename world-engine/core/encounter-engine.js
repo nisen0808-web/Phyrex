@@ -1,5 +1,7 @@
 'use strict';
 
+const { nextWorldId } = require('./world-id-engine');
+
 const { changeEntityResource, changeEntityStat, recordMemory } = require('./world-engine');
 const { getPlayerView, getActivePlayerCharacter } = require('./player-engine');
 const { recordPlayerJournal, JOURNAL_TYPES } = require('./player-journal-engine');
@@ -58,7 +60,7 @@ function exploreLocation(world, playerId, options = {}) {
 
 function createEncounter(world, input = {}) {
   const state = ensureEncounterState(world);
-  const id = input.id || `encounter_${world.tick}_${input.playerId}_${Math.random().toString(16).slice(2)}`;
+  const id = input.id || nextWorldId(world, 'encounter', 'encounter.create');
   const encounter = {
     id,
     playerId: input.playerId,

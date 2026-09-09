@@ -1,5 +1,7 @@
 'use strict';
 
+const { wallClockNow, wallClockIso, formatTimestamp } = require('../platform/runtime-clock');
+
 const { advanceWorldWithOfflineCommands } = require('./offline-command-engine');
 const {
   runRuntimeAutosave,
@@ -63,7 +65,7 @@ function startRuntimeLoop(loop, options = {}) {
   if (loop.status === RUNTIME_LOOP_STATUS.RUNNING) return getRuntimeLoopSummary(loop);
 
   loop.status = RUNTIME_LOOP_STATUS.RUNNING;
-  loop.startedAt = loop.startedAt || new Date().toISOString();
+  loop.startedAt = loop.startedAt || wallClockIso();
   loop.stoppedAt = null;
   loop.pausedAt = null;
   loop.stopReason = null;
@@ -74,7 +76,7 @@ function startRuntimeLoop(loop, options = {}) {
 function pauseRuntimeLoop(loop, reason = 'manual') {
   clearLoopTimer(loop);
   loop.status = RUNTIME_LOOP_STATUS.PAUSED;
-  loop.pausedAt = new Date().toISOString();
+  loop.pausedAt = wallClockIso();
   loop.stopReason = reason;
   loop.nextCycleAt = null;
   return getRuntimeLoopSummary(loop);
@@ -83,7 +85,7 @@ function pauseRuntimeLoop(loop, reason = 'manual') {
 function stopRuntimeLoop(loop, reason = 'manual') {
   clearLoopTimer(loop);
   loop.status = RUNTIME_LOOP_STATUS.STOPPED;
-  loop.stoppedAt = new Date().toISOString();
+  loop.stoppedAt = wallClockIso();
   loop.stopReason = reason;
   loop.nextCycleAt = null;
   return getRuntimeLoopSummary(loop);
@@ -121,7 +123,7 @@ function stepRuntimeLoop(loop, ticks = null, metadata = {}) {
   const world = loop.getWorld();
   if (!world) throw new Error('Runtime loop world provider returned no world');
   const amount = Math.max(1, Number(ticks || loop.options.ticksPerCycle || 1));
-  const started = Date.now();
+  const started = wallClockNow();
   const tickBefore = Number(world.tick || 0);
   loop.busy = true;
 
@@ -132,10 +134,10 @@ function stepRuntimeLoop(loop, ticks = null, metadata = {}) {
       command: loop.options.command || {},
     });
     const tickAfter = Number(world.tick || tickBefore);
-    const durationMs = Date.now() - started;
+    const durationMs = wallClockNow() - started;
     loop.cycles += 1;
     loop.ticksRun += Math.max(0, tickAfter - tickBefore);
-    loop.lastCycleAt = new Date().toISOString();
+    loop.lastCycleAt = wallClockIso();
     loop.lastDurationMs = durationMs;
     loop.totalDurationMs += durationMs;
     loop.lastTickBefore = tickBefore;
@@ -158,7 +160,7 @@ function stepRuntimeLoop(loop, ticks = null, metadata = {}) {
     notifyCycle(loop, report, world);
   } catch (error) {
     const entry = {
-      at: new Date().toISOString(),
+      at: wallClockIso(),
       tick: Number(world.tick || 0),
       message: error.message || 'runtime_loop_error',
     };
@@ -215,7 +217,7 @@ function scheduleNextCycle(loop, delayMs) {
   if (loop.status !== RUNTIME_LOOP_STATUS.RUNNING) return;
   clearLoopTimer(loop);
   const delay = Math.max(0, Number(delayMs ?? loop.options.intervalMs));
-  loop.nextCycleAt = new Date(Date.now() + delay).toISOString();
+  loop.nextCycleAt = formatTimestamp(wallClockNow() + delay);
   loop.timer = setTimeout(() => {
     loop.timer = null;
     if (loop.status !== RUNTIME_LOOP_STATUS.RUNNING) return;
@@ -259,7 +261,7 @@ function notifyCycle(loop, report, world) {
 
 function rememberCallbackError(loop, error) {
   loop.errors.push({
-    at: new Date().toISOString(),
+    at: wallClockIso(),
     tick: loop.getWorld()?.tick ?? null,
     message: `onCycle: ${error.message || error}`,
   });

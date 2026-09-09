@@ -197,7 +197,10 @@ function processResourceRegenerationTick(world, options = {}, random = null) {
     const profile = config.biomeResourceProfiles[zone.biome] || config.biomeResourceProfiles.plains;
     if (!state.resources.capacities[locationId]) state.resources.capacities[locationId] = {};
     for (const [resource, multiplier] of Object.entries(profile)) {
-      const current = Number(location.resources[resource] || 0);
+      const current = Number(location.resources[resource] ?? 0);
+      // Do not turn corrupt negative/non-finite input into plausible resources.
+      // Leave it visible for the consistency repair pass; resume growth next tick.
+      if (!Number.isFinite(current) || current < 0) continue;
       const capacity = ensureResourceCapacity(state, locationId, resource, current, multiplier, config);
       const growth = Math.max(0,
         capacity
