@@ -2,7 +2,7 @@
 const crypto = require('crypto');
 const { normalizePostgresConfig, safePostgresConfig, databaseError, integer } = require('./config');
 const { MIGRATIONS, checkMigrationHistory } = require('./migrations');
-const { textId, safeInteger, fromSqlInteger, captureCheckpoint, captureEvent, digest,
+const { textId, safeInteger, fromSqlInteger, captureCheckpoint, captureEvent, captureInboxCommand, digest,
   canonicalJson, summarizeSave, restoreSave } = require('./codec');
 
 function createPostgresDatabaseStore(options = {}) {
@@ -15,7 +15,7 @@ function createPostgresDatabaseStore(options = {}) {
     application_name: 'phyrex-world-engine', statement_timeout: config.statementTimeoutMillis, lock_timeout: config.lockTimeoutMillis });
   const schema = `"${config.schema}"`;
   let ready = null, closing = false, closePromise = null, poolErrors = 0;
-  pool.on('error', () => { poolErrors += 1; }); // Do not leak idle-client errors or let them crash the process.
+  pool.on('error', () => { poolErrors += 1; });
   function assertOpen() { if (closing) throw databaseError('CLOSED', 'PostgreSQL store is closed'); }
   async function transaction(work, readOnly = false) {
     assertOpen();
@@ -69,12 +69,22 @@ function createPostgresDatabaseStore(options = {}) {
     [event.worldId, saveSequence, event.id, event.tick, event.type, JSON.stringify(event.payload)]);
     return summarizeEvent(result.rows[0]);
   }
+  async function applyCommandResults(client, worldId, saveSequence, commandResults) {
+    for (const command of commandResults) {
+      const updated = await client.query(`UPDATE ${schema}.world_commands
+        SET status='applied', result=$6::jsonb, applied_save_sequence=$7, applied_at=clock_timestamp()
+        WHERE world_id=$1 AND sequence=$2 AND command_id=$3 AND player_id=$4 AND input_digest=$5 AND status='pending'
+        RETURNING sequence`, [worldId, command.sequence, command.id, command.playerId, command.inputDigest,
+        JSON.stringify(command.result), saveSequence]);
+      if (updated.rows.length !== 1) throw databaseError('COMMAND_CONFLICT', 'Command changed or was already consumed');
+    }
+  }
   async function saveWorld(world, saveOptions = {}) {
     assertOpen();
     const snapshot = captureCheckpoint(world, saveOptions, config.maxEnvelopeBytes);
     await ensureReady();
     return transaction(async client => {
-      const { envelope, expectedRevision, requestId, requestHash, checksum, events } = snapshot;
+      const { envelope, expectedRevision, requestId, requestHash, checksum, events, commandResults } = snapshot;
       await client.query(`INSERT INTO ${schema}.worlds(world_id) VALUES ($1) ON CONFLICT (world_id) DO NOTHING`, [envelope.worldId]);
       const current = await client.query(`SELECT revision FROM ${schema}.worlds WHERE world_id=$1 FOR UPDATE`, [envelope.worldId]);
       const existing = await client.query(`SELECT * FROM ${schema}.world_saves WHERE world_id=$1 AND request_id=$2`, [envelope.worldId, requestId]);
@@ -95,10 +105,10 @@ function createPostgresDatabaseStore(options = {}) {
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb) RETURNING *`,
       [envelope.worldId, revision + 1, envelope.tick, envelope.schemaVersion, requestId, requestHash, checksum, JSON.stringify(envelope)]);
       const row = inserted.rows[0];
-      // The snapshot, audit event, caller events and latest-world pointer share one transaction.
       await insertEvent(client, { id: `checkpoint:${requestId}`, worldId: envelope.worldId, tick: envelope.tick,
         type: 'database.world_saved', payload: { revision: revision + 1, checksum } }, row.sequence);
       for (const event of events) await insertEvent(client, event, row.sequence);
+      await applyCommandResults(client, envelope.worldId, fromSqlInteger(row.sequence, 'save sequence'), commandResults);
       await client.query(`UPDATE ${schema}.worlds SET revision=$2, latest_sequence=$3, updated_at=clock_timestamp() WHERE world_id=$1`,
         [envelope.worldId, revision + 1, row.sequence]);
       return summarizeSave(row);
@@ -131,6 +141,57 @@ function createPostgresDatabaseStore(options = {}) {
         ON s.world_id=w.world_id AND s.sequence=w.latest_sequence ORDER BY w.updated_at DESC,w.world_id LIMIT $1`, [limit]);
       return result.rows.map(row => summarizeSave(row));
     }, true);
+  }
+  async function enqueueCommand(input) {
+    const command = captureInboxCommand(input);
+    await ensureReady();
+    return transaction(async client => {
+      const world = await client.query(`SELECT 1 FROM ${schema}.worlds WHERE world_id=$1 AND latest_sequence IS NOT NULL`, [command.worldId]);
+      if (!world.rows.length) throw databaseError('MISSING_WORLD', 'Command world does not have a committed checkpoint');
+      const inserted = await client.query(`INSERT INTO ${schema}.world_commands
+        (world_id,command_id,player_id,input,input_digest) VALUES ($1,$2,$3,$4::jsonb,$5)
+        ON CONFLICT (world_id,command_id) DO NOTHING RETURNING *`,
+      [command.worldId, command.id, command.playerId, JSON.stringify(command.input), command.inputDigest]);
+      if (inserted.rows.length) return summarizeCommand(inserted.rows[0]);
+      const existing = await client.query(`SELECT * FROM ${schema}.world_commands WHERE world_id=$1 AND command_id=$2`, [command.worldId, command.id]);
+      const previous = summarizeCommand(existing.rows[0]);
+      if (previous.playerId !== command.playerId || previous.inputDigest !== command.inputDigest) {
+        throw databaseError('IDEMPOTENCY_CONFLICT', 'Command ID was already used for different input');
+      }
+      return { ...previous, idempotent: true };
+    });
+  }
+  async function getCommand(worldId, commandId) {
+    const selectedWorld = textId(worldId, 'command worldId');
+    const selectedCommand = textId(commandId, 'command id', 256);
+    await ensureReady();
+    return transaction(async client => {
+      const result = await client.query(`SELECT * FROM ${schema}.world_commands WHERE world_id=$1 AND command_id=$2`, [selectedWorld, selectedCommand]);
+      return result.rows.length ? summarizeCommand(result.rows[0]) : null;
+    }, true);
+  }
+  async function listCommands(listOptions = {}) {
+    const worldId = textId(listOptions.worldId, 'command worldId');
+    const limit = integer(listOptions.limit, 100, 1, 1000, 'command limit');
+    const order = listOptions.order ?? 'asc';
+    if (!['asc', 'desc'].includes(order)) throw databaseError('INVALID_INPUT', 'Command order must be asc or desc');
+    const conditions = ['world_id=$1'], values = [worldId];
+    if (listOptions.status !== undefined) {
+      if (!['pending', 'applied'].includes(listOptions.status)) throw databaseError('INVALID_INPUT', 'Invalid command status');
+      values.push(listOptions.status); conditions.push(`status=$${values.length}`);
+    }
+    if (listOptions.playerId !== undefined) { values.push(textId(listOptions.playerId, 'command playerId')); conditions.push(`player_id=$${values.length}`); }
+    if (listOptions.afterSequence !== undefined) { values.push(safeInteger(listOptions.afterSequence, 'command afterSequence')); conditions.push(`sequence>$${values.length}`); }
+    values.push(limit);
+    await ensureReady();
+    return transaction(async client => {
+      const result = await client.query(`SELECT * FROM ${schema}.world_commands WHERE ${conditions.join(' AND ')}
+        ORDER BY sequence ${order.toUpperCase()} LIMIT $${values.length}`, values);
+      return result.rows.map(summarizeCommand);
+    }, true);
+  }
+  function listPendingCommands(worldId, listOptions = {}) {
+    return listCommands({ ...listOptions, worldId, status: 'pending', order: 'asc' });
   }
   async function appendEvent(input) {
     const event = captureEvent(input);
@@ -173,25 +234,36 @@ function createPostgresDatabaseStore(options = {}) {
       const version = await readSchema(client);
       const result = await client.query(`SELECT current_setting('server_version') AS server_version,
         (SELECT count(*) FROM ${schema}.worlds) AS worlds, (SELECT count(*) FROM ${schema}.world_saves) AS records,
-        (SELECT count(*) FROM ${schema}.world_events) AS events`);
+        (SELECT count(*) FROM ${schema}.world_events) AS events, (SELECT count(*) FROM ${schema}.world_commands) AS commands,
+        (SELECT count(*) FROM ${schema}.world_commands WHERE status='pending') AS pending_commands`);
       const row = result.rows[0];
       return { ...safePostgresConfig(config), ready: true, connected: true, supported: true,
         schemaVersion: version, serverVersion: row.server_version, poolErrors,
-        worlds: fromSqlInteger(row.worlds), records: fromSqlInteger(row.records), events: fromSqlInteger(row.events) };
+        worlds: fromSqlInteger(row.worlds), records: fromSqlInteger(row.records), events: fromSqlInteger(row.events),
+        commands: fromSqlInteger(row.commands), pendingCommands: fromSqlInteger(row.pending_commands) };
     }, true);
   }
   function close() {
     if (!closePromise) { closing = true; closePromise = pool.end(); }
     return closePromise;
   }
-  return Object.freeze({ version: 1, provider: 'postgres', config: Object.freeze(safePostgresConfig(config)),
-    migrate, saveWorld, loadWorld, listWorlds, appendEvent, listEvents, summary, close });
+  return Object.freeze({ version: 2, provider: 'postgres', config: Object.freeze(safePostgresConfig(config)),
+    migrate, saveWorld, loadWorld, listWorlds, enqueueCommand, getCommand, listCommands, listPendingCommands,
+    appendEvent, listEvents, summary, close });
 }
 function summarizeEvent(row) {
   return { provider: 'postgres', id: row.event_id, worldId: row.world_id,
     sequence: fromSqlInteger(row.sequence), saveSequence: row.save_sequence === null ? null : fromSqlInteger(row.save_sequence),
     tick: fromSqlInteger(row.tick), type: row.type, payload: row.payload,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at };
+}
+function summarizeCommand(row, idempotent = false) {
+  return { provider: 'postgres', id: row.command_id, worldId: row.world_id, playerId: row.player_id,
+    sequence: fromSqlInteger(row.sequence, 'command sequence'), input: row.input, inputDigest: row.input_digest,
+    status: row.status, result: row.result, appliedSaveSequence: row.applied_save_sequence === null ? null : fromSqlInteger(row.applied_save_sequence, 'applied save sequence'),
+    submittedAt: row.submitted_at instanceof Date ? row.submitted_at.toISOString() : row.submitted_at,
+    appliedAt: row.applied_at instanceof Date ? row.applied_at.toISOString() : row.applied_at,
+    idempotent };
 }
 function sanitizeError(error) {
   if (typeof error?.code === 'string' && error.code.startsWith('WORLD_DB_')) return error;
@@ -203,4 +275,4 @@ function sanitizeError(error) {
   if (sqlState) safe.sqlState = sqlState;
   return safe;
 }
-module.exports = { createPostgresDatabaseStore, sanitizeError };
+module.exports = { createPostgresDatabaseStore, sanitizeError, summarizeCommand };

@@ -41,6 +41,43 @@ function captureEvent(input) {
   return { id: textId(input.id, 'event id', 256), worldId: textId(input.worldId, 'event worldId'),
     tick: safeInteger(input.tick, 'event tick'), type: textId(input.type, 'event type', 128), payload };
 }
+function captureCommandInput(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw databaseError('INVALID_INPUT', 'Command input must be an object');
+  const command = detachedJson(input);
+  delete command.id;
+  textId(command.type, 'command type', 128);
+  if (command.payload !== undefined && (!command.payload || typeof command.payload !== 'object' || Array.isArray(command.payload))) {
+    throw databaseError('INVALID_INPUT', 'Command payload must be an object');
+  }
+  return command;
+}
+function captureInboxCommand(input, maxBytes = 256 * 1024) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw databaseError('INVALID_INPUT', 'Invalid command');
+  const command = captureCommandInput(input.input);
+  const result = {
+    worldId: textId(input.worldId, 'command worldId'),
+    id: textId(input.id, 'command id', 256),
+    playerId: textId(input.playerId, 'command playerId'),
+    input: command,
+    inputDigest: digest(command),
+  };
+  if (Buffer.byteLength(canonicalJson(result)) > maxBytes) throw databaseError('PAYLOAD_TOO_LARGE', 'Command exceeds size limit');
+  return result;
+}
+function captureCommandResult(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw databaseError('INVALID_INPUT', 'Invalid command result');
+  const result = detachedJson(input.result);
+  if (!result || typeof result !== 'object' || Array.isArray(result)) throw databaseError('INVALID_INPUT', 'Command result must be an object');
+  const inputDigest = textId(input.inputDigest, 'command input digest', 64);
+  if (!/^[0-9a-f]{64}$/.test(inputDigest)) throw databaseError('INVALID_INPUT', 'Invalid command input digest');
+  return {
+    sequence: safeInteger(input.sequence, 'command sequence', 1),
+    id: textId(input.id, 'command id', 256),
+    playerId: textId(input.playerId, 'command playerId'),
+    inputDigest,
+    result,
+  };
+}
 function captureCheckpoint(world, options = {}, maxBytes = 32 * 1024 * 1024) {
   const requestId = textId(options.requestId, 'requestId', 128);
   const expectedRevision = safeInteger(options.expectedRevision, 'expectedRevision');
@@ -57,12 +94,20 @@ function captureCheckpoint(world, options = {}, maxBytes = 32 * 1024 * 1024) {
   if (!Array.isArray(options.events ?? []) || (options.events || []).length > 1000) {
     throw databaseError('INVALID_INPUT', 'Checkpoint events must be an array of at most 1000 entries');
   }
+  if (!Array.isArray(options.commandResults ?? []) || (options.commandResults || []).length > 1000) {
+    throw databaseError('INVALID_INPUT', 'Checkpoint command results must be an array of at most 1000 entries');
+  }
   const events = (options.events || []).map((event, index) => captureEvent({ ...event,
     id: event?.id ?? `${requestId}:${index}`, worldId: envelope.worldId, tick: event?.tick ?? envelope.tick }));
-  if (Buffer.byteLength(canonicalJson({ envelope, events })) > maxBytes) throw databaseError('PAYLOAD_TOO_LARGE', 'Checkpoint exceeds configured size limit');
+  const commandResults = (options.commandResults || []).map(captureCommandResult);
+  if (new Set(commandResults.map(item => item.sequence)).size !== commandResults.length
+      || new Set(commandResults.map(item => item.id)).size !== commandResults.length) {
+    throw databaseError('INVALID_INPUT', 'Checkpoint command results must be unique');
+  }
+  if (Buffer.byteLength(canonicalJson({ envelope, events, commandResults })) > maxBytes) throw databaseError('PAYLOAD_TOO_LARGE', 'Checkpoint exceeds configured size limit');
   const { savedAt: _savedAt, ...requestEnvelope } = envelope;
-  return { requestId, expectedRevision, envelope, events, checksum: digest(envelope),
-    requestHash: digest({ envelope: requestEnvelope, events, expectedRevision }) };
+  return { requestId, expectedRevision, envelope, events, commandResults, checksum: digest(envelope),
+    requestHash: digest({ envelope: requestEnvelope, events, commandResults, expectedRevision }) };
 }
 function summarizeSave(row, idempotent = false) {
   return { provider: 'postgres', id: row.request_id, worldId: row.world_id,
@@ -83,4 +128,4 @@ function restoreSave(row) {
   } catch (_) { throw databaseError('CORRUPT_RECORD', 'World checkpoint schema or headers are invalid'); }
 }
 module.exports = { textId, safeInteger, fromSqlInteger, detachedJson, canonicalJson, digest,
-  captureCheckpoint, captureEvent, summarizeSave, restoreSave };
+  captureCheckpoint, captureEvent, captureCommandInput, captureInboxCommand, captureCommandResult, summarizeSave, restoreSave };
