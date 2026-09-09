@@ -22,6 +22,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Install locked engine dependencies
+        run: npm ci --prefix world-engine --ignore-scripts
       - name: Show environment
         run: |
           node --version
@@ -50,6 +52,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install locked engine dependencies
+        run: npm ci --prefix world-engine --ignore-scripts
       - name: Show environment
         run: |
           node --version
@@ -78,6 +82,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install locked engine dependencies
+        run: npm ci --prefix world-engine --ignore-scripts
       - name: Run 1000 tick stability test
         run: |
           mkdir -p world-engine/output/ci

@@ -15,6 +15,10 @@ const DATABASE_ENGINE_VERSION = 1;
 
 function createDatabaseStore(options = {}) {
   const config = loadDatabaseConfig(options.database || options);
+  if (config.provider === DATABASE_PROVIDERS.POSTGRES) {
+    const { createPostgresDatabaseStore } = require('./postgres-database-engine');
+    return createPostgresDatabaseStore({ ...(options.database || options), connectionString: config.connectionString });
+  }
   return {
     version: DATABASE_ENGINE_VERSION,
     config,

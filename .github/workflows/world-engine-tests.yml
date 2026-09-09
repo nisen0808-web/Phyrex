@@ -30,6 +30,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Install locked engine dependencies
+        run: npm ci --prefix world-engine --ignore-scripts
 
       - name: Run database recovery regression
         run: node world-engine/tests/database-startup-recovery-test.js
