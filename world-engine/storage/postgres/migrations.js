@@ -3,7 +3,8 @@ const crypto = require('crypto');
 const { databaseError } = require('./config');
 
 // Published SQL is immutable: changes require a new numbered migration.
-const MIGRATIONS = [{ version: 1, name: 'transactional_world_checkpoints', sql: `
+const MIGRATIONS = [
+  { version: 1, name: 'transactional_world_checkpoints', sql: `
 CREATE TABLE __SCHEMA__.worlds (
   world_id text PRIMARY KEY CHECK (length(world_id) BETWEEN 1 AND 200),
   revision bigint NOT NULL DEFAULT 0 CHECK (revision BETWEEN 0 AND 9007199254740991),
@@ -41,7 +42,30 @@ CREATE TABLE __SCHEMA__.world_events (
 );
 CREATE INDEX world_events_world_sequence ON __SCHEMA__.world_events(world_id, sequence DESC);
 CREATE INDEX world_events_type_sequence ON __SCHEMA__.world_events(type, sequence DESC);
-` }].map(m => Object.freeze({ ...m, checksum: crypto.createHash('sha256').update(m.sql).digest('hex') }));
+` },
+  { version: 2, name: 'durable_command_inbox', sql: `
+CREATE TABLE __SCHEMA__.world_commands (
+  sequence bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY CHECK (sequence <= 9007199254740991),
+  world_id text NOT NULL REFERENCES __SCHEMA__.worlds(world_id),
+  command_id text NOT NULL CHECK (length(command_id) BETWEEN 1 AND 256),
+  player_id text NOT NULL CHECK (length(player_id) BETWEEN 1 AND 200),
+  input jsonb NOT NULL CHECK (jsonb_typeof(input) = 'object'),
+  input_digest text NOT NULL CHECK (input_digest ~ '^[0-9a-f]{64}$'),
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','applied')),
+  result jsonb,
+  applied_save_sequence bigint,
+  submitted_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  applied_at timestamptz,
+  UNIQUE (world_id, command_id),
+  UNIQUE (world_id, sequence),
+  FOREIGN KEY (world_id, applied_save_sequence) REFERENCES __SCHEMA__.world_saves(world_id, sequence),
+  CHECK ((status='pending' AND result IS NULL AND applied_save_sequence IS NULL AND applied_at IS NULL)
+      OR (status='applied' AND jsonb_typeof(result)='object' AND applied_save_sequence IS NOT NULL AND applied_at IS NOT NULL))
+);
+CREATE INDEX world_commands_pending_sequence ON __SCHEMA__.world_commands(world_id, sequence) WHERE status='pending';
+CREATE INDEX world_commands_player_sequence ON __SCHEMA__.world_commands(world_id, player_id, sequence DESC);
+` },
+].map(m => Object.freeze({ ...m, checksum: crypto.createHash('sha256').update(m.sql).digest('hex') }));
 Object.freeze(MIGRATIONS);
 function checkMigrationHistory(rows) {
   if (!Array.isArray(rows) || rows.length > MIGRATIONS.length) throw databaseError('SCHEMA_MISMATCH', 'Unsupported database migration version');
