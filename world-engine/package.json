@@ -21,6 +21,7 @@
     "viewer": "node viewer/serve-viewer.js",
     "database:postgres": "node demo/database-postgres-cli.js",
     "test:postgres": "node tests/integration/postgres-store.js",
+    "test:postgres:commands": "node tests/integration/postgres-command-inbox.js",
     "runtime:postgres": "node demo/durable-runtime-cli.js",
     "test:postgres:runtime": "node tests/integration/postgres-durable-runtime.js"
   },
