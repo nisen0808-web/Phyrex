@@ -2,8 +2,8 @@
 const crypto = require('crypto');
 const { normalizePostgresConfig, safePostgresConfig, databaseError, integer } = require('./config');
 const { MIGRATIONS, checkMigrationHistory } = require('./migrations');
-const { textId, safeInteger, fromSqlInteger, captureCheckpoint, captureEvent, captureInboxCommand, digest,
-  canonicalJson, summarizeSave, restoreSave } = require('./codec');
+const { textId, safeInteger, fromSqlInteger, captureCheckpoint, captureEvent, captureInboxCommand,
+  captureCommandApiAudit, digest, canonicalJson, summarizeSave, restoreSave } = require('./codec');
 
 function createPostgresDatabaseStore(options = {}) {
   const config = normalizePostgresConfig(options.database || options, options.env || process.env);
@@ -79,6 +79,15 @@ function createPostgresDatabaseStore(options = {}) {
       if (updated.rows.length !== 1) throw databaseError('COMMAND_CONFLICT', 'Command changed or was already consumed');
     }
   }
+  async function insertCommandApiAudit(client, input) {
+    const audit = captureCommandApiAudit(input);
+    const result = await client.query(`INSERT INTO ${schema}.command_api_audit
+      (world_id,account_id,player_id,command_id,command_sequence,method,route,status_code,outcome)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [audit.worldId, audit.accountId, audit.playerId, audit.commandId, audit.commandSequence,
+      audit.method, audit.route, audit.statusCode, audit.outcome]);
+    return summarizeCommandApiAudit(result.rows[0]);
+  }
   async function saveWorld(world, saveOptions = {}) {
     assertOpen();
     const snapshot = captureCheckpoint(world, saveOptions, config.maxEnvelopeBytes);
@@ -146,6 +155,13 @@ function createPostgresDatabaseStore(options = {}) {
     const command = captureInboxCommand(input);
     const expectedWorldRevision = commandOptions.expectedWorldRevision === undefined
       ? null : safeInteger(commandOptions.expectedWorldRevision, 'expectedWorldRevision', 1);
+    let auditAccountId = null;
+    if (commandOptions.audit !== undefined) {
+      if (!commandOptions.audit || typeof commandOptions.audit !== 'object' || Array.isArray(commandOptions.audit)) {
+        throw databaseError('INVALID_INPUT', 'Invalid command audit options');
+      }
+      auditAccountId = textId(commandOptions.audit.accountId, 'command audit accountId');
+    }
     await ensureReady();
     return transaction(async client => {
       const world = await client.query(`SELECT revision, latest_sequence FROM ${schema}.worlds WHERE world_id=$1 FOR SHARE`, [command.worldId]);
@@ -160,13 +176,29 @@ function createPostgresDatabaseStore(options = {}) {
         (world_id,command_id,player_id,input,input_digest) VALUES ($1,$2,$3,$4::jsonb,$5)
         ON CONFLICT (world_id,command_id) DO NOTHING RETURNING *`,
       [command.worldId, command.id, command.playerId, JSON.stringify(command.input), command.inputDigest]);
-      if (inserted.rows.length) return summarizeCommand(inserted.rows[0]);
-      const existing = await client.query(`SELECT * FROM ${schema}.world_commands WHERE world_id=$1 AND command_id=$2`, [command.worldId, command.id]);
-      const previous = summarizeCommand(existing.rows[0]);
-      if (previous.playerId !== command.playerId || previous.inputDigest !== command.inputDigest) {
-        throw databaseError('IDEMPOTENCY_CONFLICT', 'Command ID was already used for different input');
+      let result;
+      if (inserted.rows.length) {
+        result = summarizeCommand(inserted.rows[0]);
+      } else {
+        const existing = await client.query(`SELECT * FROM ${schema}.world_commands WHERE world_id=$1 AND command_id=$2`, [command.worldId, command.id]);
+        const previous = summarizeCommand(existing.rows[0]);
+        if (previous.playerId !== command.playerId || previous.inputDigest !== command.inputDigest) {
+          throw databaseError('IDEMPOTENCY_CONFLICT', 'Command ID was already used for different input');
+        }
+        result = { ...previous, idempotent: true };
       }
-      return { ...previous, idempotent: true };
+      if (auditAccountId) {
+        const statusCode = result.status === 'applied' ? 200 : 202;
+        const outcome = result.idempotent
+          ? result.status === 'applied' ? 'idempotent_applied' : 'idempotent_pending'
+          : 'enqueued';
+        await insertCommandApiAudit(client, {
+          worldId: command.worldId, accountId: auditAccountId, playerId: command.playerId,
+          commandId: command.id, commandSequence: result.sequence, method: 'POST', route: 'command.submit',
+          statusCode, outcome,
+        });
+      }
+      return result;
     });
   }
   async function getCommand(worldId, commandId, commandOptions = {}) {
@@ -213,6 +245,43 @@ function createPostgresDatabaseStore(options = {}) {
   function listPendingCommands(worldId, listOptions = {}) {
     return listCommands({ ...listOptions, worldId, status: 'pending', order: 'asc' });
   }
+  async function appendCommandApiAudit(input) {
+    const audit = captureCommandApiAudit(input);
+    await ensureReady();
+    return transaction(client => insertCommandApiAudit(client, audit));
+  }
+  async function listCommandApiAudits(listOptions = {}) {
+    const worldId = textId(listOptions.worldId, 'audit worldId');
+    const limit = integer(listOptions.limit, 100, 1, 1000, 'audit limit');
+    const order = listOptions.order ?? 'desc';
+    if (!['asc', 'desc'].includes(order)) throw databaseError('INVALID_INPUT', 'Audit order must be asc or desc');
+    const conditions = ['world_id=$1'], values = [worldId];
+    const add = (column, value) => { values.push(value); conditions.push(`${column}=$${values.length}`); };
+    if (listOptions.accountId !== undefined) add('account_id', textId(listOptions.accountId, 'audit accountId'));
+    if (listOptions.playerId !== undefined) add('player_id', textId(listOptions.playerId, 'audit playerId'));
+    if (listOptions.commandId !== undefined) add('command_id', textId(listOptions.commandId, 'audit commandId', 256));
+    if (listOptions.route !== undefined) {
+      const route = textId(listOptions.route, 'audit route', 64);
+      if (!['command.submit', 'command.status'].includes(route)) throw databaseError('INVALID_INPUT', 'Invalid audit route');
+      add('route', route);
+    }
+    if (listOptions.statusCode !== undefined) {
+      const status = safeInteger(Number(listOptions.statusCode), 'audit status code', 100);
+      if (status > 599) throw databaseError('INVALID_INPUT', 'Invalid audit status code');
+      add('status_code', status);
+    }
+    if (listOptions.afterSequence !== undefined) {
+      values.push(safeInteger(listOptions.afterSequence, 'audit afterSequence'));
+      conditions.push(`sequence>$${values.length}`);
+    }
+    values.push(limit);
+    await ensureReady();
+    return transaction(async client => {
+      const result = await client.query(`SELECT * FROM ${schema}.command_api_audit WHERE ${conditions.join(' AND ')}
+        ORDER BY sequence ${order.toUpperCase()} LIMIT $${values.length}`, values);
+      return result.rows.map(summarizeCommandApiAudit);
+    }, true);
+  }
   async function appendEvent(input) {
     const event = captureEvent(input);
     if (Buffer.byteLength(canonicalJson(event)) > config.maxEnvelopeBytes) throw databaseError('PAYLOAD_TOO_LARGE', 'Event exceeds size limit');
@@ -255,26 +324,35 @@ function createPostgresDatabaseStore(options = {}) {
       const result = await client.query(`SELECT current_setting('server_version') AS server_version,
         (SELECT count(*) FROM ${schema}.worlds) AS worlds, (SELECT count(*) FROM ${schema}.world_saves) AS records,
         (SELECT count(*) FROM ${schema}.world_events) AS events, (SELECT count(*) FROM ${schema}.world_commands) AS commands,
-        (SELECT count(*) FROM ${schema}.world_commands WHERE status='pending') AS pending_commands`);
+        (SELECT count(*) FROM ${schema}.world_commands WHERE status='pending') AS pending_commands,
+        (SELECT count(*) FROM ${schema}.command_api_audit) AS command_api_audits`);
       const row = result.rows[0];
       return { ...safePostgresConfig(config), ready: true, connected: true, supported: true,
         schemaVersion: version, serverVersion: row.server_version, poolErrors,
         worlds: fromSqlInteger(row.worlds), records: fromSqlInteger(row.records), events: fromSqlInteger(row.events),
-        commands: fromSqlInteger(row.commands), pendingCommands: fromSqlInteger(row.pending_commands) };
+        commands: fromSqlInteger(row.commands), pendingCommands: fromSqlInteger(row.pending_commands),
+        commandApiAudits: fromSqlInteger(row.command_api_audits) };
     }, true);
   }
   function close() {
     if (!closePromise) { closing = true; closePromise = pool.end(); }
     return closePromise;
   }
-  return Object.freeze({ version: 2, provider: 'postgres', config: Object.freeze(safePostgresConfig(config)),
+  return Object.freeze({ version: 3, provider: 'postgres', config: Object.freeze(safePostgresConfig(config)),
     migrate, saveWorld, loadWorld, listWorlds, enqueueCommand, getCommand, listCommands, listPendingCommands,
-    appendEvent, listEvents, summary, close });
+    appendCommandApiAudit, listCommandApiAudits, appendEvent, listEvents, summary, close });
 }
 function summarizeEvent(row) {
   return { provider: 'postgres', id: row.event_id, worldId: row.world_id,
     sequence: fromSqlInteger(row.sequence), saveSequence: row.save_sequence === null ? null : fromSqlInteger(row.save_sequence),
     tick: fromSqlInteger(row.tick), type: row.type, payload: row.payload,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at };
+}
+function summarizeCommandApiAudit(row) {
+  return { provider: 'postgres', sequence: fromSqlInteger(row.sequence, 'audit sequence'), worldId: row.world_id,
+    accountId: row.account_id, playerId: row.player_id, commandId: row.command_id,
+    commandSequence: row.command_sequence === null ? null : fromSqlInteger(row.command_sequence, 'audit command sequence'),
+    method: row.method, route: row.route, statusCode: Number(row.status_code), outcome: row.outcome,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at };
 }
 function summarizeCommand(row, idempotent = false) {
@@ -295,4 +373,4 @@ function sanitizeError(error) {
   if (sqlState) safe.sqlState = sqlState;
   return safe;
 }
-module.exports = { createPostgresDatabaseStore, sanitizeError, summarizeCommand };
+module.exports = { createPostgresDatabaseStore, sanitizeError, summarizeCommand, summarizeCommandApiAudit };
