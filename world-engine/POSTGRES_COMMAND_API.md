@@ -25,6 +25,38 @@ Authorization is revision-fenced. After session/player authorization, POST calls
 
 GET similarly binds command lookup to the revision used for authorization. A changed revision causes a fresh authorization pass before command data is returned.
 
+## Rate limiting
+
+The service now has two bounded in-memory fixed-window limit layers.
+
+1. A source limiter runs before route parsing, world loading or session validation. Its key comes only from the actual socket `remoteAddress`; `X-Forwarded-For` and similar headers are ignored by default.
+2. After a valid session is loaded, account-level limits are applied separately to command submission and command status reads. The key is scoped by world plus account, so multiple session tokens cannot bypass the account limit.
+
+Default limits are:
+
+```text
+source requests:          240 / 60 seconds
+account POST submissions:  60 / 60 seconds
+account GET status reads: 240 / 60 seconds
+tracked source keys:      5000
+tracked account keys:    10000
+```
+
+A rejected request returns HTTP 429 with `error=rate_limited` and a whole-second `Retry-After` header. Limiter maps are explicitly capped and expired entries are purged. This is a process-local protection layer, not a substitute for distributed gateway or load-balancer rate limiting in a multi-instance deployment.
+
+Runtime configuration is available through:
+
+```text
+WORLD_ENGINE_COMMAND_API_SOURCE_RATE_LIMIT
+WORLD_ENGINE_COMMAND_API_ACCOUNT_SUBMIT_RATE_LIMIT
+WORLD_ENGINE_COMMAND_API_ACCOUNT_READ_RATE_LIMIT
+WORLD_ENGINE_COMMAND_API_RATE_LIMIT_WINDOW_MS
+WORLD_ENGINE_COMMAND_API_MAX_TRACKED_SOURCES
+WORLD_ENGINE_COMMAND_API_MAX_TRACKED_ACCOUNTS
+```
+
+No proxy trust setting is enabled. A deployment that needs client IPs behind a reverse proxy must terminate and enforce network-level limits at a trusted gateway rather than trusting arbitrary forwarding headers in this engine service.
+
 ## Response surface
 
 Command responses expose only:
@@ -54,6 +86,7 @@ CORS is not enabled implicitly. Deployment may place a same-origin gateway in fr
 409 command_id_conflict / world_revision_changed
 413 request_body_too_large / command_too_large
 415 json_required
+429 rate_limited
 503 service_unavailable
 500 internal_error
 ```
@@ -74,6 +107,8 @@ The server validates PostgreSQL readiness/migration state before opening the lis
 
 `durable-command-api-test.js` uses a controlled PostgreSQL-shaped store and covers authentication, ownership, GM access, idempotency, status polling, response redaction, body limits and an authorization-revision revocation race.
 
+`durable-command-api-rate-limit-test.js` covers account submit limiting, source limiting, Retry-After, window reset and rejection before durable enqueue. `request-rate-limit-engine-test.js` covers fixed-window behavior, bounded key tracking and verifies that forwarded-address headers do not replace the actual socket address.
+
 `tests/integration/postgres-command-api.js` runs on an actual ephemeral PostgreSQL 18 server on Node 20 and Node 22. It verifies:
 
 ```text
@@ -93,4 +128,4 @@ The existing PostgreSQL store, inbox, runtime and runtime-command suites remain 
 
 ## Remaining boundary
 
-This is an engine/service primitive, not a production internet deployment. Rate limiting, gateway TLS termination, production secrets, durable session/account mutation workflows, multi-instance leader policy, retention and backup/restore remain separate acceptance work.
+This is an engine/service primitive, not a production internet deployment. Distributed gateway rate limiting, durable operational audit, production TLS/secrets, durable session/account mutation workflows, multi-instance leader policy, retention and backup/restore remain separate acceptance work.
