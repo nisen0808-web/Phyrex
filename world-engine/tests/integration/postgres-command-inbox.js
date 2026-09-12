@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { Pool } = require('pg');
 const { createWorld } = require('../../core/world-engine');
 const { createPostgresDatabaseStore } = require('../../storage/postgres/store');
+const { MIGRATIONS } = require('../../storage/postgres/migrations');
 
 async function main() {
   const connectionString = process.env.WORLD_ENGINE_TEST_DATABASE_URL;
@@ -19,8 +20,8 @@ async function main() {
   const pass = name => { groups += 1; console.log(`PASS ${name}`); };
   try {
     const migrated = await a.migrate();
-    assert.strictEqual(migrated.version, 2);
-    assert.strictEqual(migrated.applied, 2);
+    assert.strictEqual(migrated.version, MIGRATIONS.length);
+    assert.strictEqual(migrated.applied, MIGRATIONS.length);
     assert.strictEqual((await b.migrate()).applied, 0);
     pass('command inbox migration applies after immutable checkpoint schema');
 

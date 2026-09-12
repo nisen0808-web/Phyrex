@@ -43,9 +43,10 @@ function main() {
   assert.throws(() => captureCheckpoint(world, { ...base, commandResults: [applied, applied] }), /unique/);
   pass('checkpoint idempotency hash covers command results and rejects duplicate receipts');
 
-  assert.ok(MIGRATIONS.some(migration => migration.name === 'durable_command_inbox'));
-  assert.strictEqual(MIGRATIONS[MIGRATIONS.length - 1].version, 2);
-  pass('command inbox is an explicit immutable migration');
+  assert.ok(MIGRATIONS.length >= 2);
+  assert.strictEqual(MIGRATIONS[1].version, 2);
+  assert.strictEqual(MIGRATIONS[1].name, 'durable_command_inbox');
+  pass('command inbox is an explicit immutable migration that later migrations may append after');
 
   console.log(`postgres command inbox contracts completed ${groups} groups: ${groups} passed, 0 failed`);
 }
