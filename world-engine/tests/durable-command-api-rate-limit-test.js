@@ -101,7 +101,7 @@ async function main() {
 
   {
     const f = fixture();
-    const api = await createDurableCommandApiServer({ store: f.store, sourceRateLimit: 2, accountSubmitRateLimit: 100, accountReadRateLimit: 100 });
+    const api = await createDurableCommandApiServer({ store: f.store, sourceRateLimit: 2, accountSubmitRateLimit: 100, accountReadRateLimit: 100, rateLimitNow: () => 0 });
     const port = await listen(api);
     try {
       const path = '/durable/worlds/rate_world/commands/missing';

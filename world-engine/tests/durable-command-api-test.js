@@ -85,7 +85,7 @@ async function request(port, method, path, options = {}) {
 
 async function main() {
   const f = fixture();
-  const api = await createDurableCommandApiServer({ store: f.store, maxBodyBytes: 1024 });
+  const api = await createDurableCommandApiServer({ store: f.store, maxBodyBytes: 1024, rateLimitNow: () => 0 });
   const port = await new Promise(resolve => api.server.listen(0, '127.0.0.1', () => resolve(api.server.address().port)));
   try {
     let response = await request(port, 'POST', '/durable/worlds/api_world/players/player-1/commands', { body: { id: 'cmd-1', type: 'wait' } });
