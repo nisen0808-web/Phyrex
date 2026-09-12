@@ -1,0 +1,37 @@
+name: Materialize audit migration compatibility fix
+
+on:
+  push:
+    branches: [feature/durable-command-audit]
+    paths: ['.github/workflows/audit-migration-test-fix.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/durable-command-audit
+          fetch-depth: 0
+      - name: Make command inbox migration assertion registry-aware
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('world-engine/tests/integration/postgres-command-inbox.js')
+          s=p.read_text()
+          s=s.replace("const { createPostgresDatabaseStore } = require('../../storage/postgres/store');", "const { createPostgresDatabaseStore } = require('../../storage/postgres/store');\nconst { MIGRATIONS } = require('../../storage/postgres/migrations');")
+          s=s.replace('assert.strictEqual(migrated.version, 2);', 'assert.strictEqual(migrated.version, MIGRATIONS.length);')
+          s=s.replace('assert.strictEqual(migrated.applied, 2);', 'assert.strictEqual(migrated.applied, MIGRATIONS.length);')
+          p.write_text(s)
+          PY
+          git diff --check
+      - name: Commit compatibility fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add world-engine/tests/integration/postgres-command-inbox.js
+          git commit -m 'Make command inbox migration test registry-aware'
+          git push origin HEAD:feature/durable-command-audit
