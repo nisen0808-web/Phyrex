@@ -24,29 +24,28 @@ PostgreSQL 18 存储 14/14、命令 inbox 8/8、durable runtime 11/11、runtime-
 7/7 均在 Node 20/22 通过，100/1000 tick 通过。运行器已按 FIFO 在隔离候选世界消费
 pending commands；读取或提交的短暂数据库故障均有界重试，不重复执行命令。
 
+PR #67 已合并，提交 4d6174e3。验收 head 8685bc7 的完整回归 90/90，真实
+PostgreSQL 18 存储 14/14、命令 inbox 8/8、durable runtime 11/11、runtime-command
+7/7、authenticated command API 9/9 均在 Node 20/22 通过，100/1000 tick 通过。
+HTTP POST 已是 durable enqueue，GET 为 pending/applied 查询；session/player 授权使用
+最新 checkpoint，并通过 world revision fence 防止并发撤权后的 stale enqueue。
+
 ## 当前开发层
 
-认证后的异步 PostgreSQL command API：POST 只向 durable inbox 入队，GET 只读取
-pending/applied 状态。HTTP handler 不调用 `executePlayerCommand`，不会直接修改世界内存。
-世界状态仍只由 durable runtime 在事务确认后发布。
+Durable command API 请求限流：任何数据库读取前先按实际 socket remote address 执行
+source rate limit，默认不信任 `X-Forwarded-For` 等代理头。认证成功后再按 world + account
+分别限制 POST command submission 和 GET status polling，多个 session token 不能绕过账号限额。
 
-每次 POST/GET 都从最新 PostgreSQL checkpoint 验证 Bearer session。普通账号只能访问
-`account.playerIds` 中的玩家，GM/Admin 沿用现有 privileged player 权限。POST 还要求目标
-player 在最新 checkpoint 中真实存在。
+默认窗口为 60 秒：source 240 次、account POST 60 次、account GET 240 次。跟踪表显式
+限制为 5000 source keys 和 10000 account keys，过期窗口会清理，超限返回 429 与
+`Retry-After`。这是单进程保护层；多实例或互联网入口仍需要可信网关做分布式限流。
 
-授权决定绑定世界 revision。`enqueueCommand` 在 PostgreSQL transaction 中对 world row
-使用 `FOR SHARE`，确认授权时看到的 revision 仍是当前 revision；并发 checkpoint 会与该锁
-协调。revision 已变化时 HTTP adapter 重新加载最新 world/session/ownership 再决定，避免
-“撤权已提交但旧授权请求仍入队”。GET command 也带授权 revision 做一致性检查。
+限流参数通过 `WORLD_ENGINE_COMMAND_API_*` 环境变量配置；数据库 URL/TLS/密码策略没有
+变化，仍只使用已有数据库环境配置，不增加 credential CLI flags。
 
-响应不暴露 command input digest、原始 input、SQL 错误文本或连接配置；默认不开 CORS，
-使用 no-store/nosniff/no-referrer 安全头。命令 body 默认上限 64 KiB，服务默认绑定
-127.0.0.1:8791，数据库 URL/TLS 仍只走已有 WORLD_ENGINE_* 环境配置。
-
-受控测试覆盖 401/403、GM、幂等冲突、pending/applied polling、body limit 和授权撤销竞态。
-真实 PostgreSQL 18 测试覆盖 HTTP enqueue -> runtime consume -> GET applied，全程确认 HTTP
-不会在 runtime checkpoint 前修改世界；还覆盖 direct revision fence 和真实撤权竞态。
-当前等待最终远端 Node 20/22、完整回归、1000 tick 和 PostgreSQL 五层专项验收。
+新增 `request-rate-limit-engine.js`，并增加纯 limiter 与 HTTP 限流回归，覆盖固定窗口、
+window reset、bounded key tracking、account submit limit、source limit、Retry-After，以及
+伪造 X-Forwarded-For 不能替代真实 socket 地址。
 
 | 能力 | 当前实现与边界 |
 |---|---|
@@ -56,13 +55,14 @@ player 在最新 checkpoint 中真实存在。
 | PostgreSQL 世界运行器 | #64 已验收提交后发布、失败重试、持续运行、停机与真实 SQL 重启续跑。 |
 | PostgreSQL 命令 inbox | #65 已验收 Migration 2、持久命令入队、查询和 checkpoint 同事务确认。 |
 | Runtime 命令消费 | #66 已验收 FIFO 隔离执行、事务确认、retry reuse 与 read-backoff。 |
-| Durable command HTTP API | 本层已实现认证入队与结果轮询、revision-fenced authorization；等待远端验收。 |
-| 旧同步 HTTP 玩家操作 | 保持兼容，尚未重定向到 durable API；不会在本层静默改变语义。 |
-| 生产运行 | 未配置生产数据库，未验收网关限流、备份恢复、保留策略、领导者租约与部署。 |
+| Durable command HTTP API | #67 已验收认证入队/结果轮询、revision-fenced authorization 与真实 SQL E2E。 |
+| Command API process limiter | 本层实现有界 source/account 限流；等待最终远端验收。 |
+| 旧同步 HTTP 玩家操作 | 保持兼容，尚未重定向到 durable API；不会静默改变语义。 |
+| 生产运行 | 未配置生产数据库，未验收网关分布式限流、durable operational audit、备份恢复、领导者租约与部署。 |
 
-下一节点在本层验收后优先做 command API 的请求限流/审计与生产边界，再决定是否逐步把旧
-`POST /players/:playerId/actions` 迁移为 durable enqueue。迁移必须保持兼容或明确版本化，
-不会直接替换现有同步语义。
+下一节点在本层验收后做 durable operational audit：记录 command API 的认证主体、route、
+状态码和 durable command id，但不保存 Bearer token、raw command body 或敏感数据库信息。
+之后再处理多实例 gateway/leader policy 或旧同步 action route 的版本化迁移。
 
 不使用没有统一验收分母的百分比。实现与边界见 POSTGRES_COMMAND_API.md、
 POSTGRES_COMMAND_INBOX.md、POSTGRES_DATABASE.md 和 POSTGRES_DURABLE_RUNTIME.md。
