@@ -1,13 +1,14 @@
 'use strict';
 
 const { createDurableCommandApiServer } = require('../core/durable-command-api-engine');
+const { wallClockNow } = require('../platform/runtime-clock');
 
 async function main(argv = process.argv.slice(2), env = process.env) {
   const args = parseArgs(argv);
   if (!args) return null;
   const host = args.host || env.HOST || '127.0.0.1';
   const port = boundedPort(args.port || env.PORT || 8791);
-  const apiOptions = { env };
+  const apiOptions = { env, rateLimitNow: wallClockNow };
   if (args.maxBodyBytes !== undefined) apiOptions.maxBodyBytes = Number(args.maxBodyBytes);
   copyNumericEnv(apiOptions, env, 'sourceRateLimit', 'WORLD_ENGINE_COMMAND_API_SOURCE_RATE_LIMIT');
   copyNumericEnv(apiOptions, env, 'accountSubmitRateLimit', 'WORLD_ENGINE_COMMAND_API_ACCOUNT_SUBMIT_RATE_LIMIT');
