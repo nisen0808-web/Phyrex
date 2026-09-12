@@ -65,6 +65,25 @@ CREATE TABLE __SCHEMA__.world_commands (
 CREATE INDEX world_commands_pending_sequence ON __SCHEMA__.world_commands(world_id, sequence) WHERE status='pending';
 CREATE INDEX world_commands_player_sequence ON __SCHEMA__.world_commands(world_id, player_id, sequence DESC);
 ` },
+  { version: 3, name: 'durable_command_api_audit', sql: `
+CREATE TABLE __SCHEMA__.command_api_audit (
+  sequence bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY CHECK (sequence <= 9007199254740991),
+  request_id text NOT NULL UNIQUE CHECK (length(request_id) BETWEEN 1 AND 128),
+  world_id text CHECK (world_id IS NULL OR length(world_id) BETWEEN 1 AND 200),
+  account_id text CHECK (account_id IS NULL OR length(account_id) BETWEEN 1 AND 200),
+  player_id text CHECK (player_id IS NULL OR length(player_id) BETWEEN 1 AND 200),
+  command_id text CHECK (command_id IS NULL OR length(command_id) BETWEEN 1 AND 256),
+  method text NOT NULL CHECK (length(method) BETWEEN 1 AND 16),
+  route text NOT NULL CHECK (length(route) BETWEEN 1 AND 64),
+  status_code integer NOT NULL CHECK (status_code BETWEEN 100 AND 599),
+  error_code text CHECK (error_code IS NULL OR length(error_code) BETWEEN 1 AND 128),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX command_api_audit_world_sequence ON __SCHEMA__.command_api_audit(world_id, sequence DESC);
+CREATE INDEX command_api_audit_account_sequence ON __SCHEMA__.command_api_audit(account_id, sequence DESC);
+CREATE INDEX command_api_audit_command_sequence ON __SCHEMA__.command_api_audit(command_id, sequence DESC);
+CREATE INDEX command_api_audit_status_sequence ON __SCHEMA__.command_api_audit(status_code, sequence DESC);
+` },
 ].map(m => Object.freeze({ ...m, checksum: crypto.createHash('sha256').update(m.sql).digest('hex') }));
 Object.freeze(MIGRATIONS);
 function checkMigrationHistory(rows) {
