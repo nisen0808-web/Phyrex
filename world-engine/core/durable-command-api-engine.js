@@ -75,10 +75,8 @@ async function createDurableCommandApiServer(options = {}) {
     1000000,
     'maxTrackedAccounts',
   );
-  if (options.rateLimitNow !== undefined && typeof options.rateLimitNow !== 'function') {
-    throw apiError(500, 'invalid_rate_limit_clock');
-  }
-  const limiterCommon = { windowMs: rateLimitWindowMs, ...(options.rateLimitNow ? { now: options.rateLimitNow } : {}) };
+  if (typeof options.rateLimitNow !== 'function') throw apiError(500, 'rate_limit_clock_required');
+  const limiterCommon = { windowMs: rateLimitWindowMs, now: options.rateLimitNow };
   const rateLimiters = Object.freeze({
     source: createFixedWindowRateLimiter({ ...limiterCommon, limit: sourceRateLimit, maxKeys: maxTrackedSources }),
     submit: createFixedWindowRateLimiter({ ...limiterCommon, limit: accountSubmitRateLimit, maxKeys: maxTrackedAccounts }),
