@@ -21,7 +21,7 @@ function fixture() {
   createSession(world, 'account-1', { token: 'token-one' });
   createSession(world, 'account-2', { token: 'token-two' });
   createSession(world, 'gm-account', { token: 'token-gm' });
-  const state = { world: clone(world), revision: 7, commands: new Map(), nextSequence: 1, closes: 0, raceRevoke: false };
+  const state = { world: clone(world), revision: 7, commands: new Map(), audits: [], nextSequence: 1, closes: 0, raceRevoke: false };
   const store = {
     provider: 'postgres',
     async summary() { return { provider: 'postgres', ready: true }; },
@@ -56,6 +56,10 @@ function fixture() {
       if (options.expectedWorldRevision !== state.revision) throw dbError('REVISION_CONFLICT');
       const row = state.commands.get(commandId);
       return row ? clone(row) : null;
+    },
+    async appendCommandApiAudit(input) {
+      state.audits.push(clone(input));
+      return { sequence: state.audits.length, ...clone(input) };
     },
     async close() { state.closes += 1; },
   };
