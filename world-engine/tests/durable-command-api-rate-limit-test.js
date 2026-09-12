@@ -15,7 +15,7 @@ function fixture() {
   createPlayer(world, { id: 'player-1' });
   createAccount(world, { id: 'account-1', roles: ['player'], playerIds: ['player-1'] });
   createSession(world, 'account-1', { token: 'rate-token' });
-  const state = { world: clone(world), revision: 1, commands: new Map(), sequence: 1 };
+  const state = { world: clone(world), revision: 1, commands: new Map(), audits: [], sequence: 1 };
   const store = {
     provider: 'postgres',
     async summary() { return { ready: true }; },
@@ -34,6 +34,10 @@ function fixture() {
     async getCommand(worldId, commandId, options = {}) {
       assert.strictEqual(options.expectedWorldRevision, state.revision);
       const row = state.commands.get(commandId); return worldId === state.world.id && row ? clone(row) : null;
+    },
+    async appendCommandApiAudit(input) {
+      state.audits.push(clone(input));
+      return { sequence: state.audits.length, ...clone(input) };
     },
     async close() {},
   };
