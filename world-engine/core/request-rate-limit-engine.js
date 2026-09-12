@@ -1,7 +1,5 @@
 'use strict';
 
-const { wallClockNow } = require('../platform/runtime-clock');
-
 const DEFAULT_REQUEST_RATE_LIMIT_OPTIONS = Object.freeze({
   limit: 60,
   windowMs: 60 * 1000,
@@ -12,8 +10,8 @@ function createFixedWindowRateLimiter(options = {}) {
   const limit = boundedInteger(options.limit ?? DEFAULT_REQUEST_RATE_LIMIT_OPTIONS.limit, 1, 1000000, 'limit');
   const windowMs = boundedInteger(options.windowMs ?? DEFAULT_REQUEST_RATE_LIMIT_OPTIONS.windowMs, 10, 24 * 60 * 60 * 1000, 'windowMs');
   const maxKeys = boundedInteger(options.maxKeys ?? DEFAULT_REQUEST_RATE_LIMIT_OPTIONS.maxKeys, 10, 1000000, 'maxKeys');
-  if (options.now !== undefined && typeof options.now !== 'function') throw new Error('Rate limiter now must be a function');
-  const now = options.now || wallClockNow;
+  if (typeof options.now !== 'function') throw new Error('Rate limiter requires an injected now function');
+  const now = options.now;
   const entries = new Map();
 
   function consume(key) {
