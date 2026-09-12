@@ -1,0 +1,33 @@
+name: Materialize command API audit test compatibility
+
+on:
+  push:
+    branches: [feature/command-api-audit]
+    paths: ['.github/workflows/materialize-command-api-audit-test-compat.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/command-api-audit
+          fetch-depth: 0
+      - name: Patch audit test compatibility
+        run: |
+          python3 .github/scripts/materialize-command-api-audit-test-compat.py
+          node --check world-engine/tests/durable-command-api-test.js
+          node --check world-engine/tests/durable-command-api-rate-limit-test.js
+          node --check world-engine/tests/integration/postgres-command-inbox.js
+          git diff --check
+      - name: Commit audit test compatibility
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add world-engine/tests/durable-command-api-test.js world-engine/tests/durable-command-api-rate-limit-test.js world-engine/tests/integration/postgres-command-inbox.js
+          git commit -m 'Update tests for command API audit store'
+          git push origin HEAD:feature/command-api-audit
