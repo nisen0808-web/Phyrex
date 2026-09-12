@@ -85,7 +85,7 @@ async function createDurableCommandApiServer(options = {}) {
 
   const ownsStore = !options.store || options.closeStore === true;
   const store = options.store || createPostgresDatabaseStore({ ...(options.database || {}), env: options.env });
-  if (store.provider !== 'postgres' || !['loadWorld', 'enqueueCommand', 'getCommand', 'summary', 'close'].every(key => typeof store[key] === 'function')) {
+  if (store.provider !== 'postgres' || !['loadWorld', 'enqueueCommand', 'getCommand', 'appendCommandApiAudit', 'summary', 'close'].every(key => typeof store[key] === 'function')) {
     if (ownsStore && typeof store.close === 'function') await store.close().catch(() => {});
     throw apiError(500, 'transactional_store_required');
   }
@@ -164,6 +164,7 @@ async function handleRequest(req, res, store, options) {
       store,
       route.worldId,
       route.playerId,
+      body.id,
       token,
       options.authorizationAttempts,
       options.rateLimiters.submit,
@@ -172,7 +173,7 @@ async function handleRequest(req, res, store, options) {
         id: body.id,
         playerId: route.playerId,
         input: body,
-      }, { expectedWorldRevision: context.revision }),
+      }, { expectedWorldRevision: context.revision, audit: { accountId: context.auth.account.id } }),
     );
     return writeJson(res, row.status === 'applied' ? 200 : 202, { ok: true, data: commandView(row) });
   }
@@ -194,8 +195,7 @@ async function handleRequest(req, res, store, options) {
   throw apiError(404, 'not_found');
 }
 
-async function withFreshPlayerAuthorization(store, worldId, playerId, token, attempts, accountLimiter, action) {
-  let lastConflict = null;
+async function withFreshPlayerAuthorization(store, worldId, playerId, commandId, token, attempts, accountLimiter, action) {
   let accountRateChecked = false;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const context = await authenticateWorld(store, worldId, token);
@@ -203,23 +203,35 @@ async function withFreshPlayerAuthorization(store, worldId, playerId, token, att
       enforceRateLimit(accountLimiter.consume(accountRateKey(worldId, context.auth.account.id)));
       accountRateChecked = true;
     }
-    if (!context.world.players?.byId?.[playerId]) throw apiError(404, 'player_not_found');
-    requirePermission(canAccessPlayer(context.auth.account, playerId), 'player_forbidden');
+    if (!context.world.players?.byId?.[playerId]) {
+      const error = apiError(404, 'player_not_found');
+      await appendFailureAudit(store, context, {
+        playerId, commandId, method: 'POST', route: 'command.submit',
+      }, error);
+      throw error;
+    }
+    try {
+      requirePermission(canAccessPlayer(context.auth.account, playerId), 'player_forbidden');
+    } catch (error) {
+      await appendFailureAudit(store, context, {
+        playerId, commandId, method: 'POST', route: 'command.submit',
+      }, error);
+      throw error;
+    }
     try {
       return await action(context);
     } catch (error) {
-      if (error?.code === 'WORLD_DB_REVISION_CONFLICT' && attempt + 1 < attempts) {
-        lastConflict = error;
-        continue;
-      }
+      if (error?.code === 'WORLD_DB_REVISION_CONFLICT' && attempt + 1 < attempts) continue;
+      await appendFailureAudit(store, context, {
+        playerId, commandId, method: 'POST', route: 'command.submit',
+      }, error);
       throw error;
     }
   }
-  throw lastConflict || apiError(409, 'world_revision_changed');
+  throw apiError(409, 'world_revision_changed');
 }
 
 async function withFreshCommandAuthorization(store, worldId, commandId, token, attempts, accountLimiter) {
-  let lastConflict = null;
   let accountRateChecked = false;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const context = await authenticateWorld(store, worldId, token);
@@ -227,20 +239,62 @@ async function withFreshCommandAuthorization(store, worldId, commandId, token, a
       enforceRateLimit(accountLimiter.consume(accountRateKey(worldId, context.auth.account.id)));
       accountRateChecked = true;
     }
+    let row;
     try {
-      const row = await store.getCommand(worldId, commandId, { expectedWorldRevision: context.revision });
-      if (!row) throw apiError(404, 'command_not_found');
-      requirePermission(canAccessPlayer(context.auth.account, row.playerId), 'command_forbidden');
-      return row;
+      row = await store.getCommand(worldId, commandId, { expectedWorldRevision: context.revision });
     } catch (error) {
-      if (error?.code === 'WORLD_DB_REVISION_CONFLICT' && attempt + 1 < attempts) {
-        lastConflict = error;
-        continue;
-      }
+      if (error?.code === 'WORLD_DB_REVISION_CONFLICT' && attempt + 1 < attempts) continue;
+      await appendFailureAudit(store, context, {
+        commandId, method: 'GET', route: 'command.status',
+      }, error);
       throw error;
     }
+    if (!row) {
+      const error = apiError(404, 'command_not_found');
+      await appendFailureAudit(store, context, {
+        commandId, method: 'GET', route: 'command.status',
+      }, error);
+      throw error;
+    }
+    try {
+      requirePermission(canAccessPlayer(context.auth.account, row.playerId), 'command_forbidden');
+    } catch (error) {
+      await appendFailureAudit(store, context, {
+        playerId: row.playerId, commandId: row.id, commandSequence: row.sequence,
+        method: 'GET', route: 'command.status',
+      }, error);
+      throw error;
+    }
+    await store.appendCommandApiAudit({
+      worldId,
+      accountId: context.auth.account.id,
+      playerId: row.playerId,
+      commandId: row.id,
+      commandSequence: row.sequence,
+      method: 'GET',
+      route: 'command.status',
+      statusCode: 200,
+      outcome: row.status === 'applied' ? 'read_applied' : 'read_pending',
+    });
+    return row;
   }
-  throw lastConflict || apiError(409, 'world_revision_changed');
+  throw apiError(409, 'world_revision_changed');
+}
+
+async function appendFailureAudit(store, context, input, error) {
+  const mapped = mapError(error);
+  if (mapped.status < 400 || mapped.status >= 500 || mapped.status === 429) return null;
+  return store.appendCommandApiAudit({
+    worldId: context.world.id,
+    accountId: context.auth.account.id,
+    playerId: input.playerId ?? null,
+    commandId: input.commandId ?? null,
+    commandSequence: input.commandSequence ?? null,
+    method: input.method,
+    route: input.route,
+    statusCode: mapped.status,
+    outcome: mapped.code,
+  });
 }
 
 async function authenticateWorld(store, worldId, token) {
@@ -418,4 +472,5 @@ module.exports = {
   mapError,
   requestSourceKey,
   enforceRateLimit,
+  appendFailureAudit,
 };
