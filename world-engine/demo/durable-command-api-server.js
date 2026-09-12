@@ -1,14 +1,21 @@
 'use strict';
 
 const { createDurableCommandApiServer } = require('../core/durable-command-api-engine');
+const { wallClockNow } = require('../platform/runtime-clock');
 
 async function main(argv = process.argv.slice(2), env = process.env) {
   const args = parseArgs(argv);
   if (!args) return null;
   const host = args.host || env.HOST || '127.0.0.1';
   const port = boundedPort(args.port || env.PORT || 8791);
-  const apiOptions = { env };
+  const apiOptions = { env, rateLimitNow: wallClockNow };
   if (args.maxBodyBytes !== undefined) apiOptions.maxBodyBytes = Number(args.maxBodyBytes);
+  copyNumericEnv(apiOptions, env, 'sourceRateLimit', 'WORLD_ENGINE_COMMAND_API_SOURCE_RATE_LIMIT');
+  copyNumericEnv(apiOptions, env, 'accountSubmitRateLimit', 'WORLD_ENGINE_COMMAND_API_ACCOUNT_SUBMIT_RATE_LIMIT');
+  copyNumericEnv(apiOptions, env, 'accountReadRateLimit', 'WORLD_ENGINE_COMMAND_API_ACCOUNT_READ_RATE_LIMIT');
+  copyNumericEnv(apiOptions, env, 'rateLimitWindowMs', 'WORLD_ENGINE_COMMAND_API_RATE_LIMIT_WINDOW_MS');
+  copyNumericEnv(apiOptions, env, 'maxTrackedSources', 'WORLD_ENGINE_COMMAND_API_MAX_TRACKED_SOURCES');
+  copyNumericEnv(apiOptions, env, 'maxTrackedAccounts', 'WORLD_ENGINE_COMMAND_API_MAX_TRACKED_ACCOUNTS');
   const api = await createDurableCommandApiServer(apiOptions);
   let stopping = false;
   const shutdown = async signal => {
@@ -61,12 +68,21 @@ function parseArgs(argv = []) {
         '  --port <port>              Bind port, default 8791',
         '  --max-body-bytes <bytes>   JSON command body limit',
         '',
+        'Rate limits are configured with WORLD_ENGINE_COMMAND_API_* environment variables.',
         'PostgreSQL connection and TLS settings are read from WORLD_ENGINE_* environment variables.',
       ].join('\n'));
       return null;
     } else throw new Error(`Unknown argument ${arg}`);
   }
   return out;
+}
+
+function copyNumericEnv(target, env, key, envName) {
+  if (env[envName] === undefined || env[envName] === '') return target;
+  const value = Number(env[envName]);
+  if (!Number.isFinite(value)) throw new Error(`Invalid ${envName}`);
+  target[key] = value;
+  return target;
 }
 
 function boundedPort(value) {
@@ -87,4 +103,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main, parseArgs, boundedPort, safeErrorCode };
+module.exports = { main, parseArgs, copyNumericEnv, boundedPort, safeErrorCode };

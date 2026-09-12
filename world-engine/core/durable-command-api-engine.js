@@ -5,16 +5,24 @@ const { URL } = require('url');
 const { createPostgresDatabaseStore } = require('../storage/postgres/store');
 const { validateSession } = require('./account-session-engine');
 const { canAccessPlayer, requirePermission, requireSession } = require('./api-permission-engine');
+const { createFixedWindowRateLimiter } = require('./request-rate-limit-engine');
 
 const DEFAULT_DURABLE_COMMAND_API_OPTIONS = Object.freeze({
   maxBodyBytes: 64 * 1024,
   authorizationAttempts: 3,
+  sourceRateLimit: 240,
+  accountSubmitRateLimit: 60,
+  accountReadRateLimit: 240,
+  rateLimitWindowMs: 60 * 1000,
+  maxTrackedSources: 5000,
+  maxTrackedAccounts: 10000,
 });
 
-function apiError(statusCode, code) {
+function apiError(statusCode, code, details = {}) {
   const error = new Error(code);
   error.statusCode = statusCode;
   error.apiCode = code;
+  if (details.retryAfterMs !== undefined) error.retryAfterMs = details.retryAfterMs;
   return error;
 }
 
@@ -31,6 +39,50 @@ async function createDurableCommandApiServer(options = {}) {
     10,
     'authorizationAttempts',
   );
+  const sourceRateLimit = boundedInteger(
+    options.sourceRateLimit ?? DEFAULT_DURABLE_COMMAND_API_OPTIONS.sourceRateLimit,
+    1,
+    1000000,
+    'sourceRateLimit',
+  );
+  const accountSubmitRateLimit = boundedInteger(
+    options.accountSubmitRateLimit ?? DEFAULT_DURABLE_COMMAND_API_OPTIONS.accountSubmitRateLimit,
+    1,
+    1000000,
+    'accountSubmitRateLimit',
+  );
+  const accountReadRateLimit = boundedInteger(
+    options.accountReadRateLimit ?? DEFAULT_DURABLE_COMMAND_API_OPTIONS.accountReadRateLimit,
+    1,
+    1000000,
+    'accountReadRateLimit',
+  );
+  const rateLimitWindowMs = boundedInteger(
+    options.rateLimitWindowMs ?? DEFAULT_DURABLE_COMMAND_API_OPTIONS.rateLimitWindowMs,
+    10,
+    24 * 60 * 60 * 1000,
+    'rateLimitWindowMs',
+  );
+  const maxTrackedSources = boundedInteger(
+    options.maxTrackedSources ?? DEFAULT_DURABLE_COMMAND_API_OPTIONS.maxTrackedSources,
+    10,
+    1000000,
+    'maxTrackedSources',
+  );
+  const maxTrackedAccounts = boundedInteger(
+    options.maxTrackedAccounts ?? DEFAULT_DURABLE_COMMAND_API_OPTIONS.maxTrackedAccounts,
+    10,
+    1000000,
+    'maxTrackedAccounts',
+  );
+  if (typeof options.rateLimitNow !== 'function') throw apiError(500, 'rate_limit_clock_required');
+  const limiterCommon = { windowMs: rateLimitWindowMs, now: options.rateLimitNow };
+  const rateLimiters = Object.freeze({
+    source: createFixedWindowRateLimiter({ ...limiterCommon, limit: sourceRateLimit, maxKeys: maxTrackedSources }),
+    submit: createFixedWindowRateLimiter({ ...limiterCommon, limit: accountSubmitRateLimit, maxKeys: maxTrackedAccounts }),
+    read: createFixedWindowRateLimiter({ ...limiterCommon, limit: accountReadRateLimit, maxKeys: maxTrackedAccounts }),
+  });
+
   const ownsStore = !options.store || options.closeStore === true;
   const store = options.store || createPostgresDatabaseStore({ ...(options.database || {}), env: options.env });
   if (store.provider !== 'postgres' || !['loadWorld', 'enqueueCommand', 'getCommand', 'summary', 'close'].every(key => typeof store[key] === 'function')) {
@@ -45,8 +97,9 @@ async function createDurableCommandApiServer(options = {}) {
   }
 
   let closePromise = null;
+  const requestOptions = Object.freeze({ maxBodyBytes, authorizationAttempts, rateLimiters });
   const server = http.createServer((req, res) => {
-    handleRequest(req, res, store, { maxBodyBytes, authorizationAttempts }).catch(error => writeMappedError(res, error));
+    handleRequest(req, res, store, requestOptions).catch(error => writeMappedError(res, error));
   });
   server.on('clientError', (_error, socket) => {
     if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
@@ -61,11 +114,35 @@ async function createDurableCommandApiServer(options = {}) {
     return closePromise;
   }
 
-  return Object.freeze({ server, store, close, options: Object.freeze({ maxBodyBytes, authorizationAttempts }) });
+  function rateLimitStats() {
+    return {
+      trackedSources: rateLimiters.source.size(),
+      trackedSubmitAccounts: rateLimiters.submit.size(),
+      trackedReadAccounts: rateLimiters.read.size(),
+    };
+  }
+
+  return Object.freeze({
+    server,
+    store,
+    close,
+    rateLimitStats,
+    options: Object.freeze({
+      maxBodyBytes,
+      authorizationAttempts,
+      sourceRateLimit,
+      accountSubmitRateLimit,
+      accountReadRateLimit,
+      rateLimitWindowMs,
+      maxTrackedSources,
+      maxTrackedAccounts,
+    }),
+  });
 }
 
 async function handleRequest(req, res, store, options) {
   setSafeHeaders(res);
+  enforceRateLimit(options.rateLimiters.source.consume(requestSourceKey(req)));
   const method = String(req.method || 'GET').toUpperCase();
   const parsed = new URL(req.url || '/', 'http://localhost');
   const route = parseCommandRoute(parsed.pathname);
@@ -89,6 +166,7 @@ async function handleRequest(req, res, store, options) {
       route.playerId,
       token,
       options.authorizationAttempts,
+      options.rateLimiters.submit,
       context => store.enqueueCommand({
         worldId: route.worldId,
         id: body.id,
@@ -108,6 +186,7 @@ async function handleRequest(req, res, store, options) {
       route.commandId,
       token,
       options.authorizationAttempts,
+      options.rateLimiters.read,
     );
     return writeJson(res, 200, { ok: true, data: commandView(row) });
   }
@@ -115,10 +194,15 @@ async function handleRequest(req, res, store, options) {
   throw apiError(404, 'not_found');
 }
 
-async function withFreshPlayerAuthorization(store, worldId, playerId, token, attempts, action) {
+async function withFreshPlayerAuthorization(store, worldId, playerId, token, attempts, accountLimiter, action) {
   let lastConflict = null;
+  let accountRateChecked = false;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const context = await authenticateWorld(store, worldId, token);
+    if (!accountRateChecked) {
+      enforceRateLimit(accountLimiter.consume(accountRateKey(worldId, context.auth.account.id)));
+      accountRateChecked = true;
+    }
     if (!context.world.players?.byId?.[playerId]) throw apiError(404, 'player_not_found');
     requirePermission(canAccessPlayer(context.auth.account, playerId), 'player_forbidden');
     try {
@@ -134,10 +218,15 @@ async function withFreshPlayerAuthorization(store, worldId, playerId, token, att
   throw lastConflict || apiError(409, 'world_revision_changed');
 }
 
-async function withFreshCommandAuthorization(store, worldId, commandId, token, attempts) {
+async function withFreshCommandAuthorization(store, worldId, commandId, token, attempts, accountLimiter) {
   let lastConflict = null;
+  let accountRateChecked = false;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const context = await authenticateWorld(store, worldId, token);
+    if (!accountRateChecked) {
+      enforceRateLimit(accountLimiter.consume(accountRateKey(worldId, context.auth.account.id)));
+      accountRateChecked = true;
+    }
     try {
       const row = await store.getCommand(worldId, commandId, { expectedWorldRevision: context.revision });
       if (!row) throw apiError(404, 'command_not_found');
@@ -189,6 +278,21 @@ function bearerToken(req) {
   const value = String(req.headers.authorization || '');
   const match = value.match(/^Bearer\s+([^\s]+)$/i);
   return match ? match[1] : null;
+}
+
+function requestSourceKey(req) {
+  let address = String(req?.socket?.remoteAddress || 'unknown').trim().toLowerCase();
+  if (address.startsWith('::ffff:')) address = address.slice(7);
+  return `socket:${address || 'unknown'}`;
+}
+
+function accountRateKey(worldId, accountId) {
+  return `world:${String(worldId)}\u0001account:${String(accountId)}`;
+}
+
+function enforceRateLimit(result) {
+  if (!result?.allowed) throw apiError(429, 'rate_limited', { retryAfterMs: result?.retryAfterMs || 1000 });
+  return result;
 }
 
 function readJsonBody(req, maxBodyBytes) {
@@ -243,12 +347,20 @@ function writeMappedError(res, error) {
   if (res.writableEnded) return;
   const mapped = mapError(error);
   if (mapped.status === 401) res.setHeader('WWW-Authenticate', 'Bearer');
+  if (mapped.status === 429) {
+    const retrySeconds = Math.max(1, Math.ceil(Number(mapped.retryAfterMs || 1000) / 1000));
+    res.setHeader('Retry-After', String(retrySeconds));
+  }
   writeJson(res, mapped.status, { ok: false, error: mapped.code });
 }
 
 function mapError(error) {
   if (Number.isInteger(error?.statusCode)) {
-    return { status: error.statusCode, code: safeApiCode(error.apiCode || error.message) };
+    return {
+      status: error.statusCode,
+      code: safeApiCode(error.apiCode || error.message),
+      ...(error.retryAfterMs !== undefined ? { retryAfterMs: error.retryAfterMs } : {}),
+    };
   }
   const code = String(error?.code || '');
   if (['WORLD_DB_INVALID_INPUT', 'WORLD_DB_INVALID_CONFIG'].includes(code)) return { status: 400, code: 'invalid_command' };
@@ -268,7 +380,7 @@ function safeApiCode(value) {
     'auth_required', 'player_forbidden', 'command_forbidden', 'player_not_found', 'world_not_found',
     'command_not_found', 'not_found', 'method_not_allowed', 'json_required', 'invalid_command',
     'command_id_required', 'command_type_required', 'request_body_too_large', 'json_body_required',
-    'invalid_json', 'invalid_path', 'world_revision_changed', 'transactional_store_required',
+    'invalid_json', 'invalid_path', 'world_revision_changed', 'transactional_store_required', 'rate_limited',
   ]);
   return allowed.has(value) ? value : 'internal_error';
 }
@@ -304,4 +416,6 @@ module.exports = {
   parseCommandRoute,
   commandView,
   mapError,
+  requestSourceKey,
+  enforceRateLimit,
 };

@@ -68,7 +68,7 @@ async function main() {
     createSession(world, 'gm-account', { token: 'sql-token-gm' });
     await store.saveWorld(world, { expectedRevision: 0, requestId: 'seed:command-api' });
 
-    api = await createDurableCommandApiServer({ store, maxBodyBytes: 2048 });
+    api = await createDurableCommandApiServer({ store, maxBodyBytes: 2048, rateLimitNow: () => 0 });
     const port = await listen(api.server);
 
     let response = await request(port, 'POST', '/durable/worlds/command_api_world/players/player-1/commands', {
@@ -160,7 +160,7 @@ async function main() {
         return store.enqueueCommand(input, options);
       },
     };
-    raceApi = await createDurableCommandApiServer({ store: racingStore });
+    raceApi = await createDurableCommandApiServer({ store: racingStore, rateLimitNow: () => 0 });
     const racePort = await listen(raceApi.server);
     response = await request(racePort, 'POST', '/durable/worlds/command_api_world/players/player-1/commands', {
       token: 'sql-token-one', body: { id: 'stale-auth-command', type: 'wait' },
