@@ -78,6 +78,27 @@ function captureCommandResult(input) {
     result,
   };
 }
+function captureCommandApiAudit(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw databaseError('INVALID_INPUT', 'Invalid command API audit');
+  const method = String(input.method || '').toUpperCase();
+  if (!['POST', 'GET'].includes(method)) throw databaseError('INVALID_INPUT', 'Invalid command API audit method');
+  const route = textId(input.route, 'command API audit route', 64);
+  if (!['command.submit', 'command.status'].includes(route)) throw databaseError('INVALID_INPUT', 'Invalid command API audit route');
+  const statusCode = safeInteger(input.statusCode, 'command API audit status code', 100);
+  if (statusCode > 599) throw databaseError('INVALID_INPUT', 'Invalid command API audit status code');
+  return {
+    worldId: textId(input.worldId, 'command API audit worldId'),
+    accountId: textId(input.accountId, 'command API audit accountId'),
+    playerId: input.playerId === undefined || input.playerId === null ? null : textId(input.playerId, 'command API audit playerId'),
+    commandId: input.commandId === undefined || input.commandId === null ? null : textId(input.commandId, 'command API audit commandId', 256),
+    commandSequence: input.commandSequence === undefined || input.commandSequence === null
+      ? null : safeInteger(input.commandSequence, 'command API audit command sequence', 1),
+    method,
+    route,
+    statusCode,
+    outcome: textId(input.outcome, 'command API audit outcome', 128),
+  };
+}
 function captureCheckpoint(world, options = {}, maxBytes = 32 * 1024 * 1024) {
   const requestId = textId(options.requestId, 'requestId', 128);
   const expectedRevision = safeInteger(options.expectedRevision, 'expectedRevision');
@@ -128,4 +149,5 @@ function restoreSave(row) {
   } catch (_) { throw databaseError('CORRUPT_RECORD', 'World checkpoint schema or headers are invalid'); }
 }
 module.exports = { textId, safeInteger, fromSqlInteger, detachedJson, canonicalJson, digest,
-  captureCheckpoint, captureEvent, captureCommandInput, captureInboxCommand, captureCommandResult, summarizeSave, restoreSave };
+  captureCheckpoint, captureEvent, captureCommandInput, captureInboxCommand, captureCommandResult, captureCommandApiAudit,
+  summarizeSave, restoreSave };
