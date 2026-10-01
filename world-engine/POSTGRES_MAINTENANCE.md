@@ -1,6 +1,6 @@
 # PostgreSQL 历史保留与维护
 
-Migration 4 只追加结构，Migration 1–3 的 SQL 和 checksum 不变。运行 `npm --prefix world-engine run database:migrate` 后才能使用此版本的存储、备份和审计适配器。升级前用旧版本引擎备份；旧版本备份必须先恢复到相同 migration 版本，再执行升级。
+Migration 4 只追加结构，Migration 1–3 的 SQL 和 checksum 不变。运行 `npm --prefix world-engine run database:postgres -- migrate` 后才能使用此版本的存储、备份和审计适配器。升级前用旧版本引擎备份；旧版本备份必须先恢复到相同 migration 版本，再执行升级。
 
 默认不自动清理。以下命令通过 `WORLD_ENGINE_DATABASE_URL` 和 `WORLD_ENGINE_DB_SCHEMA` 选择数据库，数据库账户必须有维护权限。备份路径不能已经存在，父目录必须存在。
 

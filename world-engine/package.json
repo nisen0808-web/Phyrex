@@ -25,6 +25,7 @@
     "account:admin": "node demo/account-admin-cli.js",
     "test:engine:scale": "node tests/integration/engine-scale.js",
     "engine:init": "node demo/engine-init-cli.js",
+    "test:postgres:quickstart": "node tests/integration/postgres-engine-quickstart.js",
     "test:postgres:account-admin": "node tests/integration/postgres-account-admin.js",
     "test:postgres:maintenance": "node tests/integration/postgres-maintenance.js",
     "test:postgres:backup": "node tests/integration/postgres-backup.js",

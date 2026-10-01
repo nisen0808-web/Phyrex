@@ -1,0 +1,21 @@
+name: phyrex-engine-local
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: engine
+      POSTGRES_USER: engine
+      POSTGRES_PASSWORD: ${WORLD_ENGINE_POSTGRES_PASSWORD:?Set WORLD_ENGINE_POSTGRES_PASSWORD before starting}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      # PostgreSQL 18 official image uses a versioned PGDATA below this path.
+      - engine-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U engine -d engine"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    shm_size: 128mb
+volumes:
+  engine-data:

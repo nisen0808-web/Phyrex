@@ -69,17 +69,20 @@ async function createDurableCommandApiServer(options = {}) {
 
   let closePromise = null;
   let auditFailures = 0;
+  const pendingAudits = new Set();
   const requestOptions = Object.freeze({ maxBodyBytes, authorizationAttempts, rateLimiters });
   const server = http.createServer((req, res) => {
     const audit = createRequestAudit(req, requestIdFactory);
     res.setHeader('X-Request-Id', audit.requestId);
-    handleRequest(req, res, store, auditStore, requestOptions, audit)
+    const task = handleRequest(req, res, store, auditStore, requestOptions, audit)
       .then(() => persistAudit(auditStore, audit, res.statusCode, null), error => {
         const mapped = mapError(error);
         writeMappedError(res, error);
         return persistAudit(auditStore, audit, mapped.status, mapped.code);
       })
       .catch(() => { auditFailures += 1; });
+    pendingAudits.add(task);
+    task.finally(() => pendingAudits.delete(task));
   });
   server.on('clientError', (_error, socket) => {
     if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
@@ -89,6 +92,9 @@ async function createDurableCommandApiServer(options = {}) {
     if (closePromise) return closePromise;
     closePromise = (async () => {
       if (server.listening) await new Promise(resolve => server.close(() => resolve()));
+      // Responses finish before their operational audit. Drain those writes
+      // before closing either database pool during graceful shutdown.
+      await Promise.all([...pendingAudits]);
       const closing = [];
       if (ownsStore) closing.push(store.close());
       if (ownsAuditStore) closing.push(auditStore.close());
