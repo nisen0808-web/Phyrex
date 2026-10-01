@@ -73,10 +73,14 @@ function processDesireTick(world, options = {}) {
   const config = { ...DEFAULT_DESIRE_OPTIONS, ...(options || {}) };
   const updated = [];
   const generatedGoals = [];
-  for (const entity of Object.values(world.entities || {})) {
+  const entities = Object.values(world.entities || {});
+  // This phase does not mutate relationships. Accumulate each participant in
+  // the original edge order once, retaining exact floating-point addition.
+  const relationships = summarizeAllRelationships(world, new Set(entities.filter(entity => entity.status === 'alive').map(entity => entity.id)));
+  for (const entity of entities) {
     if (entity.status !== 'alive') continue;
     ensureEntityDesires(world, entity.id);
-    updateDesireProfile(world, entity.id, config);
+    updateDesireProfile(world, entity.id, config, relationships.get(entity.id) || emptyRelationshipSummary());
     const goals = generateGoalsFromDesires(world, entity.id, config);
     updated.push(entity.id);
     generatedGoals.push(...goals);
@@ -88,13 +92,13 @@ function processDesireTick(world, options = {}) {
   return { updated, generatedGoals, stats: getDesireStats(world) };
 }
 
-function updateDesireProfile(world, entityId, options = {}) {
+function updateDesireProfile(world, entityId, options = {}, relationshipSummary = null) {
   const entity = world.entities[entityId];
   const profile = ensureEntityDesires(world, entityId);
   const identityScore = safeIdentityScore(world, entityId);
   const memories = safeMemories(world, entityId);
   const contracts = safeContracts(world, entityId);
-  const relationSummary = summarizeRelationships(world, entityId);
+  const relationSummary = relationshipSummary || summarizeRelationships(world, entityId);
   const environment = calculateEntityEnvironmentSignal(world, entity);
   const resources = entity.resources || {};
   const stats = entity.stats || {};
@@ -269,6 +273,24 @@ function safeIdentityScore(world, entityId) { try { return calculateIdentityScor
 function safeMemories(world, entityId) { try { return getMemories(world, 'entity', entityId); } catch (_) { return []; } }
 function safeContracts(world, entityId) { try { const contracts = getEntityContracts(world, entityId, { status: CONTRACT_STATUS.ACTIVE }); return contracts.reduce((acc, contract) => { if (contract.controllerId === entityId) acc.controlled += contract.authority; if (contract.subjectId === entityId) acc.obligated += contract.authority; return acc; }, { controlled: 0, obligated: 0 }); } catch (_) { return { controlled: 0, obligated: 0 }; } }
 function summarizeRelationships(world, entityId) { const out = { affection: 0, trust: 0, hatred: 0, fear: 0, relationshipCount: 0 }; for (const [key, relation] of Object.entries(world.relationships || {})) { const [fromId, toId] = key.split('->'); if (fromId !== entityId && toId !== entityId) continue; out.affection += Number(relation.affection || 0); out.trust += Number(relation.trust || 0); out.hatred += Number(relation.hatred || 0); out.fear += Number(relation.fear || 0); out.relationshipCount += 1; } return out; }
+function emptyRelationshipSummary() { return { affection: 0, trust: 0, hatred: 0, fear: 0, relationshipCount: 0 }; }
+function summarizeAllRelationships(world, participants) {
+  const summaries = new Map();
+  for (const [key, relation] of Object.entries(world.relationships || {})) {
+    const [fromId, toId] = key.split('->');
+    for (const id of fromId === toId ? [fromId] : [fromId, toId]) {
+      if (!participants.has(id)) continue;
+      let summary = summaries.get(id);
+      if (!summary) { summary = emptyRelationshipSummary(); summaries.set(id, summary); }
+      summary.affection += Number(relation.affection || 0);
+      summary.trust += Number(relation.trust || 0);
+      summary.hatred += Number(relation.hatred || 0);
+      summary.fear += Number(relation.fear || 0);
+      summary.relationshipCount += 1;
+    }
+  }
+  return summaries;
+}
 function hasMemoryType(memories, type) { return memories.some(memory => memory.type === type); }
 function hasActiveGoal(entity, type, payload = {}) { return (entity.goals || []).some(goal => { if (goal.type !== type || goal.status !== 'active') return false; if (payload.resource && goal.payload?.resource !== payload.resource) return false; if (payload.targetLocationId && goal.payload?.targetLocationId !== payload.targetLocationId) return false; if (payload.cityId && goal.payload?.cityId !== payload.cityId) return false; return true; }); }
 function recordDesireMemory(world, profile, type, payload = {}) { const memory = { id: `desire_memory_${world.tick}_${profile.memory.length + 1}`, tick: world.tick, type, payload }; profile.memory.push(memory); if (profile.memory.length > 100) profile.memory.shift(); return memory; }

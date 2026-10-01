@@ -283,6 +283,20 @@ function trimGlobalMemories(world, maxGlobal = DEFAULT_MEMORY_OPTIONS.maxGlobalM
 
   for (const key of Object.keys(state.byOwner)) {
     const memories = (state.byOwner[key] || []).map(id => state.byId[id]).filter(Boolean);
+    // Most buckets were sorted by the previous insertion. Preserve that stable
+    // order without sorting or building a retention Set when nothing can drop.
+    if (Number.isSafeInteger(maxPerOwner) && maxPerOwner >= memories.length) {
+      let sorted = true, previous = Infinity;
+      for (const memory of memories) {
+        const score = scoreMemoryForRetention(memory);
+        if (!Number.isFinite(score) || score > previous) { sorted = false; break; }
+        previous = score;
+      }
+      if (sorted) {
+        state.byOwner[key] = memories.map(memory => memory.id);
+        continue;
+      }
+    }
     const kept = memories.sort((a, b) => scoreMemoryForRetention(b) - scoreMemoryForRetention(a)).slice(0, maxPerOwner);
     const keptIds = new Set(kept.map(memory => memory.id));
     for (const memory of memories) {
@@ -294,17 +308,38 @@ function trimGlobalMemories(world, maxGlobal = DEFAULT_MEMORY_OPTIONS.maxGlobalM
     state.byOwner[key] = kept.map(memory => memory.id);
   }
 
-  const all = Object.values(state.byId);
-  if (all.length > maxGlobal) {
-    const keep = new Set(all.sort((a, b) => scoreMemoryForRetention(b) - scoreMemoryForRetention(a)).slice(0, maxGlobal).map(memory => memory.id));
-    for (const memory of all) {
-      if (!keep.has(memory.id)) {
-        delete state.byId[memory.id];
-        pruned.push(memory.id);
+  const globalIds = Object.keys(state.byId);
+  if (globalIds.length > maxGlobal) {
+    const all = globalIds.map(id => state.byId[id]);
+    // One insertion beyond the global limit only needs the last minimum:
+    // stable descending sort keeps earlier ties and evicts the latest tie.
+    let victim = null, lowest = Infinity;
+    if (Number.isSafeInteger(maxGlobal) && maxGlobal >= 0 && all.length === maxGlobal + 1) {
+      for (let index = 0; index < all.length; index++) {
+        const memory = all[index];
+        const score = scoreMemoryForRetention(memory);
+        if (!Number.isFinite(score) || !['string', 'number'].includes(typeof memory.id)
+            || String(memory.id) !== globalIds[index]) { victim = null; break; }
+        if (score <= lowest) { lowest = score; victim = memory; }
       }
     }
-    for (const key of Object.keys(state.byOwner)) {
-      state.byOwner[key] = (state.byOwner[key] || []).filter(id => keep.has(id));
+    if (victim) {
+      delete state.byId[victim.id];
+      pruned.push(victim.id);
+      for (const key of Object.keys(state.byOwner)) {
+        state.byOwner[key] = state.byOwner[key].filter(id => Object.hasOwn(state.byId, id) && state.byId[id].id === id);
+      }
+    } else {
+      const keep = new Set(all.sort((a, b) => scoreMemoryForRetention(b) - scoreMemoryForRetention(a)).slice(0, maxGlobal).map(memory => memory.id));
+      for (const memory of all) {
+        if (!keep.has(memory.id)) {
+          delete state.byId[memory.id];
+          pruned.push(memory.id);
+        }
+      }
+      for (const key of Object.keys(state.byOwner)) {
+        state.byOwner[key] = (state.byOwner[key] || []).filter(id => keep.has(id));
+      }
     }
   }
 

@@ -14,6 +14,13 @@ const CASES = Object.freeze({
   medium: { population: 12, ticks: 600, seed: 'scale-medium-v1' },
   large: { population: 32, ticks: 300, seed: 'scale-large-v1' },
 });
+// Accepted e99cb1c / a89b0e0 worlds. Performance changes must preserve every
+// field, including IDs, random streams, retention order and scheduler digests.
+const BASELINE_DIGESTS = Object.freeze({
+  small: '39ddd1460f7ba67ba4609aaf98690c7f8d4836920b01ee101bebaf0f2c4ffd1c',
+  medium: '6df12d3c633dd908c60d0cfaf3f98c4dc1035ebd63ee031493c5f7cd311ed42a',
+  large: '658cdcb6b942f7b64c3db06e51e8ad29f502d0200862abd3c77d30a3a1e3e76e',
+});
 async function main(name = process.argv[2]) {
   if (!Object.hasOwn(CASES, name)) throw new Error('Choose the small, medium or large scale gate');
   const config = CASES[name];
@@ -62,11 +69,13 @@ async function main(name = process.argv[2]) {
   assert.ok(Object.values(world.entities).some(e => e.demographics.generation > 1), 'must exercise descendants');
   assert.ok(world.causalityArchive.removedRecords > 0, 'must actually compact causality');
   assert.ok(checkpoints >= 3, 'must verify multiple independent recovery points');
+  const finalDigest = digest(world);
+  assert.strictEqual(finalDigest, BASELINE_DIGESTS[name], 'performance optimization changed the accepted world state');
   const result = { case: name, ...config, checkpoints, peakBytes, peakProcesses, peakProcessPressure,
     totalEntities: Object.keys(world.entities).length, births: world.population.births, deaths: world.population.deaths,
     maxGeneration: Math.max(...Object.values(world.entities).map(e => e.demographics.generation)),
     elapsedMs: Math.round(performance.now() - started), removedCauses: world.causalityArchive.removedRecords,
-    finalDigest: digest(world), samples };
+    finalDigest, samples };
   console.log(`SCALE_RESULT ${JSON.stringify(result)}`);
   console.log(`engine scale ${name} completed: lifecycle, finite state, capacity and ${checkpoints} recoveries passed`);
   return result;

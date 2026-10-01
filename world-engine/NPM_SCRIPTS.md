@@ -28,6 +28,7 @@
 | `npm --prefix world-engine run account:admin` | `node demo/account-admin-cli.js` |
 | `npm --prefix world-engine run test:engine:scale` | `node tests/integration/engine-scale.js` |
 | `npm --prefix world-engine run engine:init` | `node demo/engine-init-cli.js` |
+| `npm --prefix world-engine run engine:profile` | `node demo/engine-profile-cli.js` |
 | `npm --prefix world-engine run test:postgres:quickstart` | `node tests/integration/postgres-engine-quickstart.js` |
 | `npm --prefix world-engine run test:postgres:account-admin` | `node tests/integration/postgres-account-admin.js` |
 | `npm --prefix world-engine run test:postgres:maintenance` | `node tests/integration/postgres-maintenance.js` |
@@ -61,6 +62,8 @@
 | `npm run viewer` | `node world-engine/viewer/serve-viewer.js` |
 
 ## 本地与 CI
+
+- engine:profile 在独立世界副本上测量真实耗时，输出新 JSON 报告；与 performance:report 的确定性负载估算口径不同。用法与边界见 RUNTIME_PERFORMANCE.md。
 
 - 根目录与 world-engine 的 test 都通过 tests/run-all.js 自动发现全部 *-test.js；1000 tick stress 有独立必跑门禁，不隐藏进 discovery 分母。
 - test:postgres 系列要求 WORLD_ENGINE_TEST_DATABASE_URL，数据库名以 _ci 或 _test 结尾，不可用即失败，禁止静默跳过。每个套件只清理自己创建的随机 schema。

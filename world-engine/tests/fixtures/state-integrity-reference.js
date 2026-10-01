@@ -1,3 +1,4 @@
+// Frozen a89b0e0 byte/hash reference; keep independent of the optimized implementation.
 'use strict';
 
 const crypto = require('crypto');
@@ -10,12 +11,6 @@ const DEFAULT_HASH_OPTIONS = {
 
 function canonicalize(value, options = {}, path = '', seen = new WeakSet()) {
   const config = { ...DEFAULT_HASH_OPTIONS, ...(options || {}) };
-  return canonicalizeResolved(value, config, path, seen);
-}
-
-// Configuration is captured once. Re-copying the same options for every leaf
-// of a large world adds allocation work without changing canonical semantics.
-function canonicalizeResolved(value, config, path, seen) {
   if (shouldExcludePath(path, config.excludePaths)) return undefined;
   if (value === null) return null;
 
@@ -40,19 +35,19 @@ function canonicalizeResolved(value, config, path, seen) {
   let output;
   if (Array.isArray(value)) {
     output = value.map((item, index) => {
-      const next = canonicalizeResolved(item, config, joinPath(path, String(index)), seen);
+      const next = canonicalize(item, config, joinPath(path, String(index)), seen);
       return next === undefined ? null : next;
     });
   } else if (value instanceof Map) {
     output = {
       $map: [...value.entries()]
-        .map(([key, item]) => [canonicalizeResolved(key, config, joinPath(path, '$key'), seen), canonicalizeResolved(item, config, joinPath(path, String(key)), seen)])
+        .map(([key, item]) => [canonicalize(key, config, joinPath(path, '$key'), seen), canonicalize(item, config, joinPath(path, String(key)), seen)])
         .sort((left, right) => stableStringify(left[0]).localeCompare(stableStringify(right[0]))),
     };
   } else if (value instanceof Set) {
     output = {
       $set: [...value.values()]
-        .map(item => canonicalizeResolved(item, config, joinPath(path, '$set'), seen))
+        .map(item => canonicalize(item, config, joinPath(path, '$set'), seen))
         .sort((left, right) => stableStringify(left).localeCompare(stableStringify(right))),
     };
   } else {
@@ -60,7 +55,7 @@ function canonicalizeResolved(value, config, path, seen) {
     for (const key of Object.keys(value).sort()) {
       const nextPath = joinPath(path, key);
       if (shouldExcludePath(nextPath, config.excludePaths)) continue;
-      const next = canonicalizeResolved(value[key], config, nextPath, seen);
+      const next = canonicalize(value[key], config, nextPath, seen);
       if (next !== undefined) output[key] = next;
     }
   }
