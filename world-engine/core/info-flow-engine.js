@@ -86,7 +86,8 @@ function processInfoFlowTick(world, options = {}) {
 }
 
 function buildInfoFlowLinks(world, options = {}) {
-  const links = [];
+  const limit = Math.max(0, Number(options.maxLinksPerTick || DEFAULT_INFO_FLOW_OPTIONS.maxLinksPerTick));
+  const links = selectInfoFlowLinks(limit);
   const seen = new Set();
   const groups = groupAliveEntitiesByLocation(world);
   for (const [locationId, entityIds] of Object.entries(groups)) {
@@ -106,9 +107,43 @@ function buildInfoFlowLinks(world, options = {}) {
       }
     }
   }
-  return links
-    .sort((left, right) => right.weight - left.weight || linkKey(left).localeCompare(linkKey(right)))
-    .slice(0, Math.max(0, Number(options.maxLinksPerTick || DEFAULT_INFO_FLOW_OPTIONS.maxLinksPerTick)));
+  return links.result();
+}
+
+function selectInfoFlowLinks(limit) {
+  // Keep only the best K candidates, with the worst retained one at the root.
+  // Sequence breaks localeCompare ties exactly like the previous stable sort.
+  // Deduplication and linksCreated still account for every candidate outside
+  // this selector; only the temporary sort buffer is bounded by the limit.
+  const count = Number.isNaN(limit) ? 0 : Math.floor(limit);
+  const heap = [];
+  let sequence = 0;
+  const compare = (a, b) => b.link.weight - a.link.weight || a.key.localeCompare(b.key) || a.sequence - b.sequence;
+  return {
+    push(link, key) {
+      const row = { link, key, sequence: sequence++ };
+      if (!count) return;
+      if (count === Infinity) { heap.push(row); return; }
+      if (heap.length < count) {
+        let index = heap.length; heap.push(row);
+        while (index > 0) {
+          const parent = Math.floor((index - 1) / 2);
+          if (compare(heap[index], heap[parent]) <= 0) break;
+          [heap[index], heap[parent]] = [heap[parent], heap[index]]; index = parent;
+        }
+      } else if (compare(row, heap[0]) < 0) {
+        heap[0] = row;
+        let index = 0;
+        while (index * 2 + 1 < heap.length) {
+          let worst = index * 2 + 1;
+          if (worst + 1 < heap.length && compare(heap[worst + 1], heap[worst]) > 0) worst++;
+          if (compare(heap[worst], heap[index]) <= 0) break;
+          [heap[index], heap[worst]] = [heap[worst], heap[index]]; index = worst;
+        }
+      }
+    },
+    result() { return heap.sort(compare).map(row => row.link); },
+  };
 }
 
 function pushLink(world, links, seen, sourceType, sourceId, targetType, targetId, reason, weight) {
@@ -117,7 +152,7 @@ function pushLink(world, links, seen, sourceType, sourceId, targetType, targetId
   const key = linkKey(link);
   if (seen.has(key)) return;
   seen.add(key);
-  links.push(link);
+  links.push(link, key);
   const state = ensureInfoFlowState(world);
   state.stats.linksCreated += 1;
 }

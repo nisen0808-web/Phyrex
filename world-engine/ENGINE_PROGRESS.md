@@ -1,5 +1,7 @@
 # Engine Development Progress
 
+最新性能层基于 441d2d0，增加局部索引去重、稳定的前 K 条传播连接选择和普通 JSON 状态复制快路径；完整回归分母为 110。完整 tick 同机中位数从 5.96 秒降至 5.15 秒，结果摘要相同。实现、单项测量与限制见 KNOWLEDGE_SCALE_PERFORMANCE.md；最终 CI 证据按本层提交保存，下面保留历史基线。
+
 当前整合分支完成单写 PostgreSQL 世界引擎 v1 的功能验收，详见 ENGINE_COMPLETION.md、ENGINE_ACCEPTANCE.md 和 ENGINE_QUICKSTART.md。功能提交 e99cb1c 的本地/CI 回归 106/106、真实 SQL、耐久和六组生命周期长测全部通过。main 仍为 #70，后续代码在 #73；下文保留各历史阶段，不将开放 PR 写成已合并。
 
 ## 已验收主线

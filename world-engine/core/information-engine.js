@@ -3,6 +3,7 @@
 const { randomChance } = require('./random-engine');
 
 const { nextWorldId } = require('./world-id-engine');
+const { addOrderedIndex: addIndex } = require('./ordered-index-engine');
 
 const INFORMATION_STATUS = {
   ACTIVE: 'active',
@@ -350,26 +351,22 @@ function rebuildInformationIndexes(world, force = false) {
   const count = Object.keys(state.items).length;
   if (!force && !state._indexDirty && state._lastIndexedItemCount === count) return;
   state.indexes = { byType: {}, byStatus: {}, byLocation: {}, byTag: {} };
-  for (const item of Object.values(state.items)) indexInformation(world, item);
+  const membership = new Map();
+  for (const item of Object.values(state.items)) indexInformation(world, item, membership);
   state._indexDirty = false;
   state._lastIndexedItemCount = count;
 }
 
-function indexInformation(world, item) {
+function indexInformation(world, item, membership) {
   const state = ensureInformationState(world);
-  addIndex(state.indexes.byType, item.type, item.id);
-  addIndex(state.indexes.byStatus, item.status, item.id);
-  if (item.originLocationId) addIndex(state.indexes.byLocation, item.originLocationId, item.id);
-  for (const tag of item.tags || []) addIndex(state.indexes.byTag, tag, item.id);
+  addIndex(state.indexes.byType, item.type, item.id, membership);
+  addIndex(state.indexes.byStatus, item.status, item.id, membership);
+  if (item.originLocationId) addIndex(state.indexes.byLocation, item.originLocationId, item.id, membership);
+  for (const tag of item.tags || []) addIndex(state.indexes.byTag, tag, item.id, membership);
 }
 
 function ownerKey(ownerType, ownerId) {
   return `${ownerType}:${ownerId}`;
-}
-
-function addIndex(index, key, value) {
-  if (!index[key]) index[key] = [];
-  if (!index[key].includes(value)) index[key].push(value);
 }
 
 function clamp(value, min, max) {

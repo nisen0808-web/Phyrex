@@ -1,5 +1,7 @@
 # 真实运行剖析与确定性性能优化
 
+本页记录第一批优化。基于 441d2d0 的下一批索引、连接选择与状态复制优化，见 [KNOWLEDGE_SCALE_PERFORMANCE.md](KNOWLEDGE_SCALE_PERFORMANCE.md)。
+
 此层承接 a89b0e0 的单写引擎 v1，优化人口增长后的重复计算，并提供独立的真实耗时诊断。原 PERFORMANCE_BUDGET.md 的 load 是确定性估算，不能解释为毫秒；新工具使用实际单调时钟，数据只进入诊断报告。
 
 ## 已实现的优化
@@ -69,4 +71,3 @@ systemsMs 是 simulationMs 的组成部分，不能把两者相加。分项都�
 - 六组 Node 20/22 scale 门禁在既有容量/恢复断言上增加固定的 v1 全世界摘要；优化不能改变任一字段。普通回归、100/1000 tick、全部真实 PostgreSQL 与多进程 endurance 保留。
 
 最终 CI 状态和日志以对应交付提交的证据为准；ENGINE_ACCEPTANCE.md 中的 106/106 是上一版本历史基线。本层没有改变任何 PostgreSQL migration。
-

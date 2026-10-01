@@ -1,6 +1,7 @@
 'use strict';
 
 const { nextWorldId } = require('./world-id-engine');
+const { addOrderedIndex: addIndex } = require('./ordered-index-engine');
 
 const MEMORY_SCOPE = {
   ENTITY: 'entity',
@@ -416,25 +417,21 @@ function rebuildMemoryIndexes(world, force = false) {
   const count = Object.keys(state.byId).length;
   if (!force && !state._indexDirty && state._lastIndexedCount === count) return;
   state.indexes = { byType: {}, byScope: {}, byTag: {} };
-  for (const memory of Object.values(state.byId)) indexMemory(world, memory);
+  const membership = new Map();
+  for (const memory of Object.values(state.byId)) indexMemory(world, memory, membership);
   state._indexDirty = false;
   state._lastIndexedCount = count;
 }
 
-function indexMemory(world, memory) {
+function indexMemory(world, memory, membership) {
   const state = ensureMemoryState(world);
-  addIndex(state.indexes.byType, memory.type, memory.id);
-  addIndex(state.indexes.byScope, memory.scope, memory.id);
-  for (const tag of memory.tags || []) addIndex(state.indexes.byTag, tag, memory.id);
+  addIndex(state.indexes.byType, memory.type, memory.id, membership);
+  addIndex(state.indexes.byScope, memory.scope, memory.id, membership);
+  for (const tag of memory.tags || []) addIndex(state.indexes.byTag, tag, memory.id, membership);
 }
 
 function ownerKey(ownerType, ownerId) {
   return `${ownerType}:${ownerId}`;
-}
-
-function addIndex(index, key, value) {
-  if (!index[key]) index[key] = [];
-  if (!index[key].includes(value)) index[key].push(value);
 }
 
 function clamp(value, min, max) {
