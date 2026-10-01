@@ -27,7 +27,8 @@
     "test:postgres:runtime-commands": "node tests/integration/postgres-runtime-commands.js",
     "api:postgres:commands": "node demo/durable-command-api-server.js",
     "test:postgres:command-api": "node tests/integration/postgres-command-api.js",
-    "test:postgres:command-audit": "node tests/integration/postgres-command-audit.js"
+    "test:postgres:command-audit": "node tests/integration/postgres-command-audit.js",
+    "test:postgres:endurance": "node tests/integration/postgres-engine-endurance.js"
   },
   "dependencies": {
     "pg": "8.23.0"

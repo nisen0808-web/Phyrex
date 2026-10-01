@@ -119,12 +119,17 @@ async function createDurableWorldRuntime(options = {}) {
         tickBefore: pending.tickBefore, tickAfter: pending.world.tick, attempts: pending.attempts,
         commands: pending.commandResults.length,
       } : null,
-      prepareAttempts, commits, ticksCommitted, commandsApplied, failures, observerErrors, lastError,
+      prepareAttempts, nextDelayMs: nextDelayMs(), commits, ticksCommitted, commandsApplied, failures, observerErrors, lastError,
       lastReceipt: lastReceipt ? { ...lastReceipt } : null, configHash,
       commandProfile: COMMAND_PROFILE, maxCommandsPerBatch: MAX_COMMANDS_PER_BATCH,
     };
   }
   function getWorld() { return detachedJson(committed); }
+  function nextDelayMs() {
+    const attempts = pending ? pending.attempts : prepareAttempts;
+    return attempts > 0
+      ? Math.min(maxRetryDelayMs, retryDelayMs * (2 ** Math.min(attempts - 1, 20))) : intervalMs;
+  }
   function assertOpen() { if (closing || closed) throw runtimeError('CLOSED'); }
   function cancelTimer() { if (timer) clearTimeout(timer); timer = null; }
   function pause() { running = false; cancelTimer(); return summary(); }
@@ -252,10 +257,7 @@ async function createDurableWorldRuntime(options = {}) {
     timer = setTimeout(async () => {
       timer = null;
       try { await step(); } catch (_) { /* failure is retained in summary */ }
-      const attempts = pending ? pending.attempts : prepareAttempts;
-      const backoff = attempts > 0
-        ? Math.min(maxRetryDelayMs, retryDelayMs * (2 ** Math.min(attempts - 1, 20))) : intervalMs;
-      schedule(backoff);
+      schedule(nextDelayMs());
     }, delay);
   }
   function start() {

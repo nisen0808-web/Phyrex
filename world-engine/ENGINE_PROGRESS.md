@@ -56,13 +56,22 @@ window reset、bounded key tracking、account submit limit、source limit、Retr
 | PostgreSQL 命令 inbox | #65 已验收 Migration 2、持久命令入队、查询和 checkpoint 同事务确认。 |
 | Runtime 命令消费 | #66 已验收 FIFO 隔离执行、事务确认、retry reuse 与 read-backoff。 |
 | Durable command HTTP API | #67 已验收认证入队/结果轮询、revision-fenced authorization 与真实 SQL E2E。 |
-| Command API process limiter | 本层实现有界 source/account 限流；等待最终远端验收。 |
+| Command API process limiter | #68 已验收有界 source/account 限流。 |
+| Durable command API audit | #70 已验收 Migration 3、安全字段审计与写入失败隔离。 |
 | 旧同步 HTTP 玩家操作 | 保持兼容，尚未重定向到 durable API；不会静默改变语义。 |
-| 生产运行 | 未配置生产数据库，未验收网关分布式限流、durable operational audit、备份恢复、领导者租约与部署。 |
+| 生产运行 | 未配置生产数据库，未验收网关分布式限流、完整数据库备份恢复、领导者租约与部署。 |
 
-下一节点在本层验收后做 durable operational audit：记录 command API 的认证主体、route、
-状态码和 durable command id，但不保存 Bearer token、raw command body 或敏感数据库信息。
-之后再处理多实例 gateway/leader policy 或旧同步 action route 的版本化迁移。
+PR #70 合并提交为 `40ea6898ecb007ad21cba6e1baa5c1d20a865faf`，主线回归 93/93。
+审计查询节点在独立 PR #71 中已实现并完成验收，截至本分支建立时尚未合并。
+
+## 当前引擎本体节点：长期运行与恢复
+
+`feature/engine-reliability-gates` 直接基于 #70 主线开发，不依赖 #71，也不扩展 UI。
+修复初始成年人年龄被清零的问题，增加显式可选的历史容量策略，统一队列读取与提交失败的
+重试间隔。新增独立的 Node 20/22 + PostgreSQL 18 endurance workflow：1000 tick、
+100 个事务 checkpoint、4 个真实进程、SQL 回滚/丢确认故障注入和新 schema 恢复续跑。
+这段描述分支实现；最终通过情况以对应 head 的实际日志为准。
+完整契约与尚未完成的引擎边界见 `ENGINE_RELIABILITY_GATES.md`。
 
 不使用没有统一验收分母的百分比。实现与边界见 POSTGRES_COMMAND_API.md、
 POSTGRES_COMMAND_INBOX.md、POSTGRES_DATABASE.md 和 POSTGRES_DURABLE_RUNTIME.md。

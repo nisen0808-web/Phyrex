@@ -70,7 +70,9 @@ function createEntity(input = {}) {
     memory: [],
     cooldowns: {},
     demographics: {
-      birthTick: input.demographics?.birthTick ?? 0,
+      // Resolve an omitted birthday once the world's population calendar is known.
+      // Zero is an explicit birthday, not a placeholder for an adult's age.
+      birthTick: input.demographics?.birthTick ?? null,
       deathTick: input.demographics?.deathTick ?? null,
       age: input.demographics?.age ?? input.meta?.age ?? 0,
       ageGroup: input.demographics?.ageGroup || 'adult',

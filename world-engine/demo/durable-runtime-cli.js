@@ -50,9 +50,8 @@ async function main(argv = process.argv.slice(2), env = process.env) {
         if (status.status === 'blocked') throw new Error('Runtime requires recovery');
       }
       if (!stopping && (args.continuous || completed < batches)) {
-        const pending = runtime.summary().pending;
-        const wait = pending ? Math.min(10000, retryDelayMs * (2 ** Math.min(pending.attempts - 1, 20))) : intervalMs;
-        await delay(wait, undefined, { signal: controller.signal }).catch(error => { if (error.name !== 'AbortError') throw error; });
+        await delay(runtime.summary().nextDelayMs, undefined, { signal: controller.signal })
+          .catch(error => { if (error.name !== 'AbortError') throw error; });
       }
     }
     const result = await runtime.close();
