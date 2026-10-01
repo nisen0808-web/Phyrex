@@ -6,7 +6,7 @@ const { URL } = require('url');
 const { createPostgresDatabaseStore } = require('../storage/postgres/store');
 const { createPostgresCommandApiAuditStore } = require('../storage/postgres/command-api-audit-store');
 const { validateSession } = require('./account-session-engine');
-const { canAccessPlayer, requirePermission, requireSession } = require('./api-permission-engine');
+const { canAccessPlayer, isPrivileged, requirePermission, requireSession } = require('./api-permission-engine');
 const { createFixedWindowRateLimiter } = require('./request-rate-limit-engine');
 
 const DEFAULT_DURABLE_COMMAND_API_OPTIONS = Object.freeze({
@@ -73,9 +73,8 @@ async function createDurableCommandApiServer(options = {}) {
   const server = http.createServer((req, res) => {
     const audit = createRequestAudit(req, requestIdFactory);
     res.setHeader('X-Request-Id', audit.requestId);
-    handleRequest(req, res, store, requestOptions, audit)
-      .then(() => persistAudit(auditStore, audit, res.statusCode, null))
-      .catch(error => {
+    handleRequest(req, res, store, auditStore, requestOptions, audit)
+      .then(() => persistAudit(auditStore, audit, res.statusCode, null), error => {
         const mapped = mapError(error);
         writeMappedError(res, error);
         return persistAudit(auditStore, audit, mapped.status, mapped.code);
@@ -109,7 +108,7 @@ async function createDurableCommandApiServer(options = {}) {
   });
 }
 
-async function handleRequest(req, res, store, options, audit) {
+async function handleRequest(req, res, store, auditStore, options, audit) {
   setSafeHeaders(res);
   enforceRateLimit(options.rateLimiters.source.consume(requestSourceKey(req)));
   const method = String(req.method || 'GET').toUpperCase();
@@ -147,7 +146,64 @@ async function handleRequest(req, res, store, options, audit) {
     audit.playerId = row.playerId;
     return writeJson(res, 200, { ok: true, data: commandView(row) });
   }
+  if (route.kind === 'audit') {
+    if (method !== 'GET') throw apiError(405, 'method_not_allowed');
+    const query = parseAuditQuery(parsed.searchParams);
+    const rows = await withFreshAuditAuthorization(store, auditStore, route.worldId, bearerToken(req),
+      options.authorizationAttempts, options.rateLimiters.read, audit, query);
+    const records = rows.map(auditView);
+    return writeJson(res, 200, { ok: true, data: {
+      records,
+      nextBeforeSequence: records.length === query.limit ? records[records.length - 1].sequence : null,
+    } });
+  }
   throw apiError(404, 'not_found');
+}
+
+async function withFreshAuditAuthorization(store, auditStore, worldId, token, attempts, accountLimiter, audit, query) {
+  let accountRateChecked = false;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const context = await authenticateWorld(store, worldId, token, audit);
+    if (!accountRateChecked) {
+      enforceRateLimit(accountLimiter.consume(accountRateKey(worldId, context.auth.account.id)));
+      accountRateChecked = true;
+    }
+    requirePermission(isPrivileged(context.auth.account), 'audit_forbidden');
+    if (auditStore.provider !== 'postgres' || typeof auditStore.list !== 'function') throw apiError(503, 'service_unavailable');
+    try {
+      return await auditStore.list({ ...query, worldId, order: 'desc' }, { expectedWorldRevision: context.revision });
+    } catch (error) {
+      if (error?.code === 'WORLD_DB_REVISION_CONFLICT' && attempt + 1 < attempts) continue;
+      throw error;
+    }
+  }
+}
+
+function parseAuditQuery(params) {
+  const query = { limit: 100 };
+  const seen = new Set();
+  const textLimits = { accountId: 200, playerId: 200, commandId: 256 };
+  for (const [key, value] of params) {
+    if (seen.has(key)) throw apiError(400, 'invalid_audit_query');
+    seen.add(key);
+    if (['limit', 'beforeSequence', 'statusCode'].includes(key)) {
+      const min = key === 'statusCode' ? 100 : 1;
+      const max = key === 'limit' ? 1000 : key === 'statusCode' ? 599 : Number.MAX_SAFE_INTEGER;
+      const number = Number(value);
+      if (!/^\d+$/.test(value) || !Number.isSafeInteger(number) || number < min || number > max) throw apiError(400, 'invalid_audit_query');
+      query[key] = number;
+    } else if (Object.hasOwn(textLimits, key)) {
+      if (!value.trim() || value.length > textLimits[key] || value.includes('\u0000')) throw apiError(400, 'invalid_audit_query');
+      query[key] = value;
+    } else if (key === 'method' && ['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','CONNECT','TRACE'].includes(value)) {
+      query.method = value;
+    } else if (key === 'route' && ['submit','status','audit','unknown'].includes(value)) {
+      query.route = value;
+    } else {
+      throw apiError(400, 'invalid_audit_query');
+    }
+  }
+  return query;
 }
 
 async function withFreshPlayerAuthorization(store, worldId, playerId, token, attempts, accountLimiter, audit, action) {
@@ -214,6 +270,9 @@ function parseCommandRoute(pathname) {
   if (segments.length === 5 && segments[0] === 'durable' && segments[1] === 'worlds' && segments[3] === 'commands') {
     return { kind: 'status', worldId: segments[2], commandId: segments[4] };
   }
+  if (segments.length === 5 && segments[0] === 'durable' && segments[1] === 'worlds' && segments[3] === 'admin' && segments[4] === 'audit') {
+    return { kind: 'audit', worldId: segments[2] };
+  }
   return null;
 }
 function decodeSegment(value) {
@@ -235,6 +294,11 @@ function readJsonBody(req, maxBodyBytes) {
 }
 function commandView(row) { return { id: row.id, worldId: row.worldId, playerId: row.playerId, sequence: row.sequence, status: row.status,
   result: row.status === 'applied' ? row.result : null, submittedAt: row.submittedAt || null, appliedAt: row.appliedAt || null, idempotent: row.idempotent === true }; }
+function auditView(row) {
+  return { sequence: row.sequence, requestId: row.requestId, worldId: row.worldId, accountId: row.accountId,
+    playerId: row.playerId, commandId: row.commandId, method: row.method, route: row.route,
+    statusCode: row.statusCode, errorCode: row.errorCode, createdAt: row.createdAt };
+}
 function writeMappedError(res, error) {
   if (res.writableEnded) return;
   const mapped = mapError(error);
@@ -253,7 +317,7 @@ function mapError(error) {
   return { status: 500, code: 'internal_error' };
 }
 function safeApiCode(value) {
-  const allowed = new Set(['auth_required','player_forbidden','command_forbidden','player_not_found','world_not_found','command_not_found','not_found','method_not_allowed','json_required','invalid_command','command_id_required','command_type_required','request_body_too_large','json_body_required','invalid_json','invalid_path','world_revision_changed','transactional_store_required','audit_store_required','rate_limited']);
+  const allowed = new Set(['auth_required','player_forbidden','command_forbidden','audit_forbidden','invalid_audit_query','service_unavailable','player_not_found','world_not_found','command_not_found','not_found','method_not_allowed','json_required','invalid_command','command_id_required','command_type_required','request_body_too_large','json_body_required','invalid_json','invalid_path','world_revision_changed','transactional_store_required','audit_store_required','rate_limited']);
   return allowed.has(value) ? value : 'internal_error';
 }
 function setSafeHeaders(res) { res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('Referrer-Policy','no-referrer'); }

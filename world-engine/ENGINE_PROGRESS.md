@@ -30,7 +30,15 @@ PostgreSQL 18 存储 14/14、命令 inbox 8/8、durable runtime 11/11、runtime-
 HTTP POST 已是 durable enqueue，GET 为 pending/applied 查询；session/player 授权使用
 最新 checkpoint，并通过 world revision fence 防止并发撤权后的 stale enqueue。
 
-## 当前开发层
+PR #68 已合并，提交 9d8fec31。最终 head ef01dba 的 Node 20/22 与 root/nested
+回归 92/92，既有五个真实 SQL 专项及 100/1000 tick 均通过。
+
+PR #70 已合并，提交 40ea6898。最终 head 13328d3 的完整回归 93/93；真实
+PostgreSQL 18 的 store 14/14、inbox 8/8、runtime 11/11、runtime-command 7/7、
+command API 9/9、audit 4/4 在 Node 20/22 均通过。Migration 3 增加独立持久
+请求审计；不记录 token、raw input、digest 或连接信息。审计失败不改变命令结果。
+
+## 已验收限流层
 
 Durable command API 请求限流：任何数据库读取前先按实际 socket remote address 执行
 source rate limit，默认不信任 `X-Forwarded-For` 等代理头。认证成功后再按 world + account
@@ -47,6 +55,20 @@ source rate limit，默认不信任 `X-Forwarded-For` 等代理头。认证成�
 window reset、bounded key tracking、account submit limit、source limit、Retry-After，以及
 伪造 X-Forwarded-For 不能替代真实 socket 地址。
 
+## 当前开发层：GM/Admin 审计查询
+
+`feature/durable-command-audit-query` 增加
+`GET /durable/worlds/:worldId/admin/audit`：GM/Admin 权限、world revision fence、
+同一 repeatable-read snapshot 中的版本检查与审计读取、共享账号 read limiter、
+严格白名单过滤和有界倒序 `beforeSequence` 分页。响应只包含安全字段，查询自身
+在响应之后才记录。审计 append 故障只独立计数，不再被 HTTP 错误处理误记为 500。
+
+本层不更改已发布 Migration 1–3。新增 11 组受控 HTTP 回归和 10 组真实 SQL
+专项，完整 discovery 分母从 93 增为 94。SQL workflow 在 Node 20/22、
+PostgreSQL 18 上增加独立成功标记，保留所有既有门禁及 bash/pipefail。
+实现细节与分页的实时读取边界见 POSTGRES_COMMAND_AUDIT_QUERY.md。
+此段描述分支实现；最终 head 的远端验收记录见对应 PR，不能据此推断已经合并。
+
 | 能力 | 当前实现与边界 |
 |---|---|
 | 世界模拟、ID 与源码审计 | #61 已验收；更深自然、代际、文明科技演化仍待深化。 |
@@ -56,13 +78,14 @@ window reset、bounded key tracking、account submit limit、source limit、Retr
 | PostgreSQL 命令 inbox | #65 已验收 Migration 2、持久命令入队、查询和 checkpoint 同事务确认。 |
 | Runtime 命令消费 | #66 已验收 FIFO 隔离执行、事务确认、retry reuse 与 read-backoff。 |
 | Durable command HTTP API | #67 已验收认证入队/结果轮询、revision-fenced authorization 与真实 SQL E2E。 |
-| Command API process limiter | 本层实现有界 source/account 限流；等待最终远端验收。 |
+| Command API process limiter | #68 已验收单进程有界 source/account 限流。 |
+| Durable command API audit | #70 已验收独立持久审计、幂等 append 与安全字段。 |
+| Privileged audit query | 当前分支实现 GM/Admin 查询、revision fence、过滤与倒序游标；最终验收见 PR。 |
 | 旧同步 HTTP 玩家操作 | 保持兼容，尚未重定向到 durable API；不会静默改变语义。 |
-| 生产运行 | 未配置生产数据库，未验收网关分布式限流、durable operational audit、备份恢复、领导者租约与部署。 |
+| 生产运行 | 未配置生产数据库，未验收网关分布式限流、审计可靠投递/保留、备份恢复、领导者租约与部署。 |
 
-下一节点在本层验收后做 durable operational audit：记录 command API 的认证主体、route、
-状态码和 durable command id，但不保存 Bearer token、raw command body 或敏感数据库信息。
-之后再处理多实例 gateway/leader policy 或旧同步 action route 的版本化迁移。
+本层验收后，再分别规划 durable account/session 变更、多实例 gateway/leader policy、
+审计保留/可靠投递或旧同步 action route 的版本化迁移；不混入当前查询接口的验收范围。
 
 不使用没有统一验收分母的百分比。实现与边界见 POSTGRES_COMMAND_API.md、
 POSTGRES_COMMAND_INBOX.md、POSTGRES_DATABASE.md 和 POSTGRES_DURABLE_RUNTIME.md。
