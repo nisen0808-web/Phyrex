@@ -22,6 +22,8 @@
     "database:postgres": "node demo/database-postgres-cli.js",
     "database:backup": "node demo/database-backup-cli.js",
     "database:maintain": "node demo/database-maintenance-cli.js",
+    "account:admin": "node demo/account-admin-cli.js",
+    "test:postgres:account-admin": "node tests/integration/postgres-account-admin.js",
     "test:postgres:maintenance": "node tests/integration/postgres-maintenance.js",
     "test:postgres:backup": "node tests/integration/postgres-backup.js",
     "test:postgres": "node tests/integration/postgres-store.js",
