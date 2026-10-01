@@ -1,0 +1,45 @@
+name: World Engine Scale
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -e -o pipefail {0}
+
+jobs:
+  scale:
+    name: scale-${{ matrix.case }}-node-${{ matrix.node }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        node: ['20', '22']
+        case: ['small', 'medium', 'large']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Run population, capacity and recovery gate
+        run: |
+          mkdir -p world-engine/output/ci
+          npm --prefix world-engine run test:engine:scale -- ${{ matrix.case }} 2>&1 | tee world-engine/output/ci/scale-${{ matrix.case }}.log
+          grep -F 'engine scale ${{ matrix.case }} completed: lifecycle, finite state, capacity and' world-engine/output/ci/scale-${{ matrix.case }}.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: engine-scale-${{ matrix.case }}-node-${{ matrix.node }}
+          path: world-engine/output/ci/scale-${{ matrix.case }}.log
+          if-no-files-found: error

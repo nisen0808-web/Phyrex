@@ -1,4 +1,5 @@
 'use strict';
+const { pruneCausality } = require('./causality-retention-engine');
 
 const { advanceOneTick, enqueueAction } = require('./world-engine');
 const { planAllEntityActions } = require('./goal-engine');
@@ -456,8 +457,8 @@ function createSimulationSystemDefinitions() {
     }),
     system('finalize.report', 'finalize', {
       after: ['finalize.novel'],
-      reads: ['simulation', 'memory'],
-      writes: ['simulation', 'memory'],
+      reads: ['simulation', 'memory', 'causality', 'events', 'actionQueue', 'processes', 'causalityArchive'],
+      writes: ['simulation', 'memory', 'causality', 'causalityArchive'],
       run: context => {
         const { world, frame } = frameContext(context);
         finalizeSimulationFrame(world, frame);
@@ -540,6 +541,7 @@ function finalizeSimulationFrame(world, frame) {
   if (frame.finalized) return frame.report;
   if (frame.report.tickAfter === null) frame.report.tickAfter = world.tick;
   trimWorldMemory(world, frame.config.maxWorldMemory);
+  pruneCausality(world, frame.config.retention || {});
   addCounter(frame.simulation, 'ticks', 1);
   frame.simulation.lastTickReport = compactSimulationReport(frame.report);
   frame.simulation.reports.push(frame.simulation.lastTickReport);
