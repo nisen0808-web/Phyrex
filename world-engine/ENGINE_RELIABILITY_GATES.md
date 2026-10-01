@@ -24,6 +24,10 @@ history: { maxEventsPerEntity: 100, maxTimelineEvents: 500 }
 
 `runtime.summary().nextDelayMs` 同时反映队列读取失败和 checkpoint 提交失败的有界指数退避。内置定时循环及 CLI 都使用同一值，成功提交后恢复正常间隔。达到重试上限仍停止，重试不重新执行已有候选世界。
 
+## JSONB 索引一致性
+
+新增真实 SQL 门禁在 500 tick 抓到人口索引检查的排序误判：原实现直接比较对象 JSON 字符串，JSONB 重排键后会把正确索引判为过期。现在按成员关系比较，不依赖对象键或成员数组顺序，也不修改被检查的世界；重复、缺失、额外成员和非数组桶仍会报错。生态成员索引沿用同一严格检查。
+
 ## 独立 PostgreSQL endurance gate
 
 ```sh

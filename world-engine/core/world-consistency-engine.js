@@ -160,8 +160,8 @@ function auditPopulation(world, issues, push) {
     addUnique(expectedByAgeGroup, ageGroup, entityId);
     addUnique(expectedByGeneration, generation, entityId);
   }
-  if (JSON.stringify(population.indexes?.byAgeGroup || {}) !== JSON.stringify(expectedByAgeGroup)) push({ code: 'stale_population_age_index', path: 'population.indexes.byAgeGroup', message: 'Population age index is stale', action: 'rebuild_population_indexes' });
-  if (JSON.stringify(population.indexes?.byGeneration || {}) !== JSON.stringify(expectedByGeneration)) push({ code: 'stale_population_generation_index', path: 'population.indexes.byGeneration', message: 'Population generation index is stale', action: 'rebuild_population_indexes' });
+  if (!sameMembershipIndex(population.indexes?.byAgeGroup || {}, expectedByAgeGroup)) push({ code: 'stale_population_age_index', path: 'population.indexes.byAgeGroup', message: 'Population age index is stale', action: 'rebuild_population_indexes' });
+  if (!sameMembershipIndex(population.indexes?.byGeneration || {}, expectedByGeneration)) push({ code: 'stale_population_generation_index', path: 'population.indexes.byGeneration', message: 'Population generation index is stale', action: 'rebuild_population_indexes' });
 }
 
 function auditNatural(world, locations, push, config) {
@@ -199,7 +199,7 @@ function auditEcology(world, locations, push) {
     if (locations[pop.locationId] && pop.speciesId) addUnique(expectedByLocation, pop.locationId, pop.speciesId);
   }
   const actual = ecology.populations?.byLocation || {};
-  if (JSON.stringify(sortIndex(actual)) !== JSON.stringify(sortIndex(expectedByLocation))) push({ code: 'stale_ecology_location_index', path: 'ecology.populations.byLocation', message: 'Ecology byLocation index is stale', action: 'rebuild_ecology_location_index' });
+  if (!sameMembershipIndex(actual, expectedByLocation)) push({ code: 'stale_ecology_location_index', path: 'ecology.populations.byLocation', message: 'Ecology byLocation index is stale', action: 'rebuild_ecology_location_index' });
 }
 
 function auditSimulationAndKernel(world, push, config) {
@@ -335,6 +335,15 @@ function sortIndex(index) {
   const out = {};
   for (const [key, values] of Object.entries(index || {}).sort(([a], [b]) => a.localeCompare(b))) out[key] = [...(values || [])].sort();
   return out;
+}
+
+function sameMembershipIndex(actual, expected) {
+  // JSONB changes map insertion order. These are membership indexes, so neither
+  // bucket ordering nor member ordering determines validity. Keep duplicates:
+  // sorting must not conceal corrupt/missing/extra members or malformed buckets.
+  if (!actual || typeof actual !== 'object' || Array.isArray(actual)) return false;
+  if (Object.values(actual).some(values => !Array.isArray(values) || values.some(value => typeof value !== 'string'))) return false;
+  return JSON.stringify(sortIndex(actual)) === JSON.stringify(sortIndex(expected));
 }
 
 function addUnique(index, key, value) {

@@ -11,16 +11,19 @@ const { auditWorldConsistency } = require('../../core/world-consistency-engine')
 const { digest } = require('../../storage/postgres/codec');
 const { createEnduranceWorld } = require('../fixtures/engine-endurance-world');
 
+const children = new Set();
 function worker(schema, mode) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [path.join(__dirname, 'engine-endurance-worker.js'), schema, mode],
       { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    children.add(child);
     let stdout = '', stderr = '';
     child.stdout.on('data', data => { stdout += data; });
     child.stderr.on('data', data => { stderr += data; });
     const timer = setTimeout(() => { child.kill(); reject(new Error('Endurance worker timed out')); }, 300000);
     child.on('error', error => { clearTimeout(timer); reject(error); });
     child.on('close', code => {
+      children.delete(child);
       clearTimeout(timer);
       if (code !== 0) return reject(new Error(`Endurance worker failed: ${stderr}`));
       try { resolve(JSON.parse(stdout)); } catch (error) { reject(error); }
@@ -53,13 +56,18 @@ async function main() {
         assert.strictEqual(again.sequence, row.sequence); assert.strictEqual(again.idempotent, true);
       }
       const mode = ['normal', 'rollback', 'lost-ack', 'normal'][quarter];
-      const childResult = worker(schema, mode);
+      const childResult = worker(schema, mode).then(result => ({ result }), error => ({ error }));
       // The reference has no storage, no restart and no retry. Only the SQL path
       // below experiences commit boundaries, process loss and injected faults.
       executeDurableCommands(expected, commands);
-      advanceDeterministicBatch(expected, 250);
+      for (let batch = 0; batch < 25; batch++) {
+        advanceDeterministicBatch(expected, 10);
+        await new Promise(resolve => setImmediate(resolve));
+      }
       repairLoadedWorld(expected);
-      const result = await childResult;
+      const outcome = await childResult;
+      if (outcome.error) throw outcome.error;
+      const result = outcome.result;
       assert.strictEqual(result.startedAt, quarter * 250);
       assert.strictEqual(result.observedFailure, mode !== 'normal');
       const loaded = await store.loadWorld(expected.id);
@@ -103,6 +111,7 @@ async function main() {
     pass('checkpoint restore into a fresh schema continues identical world and rejects changed configuration');
     console.log(`postgres engine endurance completed ${groups} scenario groups: ${groups} passed, 0 failed`);
   } finally {
+    await Promise.all([...children].map(child => new Promise(resolve => { child.once('close', resolve); child.kill(); })));
     if (resumed) await resumed.close({ flush: false });
     await store.close(); await restoredStore.close();
     await raw.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
