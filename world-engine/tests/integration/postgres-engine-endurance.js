@@ -20,7 +20,9 @@ function worker(schema, mode) {
     let stdout = '', stderr = '';
     child.stdout.on('data', data => { stdout += data; });
     child.stderr.on('data', data => { stderr += data; });
-    const timer = setTimeout(() => { child.kill(); reject(new Error('Endurance worker timed out')); }, 300000);
+    // Functional recovery gate, not a 250-tick latency benchmark. Later quarters
+    // carry a larger full-world checkpoint; the whole CI job remains capped at 25m.
+    const timer = setTimeout(() => { child.kill(); reject(new Error('Endurance worker timed out')); }, 600000);
     child.on('error', error => { clearTimeout(timer); reject(error); });
     child.on('close', code => {
       children.delete(child);

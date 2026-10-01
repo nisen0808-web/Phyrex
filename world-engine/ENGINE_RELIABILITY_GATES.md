@@ -30,6 +30,8 @@ history: { maxEventsPerEntity: 100, maxTimelineEvents: 500 }
 
 ## 独立 PostgreSQL endurance gate
 
+世界规范化现在保留原有有限 JSON 捕获，再直接排序捕获的对象树，省去第二份整世界 JSON 字符串和再次解析；数组顺序保持不变。等价回归对照旧实现，覆盖完整世界、别名引用、缺省值、特殊键、数值键、非有限数据和循环引用。该优化不改变数据库格式、摘要算法或规范化后的状态。
+
 ```sh
 npm ci --prefix world-engine --ignore-scripts
 npm test
@@ -40,7 +42,7 @@ npm --prefix world-engine run test:postgres:endurance
 
 `WORLD_ENGINE_TEST_DATABASE_URL` 通过环境变量提供，不写入命令行。测试只创建并删除自身随机命名的 schema。
 
-新增 GitHub Actions `World Engine Endurance`，在 Node 20/22 + PostgreSQL 18 上分别执行：
+新增 GitHub Actions `World Engine Endurance`，在 Node 20/22 + PostgreSQL 18 上分别执行。每个子进程最多 10 分钟，整个 job 最多 25 分钟。初版 5 分钟子进程等待在后半段触发超时，因此调整等待预算；1000 tick、100 个 checkpoint、世界容量和所有正确性断言保持不变。此门禁验证功能恢复，不将超时预算当作吞吐承诺。
 
 1. 四个真实子进程各执行 250 tick，每 10 tick 原子保存，共 1000 tick / 100 个 checkpoint。
 2. 四轮 FIFO 命令、重复提交、有效命令和确定性拒绝；重启后不重复消费。
