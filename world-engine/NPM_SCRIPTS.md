@@ -64,7 +64,7 @@
 
 - 根目录与 world-engine 的 test 都通过 tests/run-all.js 自动发现全部 *-test.js；1000 tick stress 有独立必跑门禁，不隐藏进 discovery 分母。
 - test:postgres 系列要求 WORLD_ENGINE_TEST_DATABASE_URL，数据库名以 _ci 或 _test 结尾，不可用即失败，禁止静默跳过。每个套件只清理自己创建的随机 schema。
-- World Engine Tests：Node 20/22 discovery；World Engine CI：主回归、100 tick 和 1000 tick；World Engine PostgreSQL：真实 PostgreSQL 18 的存储、inbox、运行器、命令消费、认证 API、审计、审计查询、全库备份、维护、账户管理、CLI 快速启动。
+- World Engine Tests：根目录与 world-engine 入口回归及 100 tick；World Engine CI：Node 20/22 discovery 和独立 1000 tick；World Engine PostgreSQL：真实 PostgreSQL 18 的存储、inbox、运行器、命令消费、认证 API、审计、审计查询、全库备份、维护、账户管理、CLI 快速启动。
 - World Engine Endurance：Node 20/22 + PostgreSQL 18，1000 tick、100 个 checkpoint、4 个进程、回滚/丢确认和恢复续跑。
 - World Engine Scale：Node 20/22 x 三个 seed/人口规模，完整状态恢复相等、有限数值、出生/死亡/代际、索引与容量。
 - 所有日志管道使用 bash -e -o pipefail；新专项还必须匹配实际完成标记。不得只看 tee 的退出码或绿色图标。
