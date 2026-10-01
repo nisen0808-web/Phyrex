@@ -82,7 +82,9 @@ PostgreSQL 18 上增加独立成功标记，保留所有既有门禁及 bash/pip
 | Durable command API audit | #70 已验收 Migration 3、安全字段审计与写入失败隔离。 |
 | Privileged audit query | #71 的 GM/Admin 查询、revision fence、过滤与倒序游标已整合到当前完成分支。 |
 | 旧同步 HTTP 玩家操作 | 保持兼容，尚未重定向到 durable API；不会静默改变语义。 |
-| 生产运行 | 未配置生产数据库，未验收网关分布式限流、完整数据库备份恢复、领导者租约与部署。 |
+| 完整备份和历史维护 | 完成分支已实现并验证全 schema 备份/原子恢复、Migration 4、旧 checkpoint 压缩和审计归档；详见 POSTGRES_BACKUP.md、POSTGRES_MAINTENANCE.md。 |
+| 持久账户管理 | 完成分支已实现并验证账户/角色/状态/玩家绑定/会话发行撤销、版本冲突、幂等及恢复；详见 DURABLE_ACCOUNT_ADMIN.md。 |
+| 生产部署边界 | 未配置生产数据库或公网部署，外部网关分布式限流、领导者租约与高可用属于独立运维服务。 |
 
 PR #70 合并提交为 `40ea6898ecb007ad21cba6e1baa5c1d20a865faf`，主线回归 93/93。
 审计查询节点在独立 PR #71 中已实现并完成验收，截至本分支建立时尚未合并。

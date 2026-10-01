@@ -6,6 +6,8 @@
 
 新增契约 `contract.maxTerminalContracts`：只清理 completed/broken/cancelled/expired，保护未结束流程指向的契约；重建全部索引，保留生命周期累计计数。未知状态保留。`world.contracts.retention` 显示受保护数量和超预算数量。
 
+新增目标 `retention.maxTerminalGoalsPerEntity`：只清理每个实体的 completed/failed/abandoned 目标，保护待处理动作/事件和未结束流程仍引用的目标；活跃与未知状态全部保留，幸存目标顺序不变。`entity.goalRetention` 报告移除数与引用压力，`goalMemory` 只保留仍在世界滚动记忆中的 ID，避免已经无法读取的索引无限增长。历史事件和累计叙事不因目标明细清理重写。
+
 新增流程 `process.preserveActive: true`：活跃、未知状态、仍被未结束流程或活跃机会引用的记录不会因为预算被删除。只清理未被引用的 resolved/stalled 记录。`world.processes.capacity` 显示当前数量、受保护数量、总量超限和非活跃数量超限。旧世界未启用此选项时沿用原有硬上限语义；v1 初始化配置显式启用保护模式。
 
 事件记忆、因果记录和契约记忆改用世界递增 ID 分配器，修复滚动数组长度固定后同 tick 重复生成 ID 的问题。裁剪不回收 ID，不额外消耗随机数。该修复影响旧运行器继续运行时的记录 ID，所以比较新旧引擎版本的历史摘要时不能假设相同版本外的字节结果。

@@ -8,7 +8,7 @@ const ENGINE_V1_PROFILE = {
   information: { maxInformationItems: 200, maxKnownItemsPerOwner: 30 },
   memory: { maxGlobalMemories: 500, maxMemoriesPerOwner: 30 },
   history: { maxEventsPerEntity: 100, maxTimelineEvents: 1000 },
-  retention: { maxCausalityRecords: 500 },
+  retention: { maxCausalityRecords: 500, maxTerminalGoalsPerEntity: 50 },
   contract: { maxTerminalContracts: 100 },
   opportunity: { maxTerminalOpportunities: 100 },
   conflict: { maxResolvedConflicts: 100 },

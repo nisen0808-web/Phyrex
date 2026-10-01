@@ -1,5 +1,6 @@
 'use strict';
 const { pruneCausality } = require('./causality-retention-engine');
+const { pruneWorldGoalHistory } = require('./goal-retention-engine');
 
 const { advanceOneTick, enqueueAction } = require('./world-engine');
 const { planAllEntityActions } = require('./goal-engine');
@@ -349,6 +350,7 @@ function runSimulationTick(world, options = {}) {
 
   trimWorldMemory(world, config.maxWorldMemory);
   pruneCausality(world, config.retention || {});
+  pruneWorldGoalHistory(world, config.retention || {});
   simulation.counters.ticks += 1;
   simulation.lastTickReport = compactReport(report);
   simulation.reports.push(simulation.lastTickReport);

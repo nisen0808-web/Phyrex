@@ -35,8 +35,13 @@ async function main(name = process.argv[2]) {
     peakBytes = Math.max(peakBytes, bytes);
     peakProcesses = Math.max(peakProcesses, Object.keys(world.processes.byId).length);
     peakProcessPressure = Math.max(peakProcessPressure, world.processes.capacity.overLimit);
+    if (bytes >= 32 * 1024 * 1024) console.error(`CAPACITY_BREAKDOWN ${JSON.stringify(Object.entries(world).map(([key, value]) => [key, Buffer.byteLength(JSON.stringify(value))]).sort((a, b) => b[1] - a[1]).slice(0, 10))}`);
     assert.ok(bytes < 32 * 1024 * 1024, `${name}: default checkpoint size exceeded`);
     assert.ok(world.history.globalTimeline.length <= 1000);
+    for (const entity of Object.values(world.entities)) {
+      if (entity.goalRetention) assert.ok(entity.goalRetention.retainedTerminal <= Math.max(50, entity.goalRetention.protectedTerminal));
+      if (entity.goalMemory) assert.ok(entity.goalMemory.length <= world.memory.length);
+    }
     assert.ok(world.causality.length <= 500 + world.causalityArchive.overLimit);
     assert.strictEqual(world.processes.capacity.overLimit, Math.max(0, Object.keys(world.processes.byId).length - 200));
     assert.ok(Object.keys(world.processes.byId).length <= Math.max(200, world.processes.capacity.protected));

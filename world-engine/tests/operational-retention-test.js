@@ -8,6 +8,10 @@ const { createProcess, pruneProcesses, processProcessesTick } = require('../core
 const { processEvents } = require('../core/event-engine');
 const { repairLoadedWorld } = require('../core/persistence-engine');
 const { digest } = require('../storage/postgres/codec');
+const { pruneWorldGoalHistory } = require('../core/goal-retention-engine');
+const { assignGoal, chooseActiveGoal } = require('../core/goal-engine');
+const { createEnduranceWorld } = require('./fixtures/engine-endurance-world');
+const { advanceDeterministicBatch } = require('../runtime/durable-world-runtime');
 
 const world = createWorld({ seed: 'operational-retention' });
 registerEntity(world, { id: 'a' }); registerEntity(world, { id: 'b' });
@@ -61,4 +65,34 @@ processes.opportunities.byId.reader.status = 'expired';
 pruneProcesses(processes, { preserveActive: true, maxProcesses: 2, maxInactiveProcesses: 0 });
 assert.strictEqual(Object.keys(processes.processes.byId).length, 3);
 assert.strictEqual(processes.processes.capacity.overLimit, 1);
+const goals = createWorld({ seed: 'goal-retention' }); registerEntity(goals, { id: 'hero' });
+for (let n = 0; n < 20; n++) assignGoal(goals, 'hero', { id: `old-${n}`, type: 'gain_resources', status: 'completed' });
+assignGoal(goals, 'hero', { id: 'active', type: 'survive' });
+assignGoal(goals, 'hero', { id: 'unknown', type: 'future', status: 'future' });
+const selected = chooseActiveGoal(goals, 'hero').id;
+goals.memory = goals.memory.slice(-3);
+goals.actionQueue = [{ payload: { goalId: 'old-0' } }];
+const entropy = digest({ random: goals.random, engineIds: goals.engineIds });
+const goalReport = pruneWorldGoalHistory(goals, { maxTerminalGoalsPerEntity: 0 });
+assert.strictEqual(goalReport.removed, 19); assert.strictEqual(goalReport.overLimit, 1);
+assert.deepStrictEqual(goals.entities.hero.goals.map(row => row.id), ['old-0', 'active', 'unknown']);
+assert.strictEqual(chooseActiveGoal(goals, 'hero').id, selected);
+assert.strictEqual(goals.entities.hero.goalMemory.length, 3);
+assert.strictEqual(digest({ random: goals.random, engineIds: goals.engineIds }), entropy);
+const goalState = digest(goals); pruneWorldGoalHistory(goals, { maxTerminalGoalsPerEntity: 0 }); assert.strictEqual(digest(goals), goalState);
+goals.actionQueue = []; pruneWorldGoalHistory(goals, { maxTerminalGoalsPerEntity: 0 });
+assert.deepStrictEqual(goals.entities.hero.goals.map(row => row.id), ['active', 'unknown']);
+const fullHistory = createEnduranceWorld('goal-retention-behavior');
+const boundedHistory = JSON.parse(JSON.stringify(fullHistory));
+boundedHistory.simulation.options.retention = { maxTerminalGoalsPerEntity: 0 };
+const entityBehavior = target => Object.fromEntries(Object.entries(target.entities).map(([id, entity]) => {
+  const { goalRetention: _retention, goalMemory: _memory, goals: allGoals, ...rest } = entity;
+  return [id, { ...rest, goals: (allGoals || []).filter(goal => goal.status === 'active') }];
+}));
+for (let batch = 0; batch < 3; batch++) {
+  advanceDeterministicBatch(fullHistory, 10); advanceDeterministicBatch(boundedHistory, 10);
+  assert.strictEqual(digest(entityBehavior(fullHistory)), digest(entityBehavior(boundedHistory)), 'terminal goal retention cannot change ongoing entity behavior');
+  for (const key of ['random', 'engineIds', 'relationships', 'population', 'governance', 'processes', 'opportunities', 'conflicts']) assert.strictEqual(digest(fullHistory[key]), digest(boundedHistory[key]), key);
+}
+assert.ok(Object.values(boundedHistory.entities).some(entity => entity.goalRetention?.removed > 0));
 console.log('operational retention passed: exact cumulative scores, live reference pins, unique IDs, contract indexes and active process pressure');
