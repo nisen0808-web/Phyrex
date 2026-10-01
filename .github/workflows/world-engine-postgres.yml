@@ -97,6 +97,13 @@ jobs:
           mkdir -p world-engine/output/ci
           npm --prefix world-engine run test:postgres:command-audit-query 2>&1 | tee world-engine/output/ci/postgres-command-audit-query.log
           grep -F 'postgres command audit query completed 10 scenario groups: 10 passed, 0 failed' world-engine/output/ci/postgres-command-audit-query.log
+      - name: Run complete database backup and restore tests
+        env:
+          WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
+        run: |
+          mkdir -p world-engine/output/ci
+          npm --prefix world-engine run test:postgres:backup 2>&1 | tee world-engine/output/ci/postgres-backup.log
+          grep -F 'postgres backup completed 6 scenario groups: 6 passed, 0 failed' world-engine/output/ci/postgres-backup.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -2,6 +2,7 @@
 const crypto = require('crypto');
 const { normalizePostgresConfig, safePostgresConfig, databaseError, integer } = require('./config');
 const { MIGRATIONS, checkMigrationHistory } = require('./migrations');
+const { createBackupOperations } = require('./backup');
 const { textId, safeInteger, fromSqlInteger, captureCheckpoint, captureEvent, captureInboxCommand, digest,
   canonicalJson, summarizeSave, restoreSave } = require('./codec');
 
@@ -268,6 +269,7 @@ function createPostgresDatabaseStore(options = {}) {
     return closePromise;
   }
   return Object.freeze({ version: 2, provider: 'postgres', config: Object.freeze(safePostgresConfig(config)),
+    ...createBackupOperations({ transaction, readSchema, ensureReady, schema }),
     migrate, saveWorld, loadWorld, listWorlds, enqueueCommand, getCommand, listCommands, listPendingCommands,
     appendEvent, listEvents, summary, close });
 }

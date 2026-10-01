@@ -20,6 +20,8 @@
     "api:live:db": "node demo/api-server.js --auto-loop --interval 1000 --ticks-per-cycle 1 --autosave-every 25 --autosave-mode database --db-provider jsonl --db-dir world-engine/data/db --db-name world-engine --resume-mode if-present",
     "viewer": "node viewer/serve-viewer.js",
     "database:postgres": "node demo/database-postgres-cli.js",
+    "database:backup": "node demo/database-backup-cli.js",
+    "test:postgres:backup": "node tests/integration/postgres-backup.js",
     "test:postgres": "node tests/integration/postgres-store.js",
     "test:postgres:commands": "node tests/integration/postgres-command-inbox.js",
     "runtime:postgres": "node demo/durable-runtime-cli.js",
