@@ -59,7 +59,7 @@ async function main() {
     return { api, port: await listen(api.server) };
   }
   try {
-    assert.strictEqual((await store.migrate()).version, 3);
+    assert.strictEqual((await store.migrate()).version, require('../../storage/postgres/migrations').MIGRATIONS.length);
     const world = createWorld({ id: worldId, seed: 'audit-query' });
     for (const role of ['gm','admin','player']) {
       createAccount(world, { id: role, roles: [role] });

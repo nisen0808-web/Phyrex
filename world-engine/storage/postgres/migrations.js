@@ -84,6 +84,22 @@ CREATE INDEX command_api_audit_account_sequence ON __SCHEMA__.command_api_audit(
 CREATE INDEX command_api_audit_command_sequence ON __SCHEMA__.command_api_audit(command_id, sequence DESC);
 CREATE INDEX command_api_audit_status_sequence ON __SCHEMA__.command_api_audit(status_code, sequence DESC);
 ` },
+  { version: 4, name: 'checkpoint_and_audit_retention_receipts', sql: `
+ALTER TABLE __SCHEMA__.world_saves ALTER COLUMN envelope DROP NOT NULL;
+ALTER TABLE __SCHEMA__.world_saves ADD COLUMN archived_at timestamptz;
+ALTER TABLE __SCHEMA__.world_saves ADD COLUMN archived_metadata jsonb;
+ALTER TABLE __SCHEMA__.world_saves ADD CONSTRAINT world_saves_archive_state CHECK (
+  (envelope IS NOT NULL AND archived_at IS NULL AND archived_metadata IS NULL)
+  OR (envelope IS NULL AND archived_at IS NOT NULL AND archived_metadata IS NOT NULL AND jsonb_typeof(archived_metadata)='object')
+);
+CREATE INDEX world_saves_retained_payload ON __SCHEMA__.world_saves(world_id, revision DESC) WHERE envelope IS NOT NULL;
+CREATE TABLE __SCHEMA__.command_api_audit_receipts (
+  request_id text PRIMARY KEY CHECK (length(request_id) BETWEEN 1 AND 128),
+  sequence bigint NOT NULL UNIQUE CHECK (sequence BETWEEN 1 AND 9007199254740991),
+  input_digest text NOT NULL CHECK (input_digest ~ '^[0-9a-f]{64}$'),
+  created_at timestamptz NOT NULL
+);
+` },
 ].map(m => Object.freeze({ ...m, checksum: crypto.createHash('sha256').update(m.sql).digest('hex') }));
 Object.freeze(MIGRATIONS);
 function checkMigrationHistory(rows) {

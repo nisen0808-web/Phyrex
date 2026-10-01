@@ -116,8 +116,18 @@ function summarizeSave(row, idempotent = false) {
     savedAt: row.saved_at instanceof Date ? row.saved_at.toISOString() : row.saved_at,
     checksum: row.payload_digest, idempotent };
 }
+function validateArchivedSave(row) {
+  if (row.envelope !== null) return false;
+  if (!row.archived_at || !row.archived_metadata || typeof row.archived_metadata !== 'object' || Array.isArray(row.archived_metadata)
+      || !/^[0-9a-f]{64}$/.test(row.payload_digest) || !/^[0-9a-f]{64}$/.test(row.request_hash)) {
+    throw databaseError('CORRUPT_RECORD', 'Invalid archived checkpoint receipt');
+  }
+  summarizeSave(row);
+  return true;
+}
 function restoreSave(row) {
   const summary = summarizeSave(row);
+  if (validateArchivedSave(row)) throw databaseError('CHECKPOINT_ARCHIVED', 'Checkpoint payload was archived; restore its earlier backup to access it');
   if (digest(row.envelope) !== row.payload_digest) throw databaseError('CORRUPT_RECORD', 'World checkpoint checksum mismatch');
   try {
     validateWorldSaveRecord({ recordType: 'world_save', id: row.request_id, sequence: summary.sequence,
@@ -128,4 +138,4 @@ function restoreSave(row) {
   } catch (_) { throw databaseError('CORRUPT_RECORD', 'World checkpoint schema or headers are invalid'); }
 }
 module.exports = { textId, safeInteger, fromSqlInteger, detachedJson, canonicalJson, digest,
-  captureCheckpoint, captureEvent, captureCommandInput, captureInboxCommand, captureCommandResult, summarizeSave, restoreSave };
+  captureCheckpoint, captureEvent, captureCommandInput, captureInboxCommand, captureCommandResult, summarizeSave, restoreSave, validateArchivedSave };

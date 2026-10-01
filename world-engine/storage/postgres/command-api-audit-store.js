@@ -4,6 +4,7 @@ const { normalizePostgresConfig, safePostgresConfig, databaseError, integer } = 
 const { MIGRATIONS, checkMigrationHistory } = require('./migrations');
 const { textId, safeInteger, fromSqlInteger } = require('./codec');
 const { sanitizeError } = require('./store');
+const { auditDigest, lockAuditRequest } = require('./audit-receipt');
 
 function createPostgresCommandApiAuditStore(options = {}) {
   const config = normalizePostgresConfig(options.database || options, options.env || process.env);
@@ -48,6 +49,15 @@ function createPostgresCommandApiAuditStore(options = {}) {
     const row = captureAudit(input);
     await ensureReady();
     return transaction(async client => {
+      await lockAuditRequest(client, schema, row.requestId);
+      const receipt = await client.query(`SELECT sequence,input_digest,created_at FROM ${schema}.command_api_audit_receipts WHERE request_id=$1`, [row.requestId]);
+      if (receipt.rows.length) {
+        const previous = receipt.rows[0];
+        if (previous.input_digest !== auditDigest(row)) throw databaseError('IDEMPOTENCY_CONFLICT', 'Audit request ID was reused for different data');
+        return { ...row, sequence: fromSqlInteger(previous.sequence),
+          createdAt: previous.created_at instanceof Date ? previous.created_at.toISOString() : previous.created_at,
+          idempotent: true, retained: false };
+      }
       const inserted = await client.query(`INSERT INTO ${schema}.command_api_audit
         (request_id,world_id,account_id,player_id,command_id,method,route,status_code,error_code)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)

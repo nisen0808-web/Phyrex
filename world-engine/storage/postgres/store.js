@@ -3,8 +3,9 @@ const crypto = require('crypto');
 const { normalizePostgresConfig, safePostgresConfig, databaseError, integer } = require('./config');
 const { MIGRATIONS, checkMigrationHistory } = require('./migrations');
 const { createBackupOperations } = require('./backup');
+const { createMaintenanceOperations } = require('./maintenance');
 const { textId, safeInteger, fromSqlInteger, captureCheckpoint, captureEvent, captureInboxCommand, digest,
-  canonicalJson, summarizeSave, restoreSave } = require('./codec');
+  canonicalJson, summarizeSave, restoreSave, validateArchivedSave, detachedJson } = require('./codec');
 
 function createPostgresDatabaseStore(options = {}) {
   const config = normalizePostgresConfig(options.database || options, options.env || process.env);
@@ -91,7 +92,7 @@ function createPostgresDatabaseStore(options = {}) {
       const existing = await client.query(`SELECT * FROM ${schema}.world_saves WHERE world_id=$1 AND request_id=$2`, [envelope.worldId, requestId]);
       if (existing.rows.length) {
         if (existing.rows[0].request_hash !== requestHash) throw databaseError('IDEMPOTENCY_CONFLICT', 'Request ID was already used for a different checkpoint');
-        restoreSave(existing.rows[0]);
+        if (!validateArchivedSave(existing.rows[0])) restoreSave(existing.rows[0]);
         return summarizeSave(existing.rows[0], true);
       }
       const revision = fromSqlInteger(current.rows[0].revision, 'revision');
@@ -141,6 +142,17 @@ function createPostgresDatabaseStore(options = {}) {
       const result = await client.query(`SELECT s.* FROM ${schema}.worlds w JOIN ${schema}.world_saves s
         ON s.world_id=w.world_id AND s.sequence=w.latest_sequence ORDER BY w.updated_at DESC,w.world_id LIMIT $1`, [limit]);
       return result.rows.map(row => summarizeSave(row));
+    }, true);
+  }
+  async function getCheckpointRequest(worldId, requestId) {
+    const selected = textId(worldId, 'worldId'), id = textId(requestId, 'requestId', 128);
+    await ensureReady();
+    return transaction(async client => {
+      const result = await client.query(`SELECT * FROM ${schema}.world_saves WHERE world_id=$1 AND request_id=$2`, [selected, id]);
+      if (!result.rows.length) return null;
+      const row = result.rows[0], archived = validateArchivedSave(row);
+      if (!archived) restoreSave(row);
+      return { ...summarizeSave(row), archived, metadata: detachedJson(archived ? row.archived_metadata : row.envelope.metadata) };
     }, true);
   }
   async function enqueueCommand(input, commandOptions = {}) {
@@ -270,6 +282,8 @@ function createPostgresDatabaseStore(options = {}) {
   }
   return Object.freeze({ version: 2, provider: 'postgres', config: Object.freeze(safePostgresConfig(config)),
     ...createBackupOperations({ transaction, readSchema, ensureReady, schema }),
+    ...createMaintenanceOperations({ transaction, ensureReady, schema }),
+    getCheckpointRequest,
     migrate, saveWorld, loadWorld, listWorlds, enqueueCommand, getCommand, listCommands, listPendingCommands,
     appendEvent, listEvents, summary, close });
 }

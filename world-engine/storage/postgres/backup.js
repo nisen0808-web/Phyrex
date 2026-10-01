@@ -4,17 +4,18 @@ const fs = require('fs');
 const path = require('path');
 const { MIGRATIONS, checkMigrationHistory } = require('./migrations');
 const { databaseError } = require('./config');
-const { digest, restoreSave } = require('./codec');
+const { digest, restoreSave, validateArchivedSave } = require('./codec');
 
 const TABLES = Object.freeze({
   worlds: ['world_id', 'revision', 'latest_sequence', 'updated_at'],
-  world_saves: ['sequence', 'world_id', 'revision', 'tick', 'save_schema', 'request_id', 'request_hash', 'payload_digest', 'envelope', 'saved_at'],
+  world_saves: ['sequence', 'world_id', 'revision', 'tick', 'save_schema', 'request_id', 'request_hash', 'payload_digest', 'envelope', 'saved_at', 'archived_at', 'archived_metadata'],
   world_events: ['sequence', 'world_id', 'save_sequence', 'event_id', 'tick', 'type', 'payload', 'created_at'],
   world_commands: ['sequence', 'world_id', 'command_id', 'player_id', 'input', 'input_digest', 'status', 'result', 'applied_save_sequence', 'submitted_at', 'applied_at'],
   command_api_audit: ['sequence', 'request_id', 'world_id', 'account_id', 'player_id', 'command_id', 'method', 'route', 'status_code', 'error_code', 'created_at'],
+  command_api_audit_receipts: ['request_id', 'sequence', 'input_digest', 'created_at'],
 });
-const SEQUENCED = Object.keys(TABLES).filter(table => table !== 'worlds');
-const JSON_COLUMNS = new Set(['envelope', 'payload', 'input', 'result']);
+const SEQUENCED = ['world_saves', 'world_events', 'world_commands', 'command_api_audit'];
+const JSON_COLUMNS = new Set(['envelope', 'payload', 'input', 'result', 'archived_metadata']);
 const FORMAT = 'phyrex-postgres-snapshot';
 
 function fail(message = 'Invalid database backup') { throw databaseError('INVALID_BACKUP', message); }
@@ -29,7 +30,7 @@ function validateRow(record) {
   const row = record.values;
   if (record.type !== 'row' || !Object.hasOwn(TABLES, record.table) || !row || typeof row !== 'object' || Array.isArray(row)
       || Object.keys(row).length !== columns.length || columns.some(key => !Object.hasOwn(row, key))) fail();
-  if (record.table === 'world_saves') restoreSave(row);
+  if (record.table === 'world_saves' && !validateArchivedSave(row)) restoreSave(row);
   if (record.table === 'world_commands' && digest(row.input) !== row.input_digest) fail('Command input checksum mismatch');
 }
 function sequenceNext(record) {
@@ -113,8 +114,14 @@ function createBackupOperations({ transaction, readSchema, ensureReady, schema }
       }
       if (!seenHeader || !seenFooter || !sequences) fail('Incomplete database backup');
       await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+      const archivedLatest = await client.query(`SELECT 1 FROM ${schema}.worlds w JOIN ${schema}.world_saves s ON s.world_id=w.world_id AND s.sequence=w.latest_sequence WHERE s.envelope IS NULL LIMIT 1`);
+      if (archivedLatest.rows.length) fail('Latest world checkpoint must retain its payload');
+      const collisions = await client.query(`SELECT 1 FROM ${schema}.command_api_audit a JOIN ${schema}.command_api_audit_receipts r ON a.request_id=r.request_id OR a.sequence=r.sequence LIMIT 1`);
+      if (collisions.rows.length) fail('Live and retired audit records collide');
       for (const table of SEQUENCED) {
-        const result = await client.query(`SELECT COALESCE(MAX(sequence),0)::text AS maximum FROM ${schema}.${table}`);
+        const result = await client.query(table === 'command_api_audit'
+          ? `SELECT GREATEST((SELECT COALESCE(MAX(sequence),0) FROM ${schema}.command_api_audit),(SELECT COALESCE(MAX(sequence),0) FROM ${schema}.command_api_audit_receipts))::text AS maximum`
+          : `SELECT COALESCE(MAX(sequence),0)::text AS maximum FROM ${schema}.${table}`);
         const next = sequenceNext(sequences[table]);
         if (next <= BigInt(result.rows[0].maximum)) fail('Sequence high-water mark is below restored data');
         // ALTER RESTART is transactional, unlike setval: a failed import cannot

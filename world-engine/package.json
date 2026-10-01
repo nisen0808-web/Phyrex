@@ -21,6 +21,8 @@
     "viewer": "node viewer/serve-viewer.js",
     "database:postgres": "node demo/database-postgres-cli.js",
     "database:backup": "node demo/database-backup-cli.js",
+    "database:maintain": "node demo/database-maintenance-cli.js",
+    "test:postgres:maintenance": "node tests/integration/postgres-maintenance.js",
     "test:postgres:backup": "node tests/integration/postgres-backup.js",
     "test:postgres": "node tests/integration/postgres-store.js",
     "test:postgres:commands": "node tests/integration/postgres-command-inbox.js",
