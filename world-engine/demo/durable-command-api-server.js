@@ -47,6 +47,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     endpoints: [
       'POST /durable/worlds/:worldId/players/:playerId/commands',
       'GET /durable/worlds/:worldId/commands/:commandId',
+      'GET /durable/worlds/:worldId/admin/audit',
     ],
   }, null, 2));
   return api;

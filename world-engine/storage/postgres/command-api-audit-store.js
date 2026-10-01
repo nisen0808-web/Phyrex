@@ -63,10 +63,14 @@ function createPostgresCommandApiAuditStore(options = {}) {
     });
   }
 
-  async function list(options = {}) {
+  async function list(options = {}, readOptions = {}) {
     const limit = integer(options.limit, 100, 1, 1000, 'audit limit');
     const order = options.order ?? 'desc';
     if (!['asc','desc'].includes(order)) throw databaseError('INVALID_INPUT', 'Audit order must be asc or desc');
+    const expectedWorldRevision = readOptions.expectedWorldRevision === undefined
+      ? null : safeInteger(readOptions.expectedWorldRevision, 'expectedWorldRevision', 1);
+    // Capture the authorization fence before the first await, just like query values.
+    const fencedWorldId = expectedWorldRevision === null ? null : textId(options.worldId, 'audit worldId');
     const conditions = [], values = [];
     const add = (clause, value) => { values.push(value); conditions.push(clause.replace('?', `$${values.length}`)); };
     if (options.worldId !== undefined) add('world_id = ?', textId(options.worldId, 'audit worldId'));
@@ -77,9 +81,19 @@ function createPostgresCommandApiAuditStore(options = {}) {
     if (options.route !== undefined) add('route = ?', textId(options.route, 'audit route', 64));
     if (options.statusCode !== undefined) add('status_code = ?', auditStatus(options.statusCode));
     if (options.afterSequence !== undefined) add('sequence > ?', safeInteger(options.afterSequence, 'audit afterSequence'));
+    if (options.beforeSequence !== undefined) add('sequence < ?', safeInteger(options.beforeSequence, 'audit beforeSequence', 1));
     values.push(limit);
     await ensureReady();
     return transaction(async client => {
+      // Revision and records share one repeatable-read snapshot. A checkpoint
+      // committed before this read transaction invalidates stale authorization.
+      if (expectedWorldRevision !== null) {
+        const world = await client.query(`SELECT revision FROM ${schema}.worlds WHERE world_id=$1 AND latest_sequence IS NOT NULL`, [fencedWorldId]);
+        if (!world.rows.length) throw databaseError('MISSING_WORLD', 'Audit world does not have a committed checkpoint');
+        if (fromSqlInteger(world.rows[0].revision, 'world revision') !== expectedWorldRevision) {
+          throw databaseError('REVISION_CONFLICT', 'World revision changed; re-authorize before reading audit');
+        }
+      }
       const result = await client.query(`SELECT * FROM ${schema}.command_api_audit ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
         ORDER BY sequence ${order.toUpperCase()} LIMIT $${values.length}`, values);
       return result.rows.map(summarizeAudit);
