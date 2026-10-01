@@ -193,7 +193,7 @@ function createSimulationSystemDefinitions() {
     }),
     system('agency.opportunity', 'agency', {
       after: ['agency.desire'],
-      reads: ['entities', 'opportunities', 'goals', 'locations'],
+      reads: ['entities', 'opportunities', 'goals', 'locations', 'processes', 'conflicts', 'governance'],
       writes: ['entities', 'opportunities', 'goals'],
       enabledBy: 'autoOpportunity',
       run: context => {
@@ -383,7 +383,7 @@ function createSimulationSystemDefinitions() {
     }),
     system('civilization.conflict', 'civilization', {
       after: ['civilization.emergence'],
-      reads: ['conflicts', 'entities', 'organizations', 'governance'],
+      reads: ['conflicts', 'entities', 'organizations', 'governance', 'processes', 'opportunities'],
       writes: ['conflicts', 'entities', 'organizations', 'memory'],
       enabledBy: 'autoConflict',
       run: context => {

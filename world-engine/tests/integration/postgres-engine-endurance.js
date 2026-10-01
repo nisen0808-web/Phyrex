@@ -89,6 +89,11 @@ async function main() {
       assert.ok(Object.keys(loaded.world.processes.byId).length <= 100);
       assert.ok(loaded.world.simulation.reports.length <= 200);
       assert.ok(loaded.world.kernel.history.length <= 100);
+      for (const key of ['opportunities', 'conflicts']) {
+        const retention = loaded.world[key].retention;
+        assert.ok(retention.retainedTerminal <= Math.max(retention.limit, retention.protectedTerminal));
+        assert.strictEqual(retention.overLimit, Math.max(0, retention.protectedTerminal - retention.limit));
+      }
       assert.ok(Buffer.byteLength(JSON.stringify(loaded.world)) < 32 * 1024 * 1024);
       pass(`tick ${loaded.tick}: full-state equality, process restart, FIFO commands and ${mode}`);
     }
@@ -96,6 +101,9 @@ async function main() {
     assert.ok(expected.population.deaths > 0, 'endurance must exercise actual deaths');
     assert.ok(Object.values(expected.entities).some(entity => entity.demographics.generation > 1));
     assert.ok(expected.infoFlow && expected.cultureBeliefFlow && expected.natural && expected.ecology);
+    assert.ok(expected.opportunities.retention.removed > 0, 'endurance must actually prune terminal opportunities');
+    assert.ok(expected.conflicts.retention.removed > 0, 'endurance must actually prune resolved conflicts');
+    console.log(`RETENTION ${JSON.stringify({ opportunities: expected.opportunities.retention, conflicts: expected.conflicts.retention })}`);
     const batches = await store.listEvents({ worldId: expected.id, type: 'runtime.batch_committed', limit: 1000 });
     assert.strictEqual(batches.length, 100, 'rollback/lost ack never duplicate a committed batch');
     pass('1000 ticks, 100 atomic checkpoints, 8 terminal commands and active population lifecycle');

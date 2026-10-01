@@ -73,5 +73,9 @@ PR #70 合并提交为 `40ea6898ecb007ad21cba6e1baa5c1d20a865faf`，主线回归
 这段描述分支实现；最终通过情况以对应 head 的实际日志为准。
 完整契约与尚未完成的引擎边界见 `ENGINE_RELIABILITY_GATES.md`。
 
+后续补齐机会和冲突的可选终态容量：稳定清理旧记录、保护活跃引用和治理奖励去重，
+超出预算时报告受保护数量及压力。三个 seed 的 80 tick 回归对照持续行为和保存恢复；
+真实 SQL 长期门禁启用该策略并断言实际发生清理。默认完整历史行为继续保留。
+
 不使用没有统一验收分母的百分比。实现与边界见 POSTGRES_COMMAND_API.md、
 POSTGRES_COMMAND_INBOX.md、POSTGRES_DATABASE.md 和 POSTGRES_DURABLE_RUNTIME.md。

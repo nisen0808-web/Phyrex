@@ -6,7 +6,8 @@ const { nextWorldId } = require('./world-id-engine');
 
 const { createInformation, revealInformation, INFORMATION_TYPES } = require('./information-engine');
 const { createMemory } = require('./memory-engine');
-const { generateGovernanceOpportunities } = require('./opportunity-governance-engine');
+const { generateGovernanceOpportunities, protectsGovernanceClaim } = require('./opportunity-governance-engine');
+const { validateTerminalLimit, pruneTerminalRecords, processReferences, finiteTick } = require('./terminal-retention-engine');
 
 const OPPORTUNITY_STATUS = {
   ACTIVE: 'active',
@@ -82,11 +83,30 @@ function createOpportunity(world, input = {}) {
 
 function processOpportunityTick(world, options = {}) {
   const config = { ...DEFAULT_OPPORTUNITY_OPTIONS, ...(options || {}) };
+  validateTerminalLimit(config.maxTerminalOpportunities, 'maxTerminalOpportunities');
   const generated = generateOpportunities(world, config);
   const claimed = claimOpportunities(world, config);
   const expired = expireOpportunities(world, config);
-  rebuildOpportunityIndexes(world);
+  if (!pruneOpportunities(world, config)) rebuildOpportunityIndexes(world);
   return { generated, claimed, expired, stats: getOpportunityStats(world) };
+}
+
+function pruneOpportunities(world, options = {}) {
+  const limit = options.maxTerminalOpportunities;
+  validateTerminalLimit(limit, 'maxTerminalOpportunities');
+  if (limit === undefined || !world.opportunities) return null;
+  const protectedIds = processReferences(world, 'opportunity');
+  for (const opportunity of Object.values(world.opportunities.byId)) {
+    if (protectsGovernanceClaim(world, opportunity)) protectedIds.add(opportunity.id);
+  }
+  const report = pruneTerminalRecords(world.opportunities, limit, {
+    isTerminal: record => ['claimed', 'expired', 'failed'].includes(record.status),
+    terminalTick: record => finiteTick(record.status === 'claimed' ? record.claimedAt
+      : record.status === 'expired' ? record.expiresAt : record.failedAt, record.createdAt),
+    protectedIds,
+  });
+  rebuildOpportunityIndexes(world, true);
+  return report;
 }
 
 function generateOpportunities(world, options = {}) {
@@ -328,15 +348,18 @@ function getOpportunityStats(world) {
     active: Object.values(state.byId).filter(opp => opp.status === OPPORTUNITY_STATUS.ACTIVE).length,
     claimed: Object.values(state.byId).filter(opp => opp.status === OPPORTUNITY_STATUS.CLAIMED).length,
     governanceGenerated: state.stats.governanceGenerated,
+    ...(state.retention ? { retention: { ...state.retention } } : {}),
     byType: countIndex(state.indexes.byType),
     byStatus: countIndex(state.indexes.byStatus),
   };
 }
 
-function rebuildOpportunityIndexes(world) {
+function rebuildOpportunityIndexes(world, deterministicOrder = false) {
   const state = ensureOpportunityState(world);
   state.indexes = { byType: {}, byStatus: {}, byLocation: {}, byEntity: {} };
-  for (const opportunity of Object.values(state.byId)) indexOpportunity(world, opportunity);
+  const records = Object.values(state.byId);
+  if (deterministicOrder) records.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  for (const opportunity of records) indexOpportunity(world, opportunity);
 }
 
 function indexOpportunity(world, opportunity) {
@@ -389,4 +412,5 @@ module.exports = {
   getOpportunity,
   getOpportunityStats,
   rebuildOpportunityIndexes,
+  pruneOpportunities,
 };

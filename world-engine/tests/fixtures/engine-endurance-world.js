@@ -14,6 +14,8 @@ const SIMULATION = Object.freeze({
   information: { maxInformationItems: 100, maxKnownItemsPerOwner: 20 },
   memory: { maxGlobalMemories: 200, maxMemoriesPerOwner: 20 },
   history: { maxEventsPerEntity: 100, maxTimelineEvents: 500 },
+  opportunity: { maxTerminalOpportunities: 40 },
+  conflict: { maxResolvedConflicts: 30 },
   process: { maxProcesses: 100, maxInactiveProcesses: 30, staleAfterTicks: 120 },
   infoFlow: { eventLimit: 100, maxLinksPerTick: 20 },
   cultureBeliefFlow: { eventLimit: 100, maxLinksPerTick: 20 },
