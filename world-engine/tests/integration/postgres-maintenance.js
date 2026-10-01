@@ -66,7 +66,8 @@ async function main() {
     assert.strictEqual(await retained(world.id), 2);
     await assert.rejects(store.saveWorld(original, { ...seedOptions, metadata: { fixture: 'different' } }), e => e.code === 'WORLD_DB_IDEMPOTENCY_CONFLICT');
     const receipt = await store.getCheckpointRequest(world.id, 'seed');
-    assert.strictEqual(receipt.archived, true); assert.deepStrictEqual(receipt.metadata, seedOptions.metadata);
+    assert.strictEqual(receipt.archived, true);
+    assert.deepStrictEqual(receipt.metadata, (await before.loadWorld(world.id, { revision: 1 })).metadata);
     pass('archived checkpoint receipts acknowledge identical retries and reject changed input without replay');
 
     await assert.rejects(store.compactCheckpoints(world.id, { keep: 1, apply: true, expectedRevision: 5 }), e => e.code === 'WORLD_DB_REVISION_CONFLICT');
