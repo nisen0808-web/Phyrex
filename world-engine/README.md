@@ -6,6 +6,8 @@
 
 第二批优化及完整 tick / 单项测量见 [信息传播与状态复制](KNOWLEDGE_SCALE_PERFORMANCE.md)。
 
+命令容量保护、玩家重连分页与管理员积压诊断见 [队列操作](COMMAND_QUEUE_OPERATIONS.md)，统一运行服务见 [引擎服务](ENGINE_SERVICE.md)。
+
 当前单写世界引擎 v1 的操作入口见 [启动与恢复](ENGINE_QUICKSTART.md)、[npm scripts](NPM_SCRIPTS.md)、[完成清单](ENGINE_COMPLETION.md)、[实测验收](ENGINE_ACCEPTANCE.md)。数据库备份、历史保留、账户与会话管理、认证命令和恢复验收都在 `world-engine/` 中；以下保留世界优先的核心设计说明。
 
 它不是为了服务单独玩家的传统 RPG，也不是一个只在玩家上线时才运转的游戏世界。它的核心目标是创建一个即使没有任何玩家参与，也会持续运行、持续演化、持续产生历史、传奇和小说的文明模拟器。

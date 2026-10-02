@@ -148,6 +148,7 @@ async function handleRequest(req, res, store, auditStore, options, audit) {
   }
   const route = parseCommandRoute(parsed.pathname);
   if (!route) throw apiError(404, 'not_found');
+  if (route.kind === 'submit' && method === 'GET') route.kind = 'history';
   audit.route = route.kind;
   audit.worldId = route.worldId;
   if (route.playerId) audit.playerId = route.playerId;
@@ -174,6 +175,35 @@ async function handleRequest(req, res, store, auditStore, options, audit) {
     return writeJson(res, row.status === 'applied' ? 200 : 202, { ok: true, data: commandView(row) });
   }
 
+  if (route.kind === 'history') {
+    const query = parseCommandHistoryQuery(parsed.searchParams);
+    const page = await withFreshPlayerAuthorization(store, route.worldId, route.playerId, bearerToken(req),
+      options.authorizationAttempts, options.rateLimiters.read, audit, context => {
+        if (typeof store.listCommandReceipts !== 'function') throw apiError(503, 'service_unavailable');
+        return store.listCommandReceipts({ ...query, worldId: route.worldId, playerId: route.playerId }, { expectedWorldRevision: context.revision });
+      });
+    const records = page.records.map(commandReceiptView);
+    return writeJson(res, 200, { ok: true, data: { worldId: route.worldId, playerId: route.playerId, revision: page.revision, records,
+      nextBeforeSequence: records.length === query.limit ? records[records.length - 1].sequence : null } });
+  }
+  if (route.kind === 'queue') {
+    if (method !== 'GET') throw apiError(405, 'method_not_allowed');
+    if (parsed.search) throw apiError(400, 'invalid_query');
+    let checked = false;
+    for (let attempt = 0; attempt < options.authorizationAttempts; attempt++) {
+      const context = await authenticateWorld(store, route.worldId, bearerToken(req), audit);
+      if (!checked) { enforceRateLimit(options.rateLimiters.read.consume(accountRateKey(route.worldId, context.auth.account.id))); checked = true; }
+      requirePermission(isPrivileged(context.auth.account), 'queue_forbidden');
+      if (typeof store.getCommandQueue !== 'function') throw apiError(503, 'service_unavailable');
+      try {
+        const queue = await store.getCommandQueue(route.worldId, { expectedWorldRevision: context.revision });
+        return writeJson(res, 200, { ok: true, data: commandQueueView(queue) });
+      } catch (error) {
+        if (error?.code === 'WORLD_DB_REVISION_CONFLICT' && attempt + 1 < options.authorizationAttempts) continue;
+        throw error;
+      }
+    }
+  }
   if (route.kind === 'status') {
     if (method !== 'GET') throw apiError(405, 'method_not_allowed');
     const token = bearerToken(req);
@@ -233,6 +263,21 @@ async function withFreshAuditAuthorization(store, auditStore, worldId, token, at
   }
 }
 
+function parseCommandHistoryQuery(params) {
+  const query = { limit: 50 }, seen = new Set();
+  for (const [key, value] of params) {
+    if (seen.has(key)) throw apiError(400, 'invalid_command_query');
+    seen.add(key);
+    if (key === 'limit' || key === 'beforeSequence') {
+      const number = Number(value), max = key === 'limit' ? 100 : Number.MAX_SAFE_INTEGER;
+      if (!/^\d+$/.test(value) || !Number.isSafeInteger(number) || number < 1 || number > max) throw apiError(400, 'invalid_command_query');
+      query[key] = number;
+    } else if (key === 'status' && ['pending', 'applied'].includes(value)) query.status = value;
+    else throw apiError(400, 'invalid_command_query');
+  }
+  return query;
+}
+
 function parseAuditQuery(params) {
   const query = { limit: 100 };
   const seen = new Set();
@@ -251,7 +296,7 @@ function parseAuditQuery(params) {
       query[key] = value;
     } else if (key === 'method' && ['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','CONNECT','TRACE'].includes(value)) {
       query.method = value;
-    } else if (key === 'route' && ['submit','status','audit','state','summary','unknown'].includes(value)) {
+    } else if (key === 'route' && ['submit','status','audit','state','summary','history','queue','unknown'].includes(value)) {
       query.route = value;
     } else {
       throw apiError(400, 'invalid_audit_query');
@@ -325,7 +370,7 @@ function parseCommandRoute(pathname) {
   if (segments.length === 5 && segments[0] === 'durable' && segments[1] === 'worlds' && segments[3] === 'commands') {
     return { kind: 'status', worldId: segments[2], commandId: segments[4] };
   }
-  if (segments.length === 5 && segments[0] === 'durable' && segments[1] === 'worlds' && segments[3] === 'admin' && ['audit','summary'].includes(segments[4])) {
+  if (segments.length === 5 && segments[0] === 'durable' && segments[1] === 'worlds' && segments[3] === 'admin' && ['audit','summary','queue'].includes(segments[4])) {
     return { kind: segments[4], worldId: segments[2] };
   }
   return null;
@@ -348,6 +393,15 @@ function readJsonBody(req, maxBodyBytes) {
     req.on('error', error => { if (!settled) { settled = true; reject(error); } });
   });
 }
+function commandReceiptView(row) {
+  return { id: row.id, worldId: row.worldId, playerId: row.playerId, sequence: row.sequence,
+    status: row.status, submittedAt: row.submittedAt || null, appliedAt: row.appliedAt || null };
+}
+function commandQueueView(row) {
+  return { worldId: row.worldId, revision: row.revision, pending: row.pending, pendingIsLowerBound: row.pendingIsLowerBound,
+    oldestPendingSequence: row.oldestPendingSequence, worldCapacityAvailable: row.worldCapacityAvailable,
+    limits: { maxPendingCommands: row.limits.maxPendingCommands, maxPendingPerPlayer: row.limits.maxPendingPerPlayer } };
+}
 function commandView(row) { return { id: row.id, worldId: row.worldId, playerId: row.playerId, sequence: row.sequence, status: row.status,
   result: row.status === 'applied' ? row.result : null, submittedAt: row.submittedAt || null, appliedAt: row.appliedAt || null, idempotent: row.idempotent === true }; }
 function auditView(row) {
@@ -366,6 +420,7 @@ function mapError(error) {
   if (Number.isInteger(error?.statusCode)) return { status: error.statusCode, code: safeApiCode(error.apiCode || error.message), ...(error.retryAfterMs !== undefined ? { retryAfterMs: error.retryAfterMs } : {}) };
   const code = String(error?.code || '');
   if (['WORLD_DB_INVALID_INPUT','WORLD_DB_INVALID_CONFIG'].includes(code)) return { status: 400, code: 'invalid_command' };
+  if (['WORLD_DB_QUEUE_FULL','WORLD_DB_PLAYER_QUEUE_FULL'].includes(code)) return { status: 429, code: code === 'WORLD_DB_QUEUE_FULL' ? 'command_queue_full' : 'player_queue_full', retryAfterMs: 1000 };
   if (code === 'WORLD_DB_PAYLOAD_TOO_LARGE') return { status: 413, code: 'command_too_large' };
   if (code === 'WORLD_DB_MISSING_WORLD') return { status: 404, code: 'world_not_found' };
   if (['WORLD_DB_IDEMPOTENCY_CONFLICT','WORLD_DB_REVISION_CONFLICT','WORLD_DB_COMMAND_CONFLICT'].includes(code)) return { status: 409, code: code === 'WORLD_DB_IDEMPOTENCY_CONFLICT' ? 'command_id_conflict' : 'world_revision_changed' };
@@ -373,7 +428,7 @@ function mapError(error) {
   return { status: 500, code: 'internal_error' };
 }
 function safeApiCode(value) {
-  const allowed = new Set(['request_aborted','invalid_query','summary_forbidden','auth_required','player_forbidden','command_forbidden','audit_forbidden','invalid_audit_query','service_unavailable','player_not_found','world_not_found','command_not_found','not_found','method_not_allowed','json_required','invalid_command','command_id_required','command_type_required','request_body_too_large','json_body_required','invalid_json','invalid_path','world_revision_changed','transactional_store_required','audit_store_required','rate_limited']);
+  const allowed = new Set(['invalid_command_query','queue_forbidden','request_aborted','invalid_query','summary_forbidden','auth_required','player_forbidden','command_forbidden','audit_forbidden','invalid_audit_query','service_unavailable','player_not_found','world_not_found','command_not_found','not_found','method_not_allowed','json_required','invalid_command','command_id_required','command_type_required','request_body_too_large','json_body_required','invalid_json','invalid_path','world_revision_changed','transactional_store_required','audit_store_required','rate_limited']);
   return allowed.has(value) ? value : 'internal_error';
 }
 function setSafeHeaders(res) { res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('Referrer-Policy','no-referrer'); }

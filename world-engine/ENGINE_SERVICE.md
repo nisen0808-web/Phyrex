@@ -24,10 +24,12 @@ npm run engine:serve -- --world-id engine-world --host 127.0.0.1 --port 8791
 | 方法与路径（前缀 `/durable/worlds/:worldId`） | 权限与结果 |
 |---|---|
 | `POST /players/:playerId/commands` | 已绑定玩家或 GM/Admin；命令 ID 幂等；运行器不健康时拒绝新提交，返回 503 |
+| `GET /players/:playerId/commands` | 已绑定玩家或 GM/Admin；固定字段的命令记录分页，最大 100 条 |
+| `GET /admin/queue` | GM/Admin；有界积压诊断、容量和最早 pending sequence |
 | `GET /commands/:commandId` | 命令所属玩家账户或 GM/Admin；读取 pending/applied 和结果 |
 | `GET /players/:playerId/state` | 已绑定玩家或 GM/Admin；玩家基本字段、当前受控角色的固定数值字段、当前地点 ID/名称 |
 | `GET /admin/summary` | GM/Admin；tick/revision，实体总数、存活实体数、地点、组织、玩家数量 |
-| `GET /admin/audit` | GM/Admin；白名单过滤、最多 1000 条、sequence 游标；route 过滤新增 `state`、`summary` |
+| `GET /admin/audit` | GM/Admin；白名单过滤、最多 1000 条、sequence 游标；route 过滤支持 `state`、`summary`、`history`、`queue` |
 
 `state`、`summary` 不接受查询参数，不返回任意 meta、账户/会话、token hash、私有记忆、其他角色清单或完整世界存档。角色视图数值字段固定为 health/maxHealth/energy/maxEnergy/power/defense/speed/intelligence/social，以及 currency/food；没有角色时 character 为 null。这是最小观察接口，不是完整游戏客户端的地图、背包和叙事页面。新增业务路由沿用独立审计事务，失败不改变已完成命令；不需要改变 Migration 1–4。
 
@@ -53,3 +55,5 @@ Ctrl+C / SIGTERM 先停止 HTTP 接收，等待已接受请求和审计，再要
 ## 验收
 
 自动 discovery 包含状态权限/脱敏/读限流、上传中断、故障停收、端口冲突清理、真实 Worker 隔离/心跳/超时/崩溃测试。`test:postgres:service` 在 Node 20/22 + PostgreSQL 18 的 Linux CI 必跑，以真实子进程验证启动、命令提交、SQL 状态读取、SIGTERM、重启幂等、数据库故障、revision 冲突、审计过滤和日志脱敏。Windows 没有等价的 POSIX SIGTERM，专项会明确报错而不假装跳过成功；本地通用回归照常运行。CI 保留原有全部门禁、pipefail 与实际完成标记。
+
+命令队列容量、重连分页和积压诊断的完整契约见 [COMMAND_QUEUE_OPERATIONS.md](COMMAND_QUEUE_OPERATIONS.md)。满队列返回 429，不影响健康运行器继续消费；它与故障停收的 503 是不同情况。

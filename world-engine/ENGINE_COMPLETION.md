@@ -29,3 +29,7 @@ v1 为 PostgreSQL 单写世界运行器；规模由世界实体数量、配置�
 ## 服务闭环收尾
 
 在已有 v1 功能清单上增加统一 `engine:serve` 服务、独立演化 Worker、单世界绑定、最小玩家/管理员状态视图、健康检查与故障停收、可报告失败的关机和启动清理。实现及边界见 ENGINE_SERVICE.md；新专项加入原 PostgreSQL CI，必须和既有 14 个作业一同通过才算最终交付。包内 verification.json 对应当前交付提交；上文 e99cb1c 是历史功能验收，不冒充本次新增功能的证明。
+
+## 命令队列与恢复查询
+
+新增事务内世界/玩家 pending 容量，满队列仍按命令身份返回原记录；补齐命令记录分页和管理员有界积压诊断。Migration 1–4 不变，权限读取仍经过 revision fence。新增真实 SQL 并发与恢复专项，详见 COMMAND_QUEUE_OPERATIONS.md，最终验收按交付提交逐份核验。

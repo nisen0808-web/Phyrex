@@ -75,6 +75,8 @@ Invoke-RestMethod -Uri http://127.0.0.1:8791/durable/worlds/engine-world/command
 Invoke-RestMethod -Uri 'http://127.0.0.1:8791/durable/worlds/engine-world/admin/audit?limit=20' -Headers $engineHeaders
 Invoke-RestMethod -Uri http://127.0.0.1:8791/durable/worlds/engine-world/players/observer/state -Headers $engineHeaders
 Invoke-RestMethod -Uri http://127.0.0.1:8791/durable/worlds/engine-world/admin/summary -Headers $engineHeaders
+Invoke-RestMethod -Uri 'http://127.0.0.1:8791/durable/worlds/engine-world/players/observer/commands?limit=20' -Headers $engineHeaders
+Invoke-RestMethod -Uri http://127.0.0.1:8791/durable/worlds/engine-world/admin/queue -Headers $engineHeaders
 ```
 
 提交先返回 pending，运行器提交后轮询返回 applied；同一 ID 同一内容重试不会重放，改变内容会冲突。普通 player 只操作已绑定玩家，GM/Admin 可以查询审计。限流按本进程来源/账户执行；部署多 API 实例时需外部统一限流。HTTP 审计异步写入，失败独立计数；正常停机等待已经响应的请求完成审计写入。它不是与命令提交同事务的强制审计账本。

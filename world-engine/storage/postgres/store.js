@@ -2,6 +2,7 @@
 const crypto = require('crypto');
 const { normalizePostgresConfig, safePostgresConfig, databaseError, integer } = require('./config');
 const { MIGRATIONS, checkMigrationHistory } = require('./migrations');
+const { createCommandQueueOperations, readPendingCapacity } = require('./command-queue');
 const { createBackupOperations } = require('./backup');
 const { createMaintenanceOperations } = require('./maintenance');
 const { textId, safeInteger, fromSqlInteger, captureCheckpoint, captureEvent, captureInboxCommand, digest,
@@ -172,7 +173,7 @@ function createPostgresDatabaseStore(options = {}) {
       ? null : safeInteger(commandOptions.expectedWorldRevision, 'expectedWorldRevision', 1);
     await ensureReady();
     return transaction(async client => {
-      const world = await client.query(`SELECT revision, latest_sequence FROM ${schema}.worlds WHERE world_id=$1 FOR SHARE`, [command.worldId]);
+      const world = await client.query(`SELECT revision, latest_sequence FROM ${schema}.worlds WHERE world_id=$1 FOR UPDATE`, [command.worldId]);
       if (!world.rows.length || world.rows[0].latest_sequence === null) throw databaseError('MISSING_WORLD', 'Command world does not have a committed checkpoint');
       const revision = fromSqlInteger(world.rows[0].revision, 'world revision');
       if (expectedWorldRevision !== null && revision !== expectedWorldRevision) {
@@ -180,6 +181,19 @@ function createPostgresDatabaseStore(options = {}) {
         error.expectedRevision = expectedWorldRevision; error.actualRevision = revision;
         throw error;
       }
+      // Serialize admission with other enqueues and checkpoint application.
+      // Check identity before capacity so a full queue still acknowledges retries.
+      const found = await client.query(`SELECT * FROM ${schema}.world_commands WHERE world_id=$1 AND command_id=$2`, [command.worldId, command.id]);
+      if (found.rows.length) {
+        const previous = summarizeCommand(found.rows[0]);
+        if (previous.playerId !== command.playerId || previous.inputDigest !== command.inputDigest) {
+          throw databaseError('IDEMPOTENCY_CONFLICT', 'Command ID was already used for different input');
+        }
+        return { ...previous, idempotent: true };
+      }
+      const capacity = await readPendingCapacity(client, schema, command.worldId, command.playerId, config.maxPendingCommands);
+      if (capacity.pending >= config.maxPendingCommands) throw databaseError('QUEUE_FULL', 'Pending command capacity reached');
+      if (capacity.playerPending >= config.maxPendingPerPlayer) throw databaseError('PLAYER_QUEUE_FULL', 'Player pending command capacity reached');
       const inserted = await client.query(`INSERT INTO ${schema}.world_commands
         (world_id,command_id,player_id,input,input_digest) VALUES ($1,$2,$3,$4::jsonb,$5)
         ON CONFLICT (world_id,command_id) DO NOTHING RETURNING *`,
@@ -292,6 +306,7 @@ function createPostgresDatabaseStore(options = {}) {
     return closePromise;
   }
   return Object.freeze({ version: 2, provider: 'postgres', config: Object.freeze(safePostgresConfig(config)),
+    ...createCommandQueueOperations({ transaction, ensureReady, schema, config }),
     ...createBackupOperations({ transaction, readSchema, ensureReady, schema }),
     ...createMaintenanceOperations({ transaction, ensureReady, schema }),
     getCheckpointRequest,

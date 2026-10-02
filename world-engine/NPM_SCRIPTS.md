@@ -45,6 +45,7 @@
 | `npm --prefix world-engine run test:postgres:command-audit-query` | `node tests/integration/postgres-command-audit-query.js` |
 | `npm --prefix world-engine run engine:serve` | `node demo/engine-serve-cli.js` |
 | `npm --prefix world-engine run test:postgres:service` | `node tests/integration/postgres-engine-service.js` |
+| `npm --prefix world-engine run test:postgres:command-queue` | `node tests/integration/postgres-command-queue.js` |
 
 ## 根目录兼容入口
 
@@ -78,3 +79,5 @@
 - PostgreSQL 的运行命令只读取 WORLD_ENGINE_DATABASE_URL / WORLD_ENGINE_DB_SCHEMA；连接 URL 不应放进 CLI 参数。备份和 secrets 目录已被 Git 忽略。
 
 - test:postgres:service 是真实 SIGTERM 子进程专项，要求 Linux；Windows 明确报错，CI 的 Node 20/22 必须执行。engine:serve 使用说明见 ENGINE_SERVICE.md。
+
+- test:postgres:command-queue 验证事务容量、分页、权限撤销与进程恢复；Node 20/22 的 PostgreSQL CI 均执行 10 组场景。

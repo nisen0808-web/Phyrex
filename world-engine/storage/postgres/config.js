@@ -46,6 +46,8 @@ function normalizePostgresConfig(input = {}, env = process.env) {
     idleTimeoutMillis: integer(input.idleTimeoutMillis, 30000, 1, 600000, 'idle timeout'),
     statementTimeoutMillis: integer(input.statementTimeoutMillis, 15000, 1, 300000, 'statement timeout'),
     lockTimeoutMillis: integer(input.lockTimeoutMillis, 5000, 1, 120000, 'lock timeout'),
+    maxPendingCommands: integer(input.maxPendingCommands ?? env.WORLD_ENGINE_COMMAND_QUEUE_MAX_PENDING, 10000, 1, 100000, 'pending command capacity'),
+    maxPendingPerPlayer: integer(input.maxPendingPerPlayer ?? env.WORLD_ENGINE_COMMAND_QUEUE_MAX_PLAYER_PENDING, 1000, 1, 100000, 'player pending command capacity'),
     maxEnvelopeBytes: integer(input.maxEnvelopeBytes, 32 * 1024 * 1024, 1024, 128 * 1024 * 1024, 'checkpoint size'),
   };
 }
@@ -53,6 +55,6 @@ function safePostgresConfig(config) {
   return { provider: 'postgres', schema: config.schema, sslMode: config.sslMode,
     maxConnections: config.max, connectionTimeoutMillis: config.connectionTimeoutMillis,
     statementTimeoutMillis: config.statementTimeoutMillis, lockTimeoutMillis: config.lockTimeoutMillis,
-    maxEnvelopeBytes: config.maxEnvelopeBytes };
+    maxEnvelopeBytes: config.maxEnvelopeBytes, maxPendingCommands: config.maxPendingCommands, maxPendingPerPlayer: config.maxPendingPerPlayer };
 }
 module.exports = { normalizePostgresConfig, safePostgresConfig, databaseError, integer };
