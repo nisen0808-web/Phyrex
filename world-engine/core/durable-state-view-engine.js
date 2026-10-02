@@ -1,4 +1,5 @@
 'use strict';
+const { getPlayerActionRules, stateOf } = require('./player-action-rules-engine');
 
 // Explicit DTOs: adding a field to a world/entity must not expose it over HTTP.
 function text(value) { return typeof value === 'string' ? value.slice(0, 256) : null; }
@@ -15,7 +16,9 @@ function playerStateView(world, revision, playerId) {
     player: { id: player.id, name: text(player.name), status: text(player.status), controlMode: text(player.controlMode) },
     character: entity ? { id: entity.id, name: text(entity.name), status: text(entity.status),
       stats: numbers(entity.stats, ['health', 'maxHealth', 'energy', 'maxEnergy', 'power', 'defense', 'speed', 'intelligence', 'social']),
-      resources: numbers(entity.resources, ['currency', 'food']) } : null,
+      resources: numbers(entity.resources, ['currency', 'food']),
+      actionState: stateOf(entity) } : null,
+    actionRules: getPlayerActionRules(world),
     location: location ? { id: location.id, name: text(location.name) } : null,
   };
 }

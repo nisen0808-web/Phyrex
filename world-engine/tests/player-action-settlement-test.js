@@ -15,8 +15,8 @@ function fixture() {
 const submit = (world, id, type, payload = {}) => executePlayerCommand(world, 'one', { id, type, payload }, { publicPlayer: true });
 {
   const world = fixture();
-  submit(world, 'earn', 'work', { amount: 7 });
   submit(world, 'move', 'move', { locationId: 'island' });
+  submit(world, 'earn', 'work', { amount: 7 });
   const restored = detachedJson(world);
   advanceWorld(world); advanceWorld(restored);
   assert.strictEqual(digest(world), digest(restored));

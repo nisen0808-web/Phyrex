@@ -1,6 +1,6 @@
 # 世界引擎 v1 启动与恢复
 
-当前运行器使用 v3 玩家命令规则。已有 v1/v2 世界需要停止旧写入器并显式升级，步骤与命令字段见 [PLAYER_COMMAND_CONTRACT.md](PLAYER_COMMAND_CONTRACT.md)。
+当前运行器使用 v4 服务端行动规则。已有 v1/v2/v3 世界需要停止旧写入器并显式升级，步骤与行动配置见 [PLAYER_ACTION_RULES.md](PLAYER_ACTION_RULES.md)。
 需要 Node.js 20 或 22、npm、PostgreSQL 18。命令从仓库根目录执行。Windows 使用 `npm.cmd`；macOS/Linux 可以直接使用 `npm`。`npm --prefix world-engine run ...` 启动的脚本工作目录是 `world-engine/`，因此脚本参数 `output/...` 指向 `world-engine/output/...`。
 
 ## 准备数据库

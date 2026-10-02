@@ -82,3 +82,5 @@
 - test:postgres:service 是真实 SIGTERM 子进程专项，要求 Linux；Windows 明确报错，CI 的 Node 20/22 必须执行。engine:serve 使用说明见 ENGINE_SERVICE.md。
 
 - test:postgres:command-queue 验证事务容量、分页、权限撤销与进程恢复；Node 20/22 的 PostgreSQL CI 均执行 10 组场景。
+
+- `npm --prefix world-engine run test:postgres:player-actions`：10 组真实 SQL 的服务端行动、训练成长、回滚、丢确认与显式 v3→v4 升级。配置与使用见 PLAYER_ACTION_RULES.md。

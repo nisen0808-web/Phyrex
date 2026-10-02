@@ -69,6 +69,7 @@ function enqueueAction(world, input) {
     ...input,
     id: input.id || nextWorldId(world, 'action', 'action'),
   });
+  if (input.playerActionRuleVersion !== undefined) action.playerActionRuleVersion = input.playerActionRuleVersion;
   world.actionQueue.push(action);
   world.actionQueue.sort((a, b) => {
     const priority = Number(b.priority || 0) - Number(a.priority || 0);

@@ -42,7 +42,7 @@ for (const [type, payload] of malformed) {
 {
   const world = fixture();
   const currency = world.entities.hero.resources.currency;
-  assert.strictEqual(run(world, 'work', { amount: 0, energyCost: 0 }).command.status, 'accepted');
+  assert.strictEqual(run(world, 'work', { amount: 0, energyCost: 0 }).command.status, 'rejected');
   advanceWorld(world);
   assert.strictEqual(world.entities.hero.resources.currency, currency);
   assert.strictEqual(world.entities.hero.stats.energy, 100);
@@ -71,10 +71,12 @@ for (const [type, payload] of malformed) {
 {
   const world = fixture();
   world.entities.hero.goals = Array.from({ length: 100 }, () => ({ status: 'active' }));
-  assert.strictEqual(run(world, 'train').result.reason, 'goal_limit');
+  assert.strictEqual(run(world, 'set_goal').result.reason, 'goal_limit');
   assert.strictEqual(world.actionQueue.length, 0);
   world.entities.hero.goals = [];
-  for (let i = 0; i < 100; i++) assert.strictEqual(run(world, 'rest').command.status, 'accepted');
+  assert.strictEqual(run(world, 'rest').command.status, 'accepted');
+  assert.strictEqual(run(world, 'rest').result.reason, 'character_busy');
+  for (let i = 1; i < 100; i++) world.actionQueue.push({ actorId: 'hero', type: 'rest' });
   assert.strictEqual(run(world, 'rest').result.reason, 'action_limit');
   assert.strictEqual(world.actionQueue.length, 100);
 }

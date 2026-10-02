@@ -1,6 +1,7 @@
 'use strict';
 
 const { nextWorldId } = require('./world-id-engine');
+const { applyPlayerRuleAction } = require('./player-action-rules-engine');
 
 const { clamp, createEvent } = require('./schema');
 
@@ -24,6 +25,8 @@ function applyActionTick(world, action, options = {}) {
   if (actor && actor.status !== 'alive') {
     return fail(action, 'actor_not_alive');
   }
+
+  if (action.playerActionRuleVersion !== undefined) return applyPlayerRuleAction(world, action, actor, options);
 
   const handler = (options.actionHandlers && Object.hasOwn(options.actionHandlers, action.type) && options.actionHandlers[action.type])
     || (Object.hasOwn(DEFAULT_ACTION_HANDLERS, action.type) && DEFAULT_ACTION_HANDLERS[action.type]);

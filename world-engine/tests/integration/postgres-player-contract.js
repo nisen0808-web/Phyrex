@@ -138,7 +138,7 @@ async function main() {
     assert.strictEqual((await store.getWorldHead('upgrade')).revision, 1);
     await cli('upgrade', ['--upgrade-command-profile']);
     const upgraded = await store.loadWorld('upgrade');
-    assert.strictEqual(upgraded.metadata.durableRuntime.version, 3);
+    assert.strictEqual(upgraded.metadata.durableRuntime.version, 4);
     assert.strictEqual(upgraded.metadata.durableRuntime.upgradedFrom, oldHash);
     assert.strictEqual(upgraded.metadata.durableRuntime.commandProfile, COMMAND_PROFILE);
     assert.strictEqual((await store.getCommand('upgrade', 'legacy-bad')).result.status, 'rejected');
@@ -147,7 +147,7 @@ async function main() {
     pass('old command profiles require explicit upgrade, preserve provenance and cannot authorize unrelated config changes');
 
     await seed('bounded', world => { for (let i = 0; i < 100; i++) assignGoal(world, 'character', { id: `goal-${i}`, type: 'gain_power', priority: 1, payload: { power: 1000000 } }); });
-    await enqueue('bounded', 'too-many-goals', { type: 'train' });
+    await enqueue('bounded', 'too-many-goals', { type: 'set_goal' });
     await enqueue('bounded', 'still-works', { type: 'wait' });
     const bounded = await create('bounded'); await bounded.step();
     assert.strictEqual((await store.getCommand('bounded', 'too-many-goals')).result.outcome.reason, 'goal_limit');

@@ -58,3 +58,5 @@ Ctrl+C / SIGTERM 先停止 HTTP 接收，等待已接受请求和审计，再要
 自动 discovery 包含状态权限/脱敏/读限流、上传中断、故障停收、端口冲突清理、真实 Worker 隔离/心跳/超时/崩溃测试。`test:postgres:service` 在 Node 20/22 + PostgreSQL 18 的 Linux CI 必跑，以真实子进程验证启动、命令提交、SQL 状态读取、SIGTERM、重启幂等、数据库故障、revision 冲突、审计过滤和日志脱敏。Windows 没有等价的 POSIX SIGTERM，专项会明确报错而不假装跳过成功；本地通用回归照常运行。CI 保留原有全部门禁、pipefail 与实际完成标记。
 
 命令队列容量、重连分页和积压诊断的完整契约见 [COMMAND_QUEUE_OPERATIONS.md](COMMAND_QUEUE_OPERATIONS.md)。满队列返回 429，不影响健康运行器继续消费；它与故障停收的 503 是不同情况。
+
+玩家状态视图还返回 `actionRules` 和 `character.actionState`（规则版本、最近行动 tick、累计经验）。收益与体力规则、v4 存档升级见 PLAYER_ACTION_RULES.md。

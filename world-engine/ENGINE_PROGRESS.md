@@ -1,6 +1,8 @@
 # Engine Development Progress
 
-当前开发层：玩家命令领域校验、角色归属与生命周期完整性、动作真实结果回写、显式规则升级。新增三个 discovery 脚本，回归分母 118；新增 Node 20/22 真实 SQL 玩家契约专项 10 组。实现与升级步骤见 PLAYER_COMMAND_CONTRACT.md，最终通过情况以本提交 CI 与交付 verification.json 为准。
+当前开发层：服务端工作/采集/训练成长/休息/战斗规则、体力与单 tick 行动预算、拥有角色的自主行为接入、规则配置与安全读取、runtime v4 显式升级。新增三个 discovery 脚本，回归分母 121；真实 SQL 行动规则专项 10 组。实现见 PLAYER_ACTION_RULES.md，最终验收按当前交付提交的原始日志。
+
+上一层 ef9c24a：玩家命令领域校验、角色归属与生命周期完整性、动作真实结果回写、显式规则升级。新增三个 discovery 脚本，回归分母 118；新增 Node 20/22 真实 SQL 玩家契约专项 10 组。实现与升级步骤见 PLAYER_COMMAND_CONTRACT.md，最终通过情况以本提交 CI 与交付 verification.json 为准。
 
 上一层 d86715c：事务内世界/玩家 pending 容量、满队列幂等、玩家命令记录分页与管理员积压诊断。新增两个 discovery 脚本，回归分母为 115；增加 Node 20/22 真实 SQL 的 10 组队列专项。实现边界见 COMMAND_QUEUE_OPERATIONS.md，当前提交的最终通过情况以对应 CI 日志和交付 verification.json 为准。
 

@@ -9,11 +9,12 @@ const {
 } = require('../core/culture-belief-flow-runtime-engine');
 const { executePlayerCommand } = require('../core/command-engine');
 const { identifier } = require('../core/player-command-contract');
+const { getPlayerActionRules } = require('../core/player-action-rules-engine');
 const { repairLoadedWorld } = require('../core/persistence-engine');
 const { canonicalWorldCopy, canonicalizeWorldInPlace } = require('./canonical-world');
 
-const DURABLE_RUNTIME_VERSION = 3;
-const COMMAND_PROFILE = 'postgres-player-contract-v2';
+const DURABLE_RUNTIME_VERSION = 4;
+const COMMAND_PROFILE = 'postgres-player-rules-v3';
 const MAX_COMMANDS_PER_BATCH = 100;
 
 function runtimeError(code) {
@@ -87,9 +88,8 @@ async function createDurableWorldRuntime(options = {}) {
   if (options.upgradeCommandProfile !== undefined && typeof options.upgradeCommandProfile !== 'boolean') throw runtimeError('INVALID_UPGRADE_OPTION');
   const legacyConfigHash = digest({ version: 1, profile, simulation });
   const previousConfigHash = digest({ version: 2, profile, simulation, commands: { profile: 'postgres-inbox-v1', maxPerBatch: MAX_COMMANDS_PER_BATCH } });
-  let upgradedFrom = null;
-  const configHash = digest({ version: DURABLE_RUNTIME_VERSION, profile, simulation,
-    commands: { profile: COMMAND_PROFILE, maxPerBatch: MAX_COMMANDS_PER_BATCH } });
+  const previousPlayerHash = digest({ version: 3, profile, simulation, commands: { profile: 'postgres-player-contract-v2', maxPerBatch: MAX_COMMANDS_PER_BATCH } });
+  let upgradedFrom = null, configHash, playerRules;
   const ownsStore = !options.store || options.closeStore === true;
   const store = options.store || createPostgresDatabaseStore({ ...(options.database || {}), env: options.env });
   let committed, revision;
@@ -104,11 +104,13 @@ async function createDurableWorldRuntime(options = {}) {
     }
     revision = safeInteger(loaded.revision, 'loaded revision', 1);
     safeInteger(loaded.world.tick, 'loaded tick');
+    playerRules = freezeJson(getPlayerActionRules(loaded.world));
+    configHash = digest({ version: DURABLE_RUNTIME_VERSION, profile, simulation, commands: { profile: COMMAND_PROFILE, maxPerBatch: MAX_COMMANDS_PER_BATCH, rules: playerRules } });
     const previousConfig = loaded.metadata?.durableRuntime?.configHash;
     const priorUpgrade = loaded.metadata?.durableRuntime?.upgradedFrom;
     if (previousConfig === configHash && /^[0-9a-f]{64}$/.test(priorUpgrade || '')) upgradedFrom = priorUpgrade;
     if (previousConfig && previousConfig !== configHash) {
-      if (![legacyConfigHash, previousConfigHash].includes(previousConfig)) throw runtimeError('CONFIG_MISMATCH');
+      if (![legacyConfigHash, previousConfigHash, previousPlayerHash].includes(previousConfig)) throw runtimeError('CONFIG_MISMATCH');
       if (!options.upgradeCommandProfile) throw runtimeError('COMMAND_PROFILE_UPGRADE_REQUIRED');
       upgradedFrom = previousConfig;
     }
@@ -224,6 +226,7 @@ async function createDurableWorldRuntime(options = {}) {
             throw error;
           }
           try {
+            if (digest(getPlayerActionRules(candidate)) !== digest(playerRules)) throw runtimeError('CONFIG_MISMATCH');
             const commandResults = executeDurableCommands(candidate, commands);
             // Capture settlements each tick before later history retention can
             // discard them in a long batch. Nothing is published before SQL commit.
@@ -239,6 +242,7 @@ async function createDurableWorldRuntime(options = {}) {
             await advance(candidate, amount, detachedJson(simulation), commandResults.length ? captureResults : undefined);
             if (candidate.id !== worldId || candidate.tick !== committed.tick + amount) throw runtimeError('INVALID_ADVANCEMENT');
             captureResults(candidate);
+            if (digest(getPlayerActionRules(candidate)) !== digest(playerRules)) throw runtimeError('CONFIG_MISMATCH');
             repairLoadedWorld(candidate);
             const world = freezeJson(canonicalWorldCopy(candidate));
             const frozenCommandResults = freezeJson(detachedJson(commandResults));

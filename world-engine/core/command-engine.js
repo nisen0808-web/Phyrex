@@ -1,6 +1,7 @@
 'use strict';
 
 const { nextWorldId } = require('./world-id-engine');
+const { PRIORITY, RULE_VERSION, preparePlayerAction, getPlayerActionRules } = require('./player-action-rules-engine');
 const { validateCommand, finiteData, record, identifier, own, MAX_ACTIVE_PLAYER_GOALS, MAX_PENDING_PLAYER_ACTIONS } = require('./player-command-contract');
 
 const { enqueueAction, recordMemory } = require('./world-engine');
@@ -121,7 +122,7 @@ function dispatchCommand(world, command, options = {}) {
   if (entity.status !== 'alive') return reject(command, 'active_character_not_alive');
   if (!player.controlledEntityIds.includes(entity.id) || own(world.players.byEntityId, entity.id) !== player.id || entity.meta?.playerId !== player.id) return reject(command, 'character_not_owned');
   if (options.publicPlayer && world.actionQueue.filter(a => a.actorId === entity.id).length >= MAX_PENDING_PLAYER_ACTIONS) return reject(command, 'action_limit');
-  if (['train', 'set_goal'].includes(type) && options.publicPlayer && (entity.goals || []).filter(g => g.status === 'active').length >= MAX_ACTIVE_PLAYER_GOALS) return reject(command, 'goal_limit');
+  if (type === 'set_goal' && options.publicPlayer && (entity.goals || []).filter(g => g.status === 'active').length >= MAX_ACTIVE_PLAYER_GOALS) return reject(command, 'goal_limit');
   if (['interact', 'transfer', 'damage'].includes(type)) {
     const target = own(world.entities, command.payload.targetId);
     if (!target) return reject(command, 'missing_target');
@@ -129,6 +130,16 @@ function dispatchCommand(world, command, options = {}) {
     if (options.publicPlayer && target.locationId !== entity.locationId) return reject(command, 'target_not_at_location');
   }
   if (type === 'gather' && !own(world.locations, entity.locationId)) return reject(command, 'missing_location');
+  if (options.publicPlayer && Object.hasOwn(PRIORITY, type)) {
+    if (world.actionQueue.some(action => action.actorId === entity.id && action.playerActionRuleVersion)) return reject(command, 'character_busy');
+    const rules = getPlayerActionRules(world), prepared = preparePlayerAction(world, entity, type, command.payload, rules);
+    if (prepared.reason) return reject(command, prepared.reason);
+    world.playerActionRules = rules;
+    const action = enqueueAction(world, prepared.action);
+    action.playerActionRuleVersion = RULE_VERSION;
+    return accepted(command, action, options);
+  }
+
 
   if (type === COMMAND_TYPES.MOVE) {
     const locationId = command.payload.locationId;

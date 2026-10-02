@@ -249,7 +249,8 @@ function chooseActiveGoal(world, entityId) {
   if (!entity) throw new Error(`Missing entity ${entityId}`);
   ensureGoalState(entity);
   evaluateGoals(world, entityId);
-  return entity.goals.filter(goal => goal.status === GOAL_STATUS.ACTIVE).sort((a, b) => scoreGoal(entity, b) - scoreGoal(entity, a))[0] || null;
+  return entity.goals.filter(goal => goal.status === GOAL_STATUS.ACTIVE
+    && !(entity.meta?.playerId && goal.type === 'survive' && entity.stats.health >= entity.stats.maxHealth * 0.8 && Number(entity.resources.food || 0) >= 5)).sort((a, b) => scoreGoal(entity, b) - scoreGoal(entity, a))[0] || null;
 }
 
 function scoreGoal(entity, goal) {
@@ -298,9 +299,24 @@ function planAllEntityActions(world, options = {}) {
   const plans = [];
   const entities = Object.values(world.entities).filter(entity => entity.status === 'alive');
   for (const entity of entities) {
+    if (entity.meta?.playerId && world.actionQueue.some(a => a.actorId === entity.id && a.playerActionRuleVersion)) continue;
     seedDefaultGoals(world, entity.id, options.defaultGoalOptions || {});
     const plan = planEntityAction(world, entity.id);
     if (!plan) continue;
+    if (entity.meta?.playerId) {
+      const { preparePlayerAction, RULE_VERSION } = require('./player-action-rules-engine');
+      const owner = world.players?.byId?.[entity.meta.playerId];
+      if (!owner?.controlledEntityIds?.includes(entity.id) || world.players.byEntityId[entity.id] !== owner.id) continue;
+      const intent = plan.action, p = intent.payload || {};
+      const type = intent.type === 'work' && p.resource === 'training' ? 'train' : intent.type;
+      const payload = { ...(intent.targetId ? { targetId: intent.targetId } : {}),
+        ...(type === 'move' ? { locationId: p.to } : {}),
+        ...(['work', 'gather', 'transfer'].includes(type) && p.resource ? { resource: p.resource } : {}) };
+      let prepared = preparePlayerAction(world, entity, type, payload);
+      if (prepared.reason === 'insufficient_energy') prepared = preparePlayerAction(world, entity, 'rest');
+      if (prepared.reason) continue;
+      plan.action = { ...prepared.action, playerActionRuleVersion: RULE_VERSION };
+    }
     plans.push({ entityId: entity.id, ...plan });
   }
   return plans;

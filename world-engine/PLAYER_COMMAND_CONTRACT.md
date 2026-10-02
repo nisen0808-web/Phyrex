@@ -1,25 +1,25 @@
 # 玩家命令、角色生命周期与执行结果
 
-持久运行器版本为 3，命令规则标识 `postgres-player-contract-v2`。本层补齐入库之后的领域边界：HTTP 202 表示命令已入队；语义校验在执行时针对当前世界进行，失败仍在同一 checkpoint 中确认，不能让一条坏命令反复堵住后面的命令。
+当前持久运行器版本为 4，命令规则标识 `postgres-player-rules-v3`。收益、消耗、训练成长与 tick 预算以 [PLAYER_ACTION_RULES.md](PLAYER_ACTION_RULES.md) 为准。本层补齐入库之后的领域边界：HTTP 202 表示命令已入队；语义校验在执行时针对当前世界进行，失败仍在同一 checkpoint 中确认，不能让一条坏命令反复堵住后面的命令。
 
 ## 输入与容量
 
-数值必须是有限 JSON number，不接受字符串、布尔、数组或 null 的隐式转换。0 保留其含义，不再被默认值替代。禁止原型字典键，检查目标的实体类型、归属、存活与地点。未知命令、无效字段及参数返回稳定 reason，不把异常消息当成玩家结果。实现缺陷或数据库错误继续使候选批次回滚，不能伪装成已成功提交的玩家拒绝。
+数值必须是有限 JSON number，不接受字符串、布尔、数组或 null 的隐式转换。0 不会被替换为默认值；物理动作要求正数量。禁止原型字典键，检查目标的实体类型、归属、存活与地点。未知命令、无效字段及参数返回稳定 reason，不把异常消息当成玩家结果。实现缺陷或数据库错误继续使候选批次回滚，不能伪装成已成功提交的玩家拒绝。
 
-持久玩家命令使用按类型的 payload 白名单。常见上限如下；这是 v2 规则的一部分，修改需升级规则版本，而非在运行中随意改配置。
+持久玩家命令使用按类型的 payload 白名单。基础输入上限如下；通过这一层之后，v4 行动规则还会执行更严格的服务端上限与成本检查。
 
 | 参数 | 范围 |
 |---|---|
 | wait.ticks | 整数 1–1000；表示等待意图，不单独快进世界 |
 | priority | 0–100 |
 | gather/work/train/interact/damage.amount | 0–100 |
-| transfer.amount | 0–1,000,000，实际转移不超过持有量 |
+| transfer.amount | 0–1,000,000，余额不足整体拒绝 |
 | energyCost、rest.health、rest.energy | 0–100 |
 | power、目标 amount/power | 0–1,000,000 |
 | 每玩家累计角色 | 100，死亡角色仍占历史名额 |
 | 每角色活跃目标、待执行动作 | 各 100；NPC 逻辑仍受既有世界容量策略约束 |
 
-数值上限是输入与容量约束，不代表战斗、职业收益和文明存续已完成游戏平衡。资源名称保持主题独立，允许安全的扩展资源键。受信任的本地世界构建 API 可配置角色属性；持久 HTTP 玩家命令不能传入这些内部属性。旧演示 API 仍是本地开发工具，不能作为公网账户入口。
+数值上限是输入与容量约束，不代表战斗、职业收益和文明存续已完成游戏平衡。资源名称保持主题独立；工作只产出配置资源，采集只读取地点现有库存，角色资源种类数量受配置上限保护。受信任的本地世界构建 API 可配置角色属性；持久 HTTP 玩家命令不能传入这些内部属性。旧演示 API 仍是本地开发工具，不能作为公网账户入口。
 
 ## 角色与行动
 
@@ -35,14 +35,14 @@ accepted 是队列接收计数，completed/rejected 包含稍后结算，所以�
 
 默认内建玩家动作一 tick 完成，运行器在演化后捕获执行结果，再和世界、inbox 确认一同原子提交。失败提交和确认丢失继续使用冻结的候选批次重试，不重放动作、不重复消耗随机流。自定义 advance 若不处理动作，回执可能仍为 accepted；历史 SQL 回执保持提交时结果，不会被后续任意写回。已被世界命令日志占用的命令 ID 返回 command_id_collision；遗留危险键名返回 invalid_identifier，均不会覆盖旧命令或阻塞整个队列。
 
-旧版本 1/2 的 runtime config hash 默认返回 `WORLD_RUNTIME_COMMAND_PROFILE_UPGRADE_REQUIRED`。升级前停止旧写入器并做备份，在原 simulation 配置下执行一次：
+旧版本 1/2/3 的 runtime config hash 默认返回 `WORLD_RUNTIME_COMMAND_PROFILE_UPGRADE_REQUIRED`。升级前停止旧写入器并做备份，在原 simulation 配置下执行一次：
 
 ```sh
 npm --prefix world-engine run runtime:postgres -- --world-id engine-world --batches 1 --upgrade-command-profile
 npm run engine:serve -- --world-id engine-world
 ```
 
-也可在 engine:serve 添加同名标志，让首批提交升级。升级前的 pending 命令按新规则校验，原有 applied 回执不重放。首批 checkpoint 记录新 configHash、commandProfile 与 upgradedFrom，后续运行保留来源。未知 hash 或不同 simulation 配置依然拒绝，标志不能绕过配置冲突。已升级的世界不能交给旧运行器写入。没有 runtime 元数据的新世界直接采用 v3。
+也可在 engine:serve 添加同名标志，让首批提交升级。升级前的 pending 命令按新规则校验，原有 applied 回执不重放。首批 checkpoint 记录新 configHash、commandProfile 与 upgradedFrom，后续运行保留来源。未知 hash 或不同 simulation 配置依然拒绝，标志不能绕过配置冲突。已升级的世界不能交给旧运行器写入。没有 runtime 元数据的新世界直接采用 v4。
 
 Migration 1–4 原样保留；这次升级的是存档中的运行规则，不新增数据库表。
 
