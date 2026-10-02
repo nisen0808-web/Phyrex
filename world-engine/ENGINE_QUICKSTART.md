@@ -48,17 +48,23 @@ npm.cmd --prefix world-engine run runtime:postgres -- --world-id engine-world --
 
 ## 持续运行与命令 API
 
-在两个已设置相同数据库 URL/schema 的终端中分别运行：
+在一个已设置数据库 URL/schema 的终端运行统一服务：
 
 ```powershell
-# 终端 A：世界持续演化；Ctrl+C 会等待当前批次完成并尝试确认待提交结果
-npm.cmd --prefix world-engine run runtime:postgres -- --world-id engine-world --continuous --ticks-per-batch 1 --interval 1000
-
-# 终端 B：认证命令入口，默认只监听本机
-npm.cmd --prefix world-engine run api:postgres:commands -- --host 127.0.0.1 --port 8791
+# HTTP 与演化 Worker 在同一进程内隔离运行，Ctrl+C 安全关机
+npm.cmd run engine:serve -- --world-id engine-world --host 127.0.0.1 --port 8791 --interval 1000
 ```
 
-用第三个终端发送一个带固定命令 ID 的操作：
+另一个终端检查可用性：
+
+```powershell
+Invoke-RestMethod -Uri http://127.0.0.1:8791/health/live
+Invoke-RestMethod -Uri http://127.0.0.1:8791/health/ready
+```
+
+运行器阻塞、心跳过期或数据库不可用时 readiness 返回 503，暂停接受新命令。完整状态读取、安全关机和恢复规则见 [引擎服务说明](ENGINE_SERVICE.md)。旧 `runtime:postgres --continuous` 与 `api:postgres:commands` 两进程方式仍可用；同一世界不要同时启动多个写入器。
+
+用另一个终端发送一个带固定命令 ID 的操作：
 
 ```powershell
 $engineToken = (Get-Content -LiteralPath world-engine/secrets/operator.token -Raw).Trim()
@@ -67,6 +73,8 @@ $engineBody = @{ id = "first-wait"; type = "wait"; ticks = 1 } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8791/durable/worlds/engine-world/players/observer/commands -Headers $engineHeaders -ContentType application/json -Body $engineBody
 Invoke-RestMethod -Uri http://127.0.0.1:8791/durable/worlds/engine-world/commands/first-wait -Headers $engineHeaders
 Invoke-RestMethod -Uri 'http://127.0.0.1:8791/durable/worlds/engine-world/admin/audit?limit=20' -Headers $engineHeaders
+Invoke-RestMethod -Uri http://127.0.0.1:8791/durable/worlds/engine-world/players/observer/state -Headers $engineHeaders
+Invoke-RestMethod -Uri http://127.0.0.1:8791/durable/worlds/engine-world/admin/summary -Headers $engineHeaders
 ```
 
 提交先返回 pending，运行器提交后轮询返回 applied；同一 ID 同一内容重试不会重放，改变内容会冲突。普通 player 只操作已绑定玩家，GM/Admin 可以查询审计。限流按本进程来源/账户执行；部署多 API 实例时需外部统一限流。HTTP 审计异步写入，失败独立计数；正常停机等待已经响应的请求完成审计写入。它不是与命令提交同事务的强制审计账本。

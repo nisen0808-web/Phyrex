@@ -25,3 +25,7 @@ v1 为 PostgreSQL 单写世界运行器；规模由世界实体数量、配置�
 ## 验收结果
 
 2026-10-02：上述单写引擎 v1 功能清单完成。功能验收提交 e99cb1c986dce3271db86fcb6d7fd6de80a23503 的 14 个 CI 作业全部通过，已逐份读取原始日志、验证实际完成标记、pipefail 和 Actions 合并 checkout 的代码树。详见 ENGINE_ACCEPTANCE.md；最终交付版本与功能提交的对应关系在包内 evidence/final/verification.json。
+
+## 服务闭环收尾
+
+在已有 v1 功能清单上增加统一 `engine:serve` 服务、独立演化 Worker、单世界绑定、最小玩家/管理员状态视图、健康检查与故障停收、可报告失败的关机和启动清理。实现及边界见 ENGINE_SERVICE.md；新专项加入原 PostgreSQL CI，必须和既有 14 个作业一同通过才算最终交付。包内 verification.json 对应当前交付提交；上文 e99cb1c 是历史功能验收，不冒充本次新增功能的证明。

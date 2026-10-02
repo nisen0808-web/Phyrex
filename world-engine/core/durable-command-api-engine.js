@@ -5,6 +5,7 @@ const http = require('http');
 const { URL } = require('url');
 const { createPostgresDatabaseStore } = require('../storage/postgres/store');
 const { createPostgresCommandApiAuditStore } = require('../storage/postgres/command-api-audit-store');
+const { playerStateView, worldSummaryView } = require('./durable-state-view-engine');
 const { validateSession } = require('./account-session-engine');
 const { canAccessPlayer, isPrivileged, requirePermission, requireSession } = require('./api-permission-engine');
 const { createFixedWindowRateLimiter } = require('./request-rate-limit-engine');
@@ -47,6 +48,9 @@ async function createDurableCommandApiServer(options = {}) {
     read: createFixedWindowRateLimiter({ ...limiterCommon, limit: accountReadRateLimit, maxKeys: maxTrackedAccounts }),
   });
 
+  const shutdownTimeoutMs = boundedInteger(options.shutdownTimeoutMs ?? 5000, 10, 60000, 'shutdownTimeoutMs');
+  if (options.health !== undefined && typeof options.health !== 'function') throw apiError(500, 'invalid_health');
+  if (options.canSubmit !== undefined && typeof options.canSubmit !== 'function') throw apiError(500, 'invalid_admission');
   const ownsStore = !options.store || options.closeStore === true;
   const store = options.store || createPostgresDatabaseStore({ ...(options.database || {}), env: options.env });
   if (store.provider !== 'postgres' || !['loadWorld','enqueueCommand','getCommand','summary','close'].every(key => typeof store[key] === 'function')) {
@@ -57,7 +61,10 @@ async function createDurableCommandApiServer(options = {}) {
   const auditStore = options.auditStore || (!options.store
     ? createPostgresCommandApiAuditStore({ ...(options.database || {}), env: options.env })
     : createCompatibilityAuditStore());
-  if (!['append','close'].every(key => typeof auditStore[key] === 'function')) throw apiError(500, 'audit_store_required');
+  if (!['append','close'].every(key => typeof auditStore[key] === 'function')) {
+    if (ownsStore) await store.close().catch(() => {});
+    throw apiError(500, 'audit_store_required');
+  }
   try {
     await store.summary();
     if (typeof auditStore.summary === 'function') await auditStore.summary();
@@ -67,31 +74,43 @@ async function createDurableCommandApiServer(options = {}) {
     throw error;
   }
 
-  let closePromise = null;
+  let closePromise = null, closing = false;
   let auditFailures = 0;
   const pendingAudits = new Set();
-  const requestOptions = Object.freeze({ maxBodyBytes, authorizationAttempts, rateLimiters });
+  const requestOptions = Object.freeze({ maxBodyBytes, authorizationAttempts, rateLimiters,
+    worldId: options.worldId, health: options.health, canSubmit: options.canSubmit });
   const server = http.createServer((req, res) => {
-    const audit = createRequestAudit(req, requestIdFactory);
+    setSafeHeaders(res);
+    if (closing) { req.resume(); res.setHeader('Connection', 'close'); return writeMappedError(res, apiError(503, 'service_unavailable')); }
+    let audit;
+    try { audit = createRequestAudit(req, requestIdFactory); }
+    catch (error) { auditFailures++; req.resume(); return writeMappedError(res, error); }
     res.setHeader('X-Request-Id', audit.requestId);
     const task = handleRequest(req, res, store, auditStore, requestOptions, audit)
-      .then(() => persistAudit(auditStore, audit, res.statusCode, null), error => {
+      .then(() => audit.probe ? null : persistAudit(auditStore, audit, res.statusCode, null), error => {
         const mapped = mapError(error);
         writeMappedError(res, error);
-        return persistAudit(auditStore, audit, mapped.status, mapped.code);
+        req.resume();
+        return audit.probe ? null : persistAudit(auditStore, audit, mapped.status, mapped.code);
       })
       .catch(() => { auditFailures += 1; });
     pendingAudits.add(task);
     task.finally(() => pendingAudits.delete(task));
   });
+  server.requestTimeout = 15000;
+  server.headersTimeout = 10000;
   server.on('clientError', (_error, socket) => {
     if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
   });
 
   function close() {
     if (closePromise) return closePromise;
+    closing = true;
     closePromise = (async () => {
-      if (server.listening) await new Promise(resolve => server.close(() => resolve()));
+      if (server.listening) await new Promise(resolve => {
+        const timer = setTimeout(() => server.closeAllConnections(), shutdownTimeoutMs);
+        server.close(() => { clearTimeout(timer); resolve(); });
+      });
       // Responses finish before their operational audit. Drain those writes
       // before closing either database pool during graceful shutdown.
       await Promise.all([...pendingAudits]);
@@ -116,16 +135,24 @@ async function createDurableCommandApiServer(options = {}) {
 
 async function handleRequest(req, res, store, auditStore, options, audit) {
   setSafeHeaders(res);
-  enforceRateLimit(options.rateLimiters.source.consume(requestSourceKey(req)));
   const method = String(req.method || 'GET').toUpperCase();
   audit.method = method;
   const parsed = new URL(req.url || '/', 'http://localhost');
+  if (options.health && ['/health/live', '/health/ready'].includes(parsed.pathname)) audit.probe = true;
+  enforceRateLimit(options.rateLimiters.source.consume(requestSourceKey(req)));
+  if (audit.probe) {
+    if (method !== 'GET') throw apiError(405, 'method_not_allowed');
+    if (parsed.search) throw apiError(400, 'invalid_query');
+    const ready = parsed.pathname === '/health/live' || await options.health();
+    return writeJson(res, ready ? 200 : 503, { ok: ready === true, status: ready ? 'ok' : 'unavailable' });
+  }
   const route = parseCommandRoute(parsed.pathname);
   if (!route) throw apiError(404, 'not_found');
   audit.route = route.kind;
   audit.worldId = route.worldId;
   if (route.playerId) audit.playerId = route.playerId;
   if (route.commandId) audit.commandId = route.commandId;
+  if (options.worldId !== undefined && route.worldId !== options.worldId) throw apiError(404, 'world_not_found');
 
   if (route.kind === 'submit') {
     if (method !== 'POST') throw apiError(405, 'method_not_allowed');
@@ -139,8 +166,11 @@ async function handleRequest(req, res, store, auditStore, options, audit) {
     const token = bearerToken(req);
     const row = await withFreshPlayerAuthorization(store, route.worldId, route.playerId, token,
       options.authorizationAttempts, options.rateLimiters.submit, audit,
-      context => store.enqueueCommand({ worldId: route.worldId, id: body.id, playerId: route.playerId, input: body },
-        { expectedWorldRevision: context.revision }));
+      async context => {
+        if (options.canSubmit && !await options.canSubmit()) throw apiError(503, 'service_unavailable');
+        return store.enqueueCommand({ worldId: route.worldId, id: body.id, playerId: route.playerId, input: body },
+          { expectedWorldRevision: context.revision });
+      });
     return writeJson(res, row.status === 'applied' ? 200 : 202, { ok: true, data: commandView(row) });
   }
 
@@ -151,6 +181,24 @@ async function handleRequest(req, res, store, auditStore, options, audit) {
       options.authorizationAttempts, options.rateLimiters.read, audit);
     audit.playerId = row.playerId;
     return writeJson(res, 200, { ok: true, data: commandView(row) });
+  }
+  if (route.kind === 'state' || route.kind === 'summary') {
+    if (method !== 'GET') throw apiError(405, 'method_not_allowed');
+    if (parsed.search) throw apiError(400, 'invalid_query');
+    // Authorization and data come from the same committed checkpoint. No second
+    // world read may race a revoked session or a player ownership change.
+    const context = await authenticateWorld(store, route.worldId, bearerToken(req), audit);
+    enforceRateLimit(options.rateLimiters.read.consume(accountRateKey(route.worldId, context.auth.account.id)));
+    let data;
+    if (route.kind === 'state') {
+      requirePermission(canAccessPlayer(context.auth.account, route.playerId), 'player_forbidden');
+      if (!context.world.players?.byId?.[route.playerId]) throw apiError(404, 'player_not_found');
+      data = playerStateView(context.world, context.revision, route.playerId);
+    } else {
+      requirePermission(isPrivileged(context.auth.account), 'summary_forbidden');
+      data = worldSummaryView(context.world, context.revision);
+    }
+    return writeJson(res, 200, { ok: true, data });
   }
   if (route.kind === 'audit') {
     if (method !== 'GET') throw apiError(405, 'method_not_allowed');
@@ -203,7 +251,7 @@ function parseAuditQuery(params) {
       query[key] = value;
     } else if (key === 'method' && ['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','CONNECT','TRACE'].includes(value)) {
       query.method = value;
-    } else if (key === 'route' && ['submit','status','audit','unknown'].includes(value)) {
+    } else if (key === 'route' && ['submit','status','audit','state','summary','unknown'].includes(value)) {
       query.route = value;
     } else {
       throw apiError(400, 'invalid_audit_query');
@@ -258,6 +306,7 @@ async function authenticateWorld(store, worldId, token, audit) {
 function createRequestAudit(req, factory) {
   const requestId = String(factory());
   if (!requestId || requestId.length > 128 || requestId.includes('\u0000')) throw apiError(500, 'invalid_request_id');
+  http.validateHeaderValue('X-Request-Id', requestId);
   return { requestId, method: String(req.method || 'GET').toUpperCase(), route: 'unknown', worldId: null,
     accountId: null, playerId: null, commandId: null };
 }
@@ -270,14 +319,14 @@ function createCompatibilityAuditStore() {
 
 function parseCommandRoute(pathname) {
   const segments = String(pathname || '/').split('/').filter(Boolean).map(decodeSegment);
-  if (segments.length === 6 && segments[0] === 'durable' && segments[1] === 'worlds' && segments[3] === 'players' && segments[5] === 'commands') {
-    return { kind: 'submit', worldId: segments[2], playerId: segments[4] };
+  if (segments.length === 6 && segments[0] === 'durable' && segments[1] === 'worlds' && segments[3] === 'players' && ['commands','state'].includes(segments[5])) {
+    return { kind: segments[5] === 'commands' ? 'submit' : 'state', worldId: segments[2], playerId: segments[4] };
   }
   if (segments.length === 5 && segments[0] === 'durable' && segments[1] === 'worlds' && segments[3] === 'commands') {
     return { kind: 'status', worldId: segments[2], commandId: segments[4] };
   }
-  if (segments.length === 5 && segments[0] === 'durable' && segments[1] === 'worlds' && segments[3] === 'admin' && segments[4] === 'audit') {
-    return { kind: 'audit', worldId: segments[2] };
+  if (segments.length === 5 && segments[0] === 'durable' && segments[1] === 'worlds' && segments[3] === 'admin' && ['audit','summary'].includes(segments[4])) {
+    return { kind: segments[4], worldId: segments[2] };
   }
   return null;
 }
@@ -295,6 +344,7 @@ function readJsonBody(req, maxBodyBytes) {
     const chunks = []; let size = 0, settled = false;
     req.on('data', chunk => { if (settled) return; size += chunk.length; if (size > maxBodyBytes) { settled = true; req.resume(); reject(apiError(413, 'request_body_too_large')); return; } chunks.push(chunk); });
     req.on('end', () => { if (settled) return; settled = true; if (!chunks.length) return reject(apiError(400, 'json_body_required')); try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch (_) { reject(apiError(400, 'invalid_json')); } });
+    req.on('aborted', () => { if (!settled) { settled = true; reject(apiError(400, 'request_aborted')); } });
     req.on('error', error => { if (!settled) { settled = true; reject(error); } });
   });
 }
@@ -306,7 +356,7 @@ function auditView(row) {
     statusCode: row.statusCode, errorCode: row.errorCode, createdAt: row.createdAt };
 }
 function writeMappedError(res, error) {
-  if (res.writableEnded) return;
+  if (res.writableEnded || res.destroyed) return;
   const mapped = mapError(error);
   if (mapped.status === 401) res.setHeader('WWW-Authenticate', 'Bearer');
   if (mapped.status === 429) res.setHeader('Retry-After', String(Math.max(1, Math.ceil(Number(mapped.retryAfterMs || 1000) / 1000))));
@@ -323,11 +373,11 @@ function mapError(error) {
   return { status: 500, code: 'internal_error' };
 }
 function safeApiCode(value) {
-  const allowed = new Set(['auth_required','player_forbidden','command_forbidden','audit_forbidden','invalid_audit_query','service_unavailable','player_not_found','world_not_found','command_not_found','not_found','method_not_allowed','json_required','invalid_command','command_id_required','command_type_required','request_body_too_large','json_body_required','invalid_json','invalid_path','world_revision_changed','transactional_store_required','audit_store_required','rate_limited']);
+  const allowed = new Set(['request_aborted','invalid_query','summary_forbidden','auth_required','player_forbidden','command_forbidden','audit_forbidden','invalid_audit_query','service_unavailable','player_not_found','world_not_found','command_not_found','not_found','method_not_allowed','json_required','invalid_command','command_id_required','command_type_required','request_body_too_large','json_body_required','invalid_json','invalid_path','world_revision_changed','transactional_store_required','audit_store_required','rate_limited']);
   return allowed.has(value) ? value : 'internal_error';
 }
 function setSafeHeaders(res) { res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('Referrer-Policy','no-referrer'); }
-function writeJson(res, statusCode, payload) { if (res.writableEnded) return; const text = JSON.stringify(payload); res.statusCode = statusCode; res.setHeader('Content-Type','application/json; charset=utf-8'); res.setHeader('Content-Length',Buffer.byteLength(text)); res.end(text); }
+function writeJson(res, statusCode, payload) { if (res.writableEnded || res.destroyed) return; const text = JSON.stringify(payload); res.statusCode = statusCode; res.setHeader('Content-Type','application/json; charset=utf-8'); res.setHeader('Content-Length',Buffer.byteLength(text)); res.end(text); }
 function boundedInteger(value, min, max, name) { const number = Number(value); if (!Number.isInteger(number) || number < min || number > max) throw apiError(500, `invalid_${name}`); return number; }
 function isObject(value) { return Boolean(value && typeof value === 'object' && !Array.isArray(value)); }
 

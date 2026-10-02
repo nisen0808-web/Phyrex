@@ -135,6 +135,17 @@ function createPostgresDatabaseStore(options = {}) {
       return result.rows.length ? restoreSave(result.rows[0]) : null;
     }, true);
   }
+  async function getWorldHead(worldId) {
+    textId(worldId, 'worldId');
+    await ensureReady();
+    return transaction(async client => {
+      // Never transfer/decode the checkpoint payload just to check readiness.
+      const result = await client.query(`SELECT w.world_id, w.revision, s.tick FROM ${schema}.worlds w
+        JOIN ${schema}.world_saves s ON s.world_id=w.world_id AND s.sequence=w.latest_sequence WHERE w.world_id=$1`, [worldId]);
+      const row = result.rows[0];
+      return row ? { worldId: row.world_id, revision: fromSqlInteger(row.revision), tick: fromSqlInteger(row.tick) } : null;
+    }, true);
+  }
   async function listWorlds(listOptions = {}) {
     const limit = integer(listOptions.limit, 100, 1, 1000, 'world limit');
     await ensureReady();
@@ -284,7 +295,7 @@ function createPostgresDatabaseStore(options = {}) {
     ...createBackupOperations({ transaction, readSchema, ensureReady, schema }),
     ...createMaintenanceOperations({ transaction, ensureReady, schema }),
     getCheckpointRequest,
-    migrate, saveWorld, loadWorld, listWorlds, enqueueCommand, getCommand, listCommands, listPendingCommands,
+    migrate, saveWorld, loadWorld, getWorldHead, listWorlds, enqueueCommand, getCommand, listCommands, listPendingCommands,
     appendEvent, listEvents, summary, close });
 }
 function summarizeEvent(row) {
