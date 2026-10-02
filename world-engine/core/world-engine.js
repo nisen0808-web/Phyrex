@@ -11,6 +11,7 @@ const {
 } = require('./schema');
 
 const { applyActionTick } = require('./action-engine');
+const { settlePlayerAction } = require('./player-command-result');
 const { processEvents } = require('./event-engine');
 const { rebuildRelationshipIndexes } = require('./relationship-engine');
 const { ensureRandomState } = require('./random-engine');
@@ -132,6 +133,7 @@ function processActionQueue(world, options = {}) {
 
   for (const action of world.actionQueue) {
     const result = applyActionTick(world, action, actionOptions);
+    if (result.status !== 'active') settlePlayerAction(world, action, result);
     if (result.status === 'completed') completed.push(result);
     else if (result.status === 'failed') failed.push(result);
     else active.push(action);

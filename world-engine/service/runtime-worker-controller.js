@@ -15,7 +15,7 @@ async function createRuntimeWorker(options = {}, createWorker = data => new Work
   const staleMs = duration(options.heartbeatTimeoutMs, 30000);
   const worker = createWorker({ worldId: options.worldId, database: options.database, env: options.env,
     ticksPerBatch: options.ticksPerBatch, intervalMs: options.intervalMs, retryDelayMs: options.retryDelayMs,
-    maxCommitAttempts: options.maxCommitAttempts, simulation: options.simulation });
+    maxCommitAttempts: options.maxCommitAttempts, simulation: options.simulation, upgradeCommandProfile: options.upgradeCommandProfile });
   let state = { status: 'starting' }, updated = -Infinity, closing = false, ended = false, stopped, fault, closePromise;
   let readyResolve, readyReject, exitResolve;
   const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
@@ -25,7 +25,8 @@ async function createRuntimeWorker(options = {}, createWorker = data => new Work
     if (message?.type === 'ready' || message?.type === 'status') {
       state = message.state; updated = performance.now();
       if (message.type === 'ready') readyResolve();
-    } else if (message?.type === 'fatal') fail(serviceError('WORKER_FAILED'));
+    } else if (message?.type === 'fatal') fail(message.error === 'WORLD_RUNTIME_COMMAND_PROFILE_UPGRADE_REQUIRED'
+      ? Object.assign(new Error(message.error), { code: message.error }) : serviceError('WORKER_FAILED'));
     else if (message?.type === 'stopped') stopped = message;
   });
   worker.on('error', () => fail(serviceError('WORKER_FAILED')));

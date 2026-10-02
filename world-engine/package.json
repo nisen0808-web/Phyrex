@@ -42,7 +42,8 @@
     "test:postgres:command-audit-query": "node tests/integration/postgres-command-audit-query.js",
     "engine:serve": "node demo/engine-serve-cli.js",
     "test:postgres:service": "node tests/integration/postgres-engine-service.js",
-    "test:postgres:command-queue": "node tests/integration/postgres-command-queue.js"
+    "test:postgres:command-queue": "node tests/integration/postgres-command-queue.js",
+    "test:postgres:player-contract": "node tests/integration/postgres-player-contract.js"
   },
   "dependencies": {
     "pg": "8.23.0"

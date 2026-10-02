@@ -45,6 +45,7 @@
 | `npm --prefix world-engine run test:postgres:command-audit-query` | `node tests/integration/postgres-command-audit-query.js` |
 | `npm --prefix world-engine run engine:serve` | `node demo/engine-serve-cli.js` |
 | `npm --prefix world-engine run test:postgres:service` | `node tests/integration/postgres-engine-service.js` |
+| `npm --prefix world-engine run test:postgres:player-contract` | `node tests/integration/postgres-player-contract.js` |
 | `npm --prefix world-engine run test:postgres:command-queue` | `node tests/integration/postgres-command-queue.js` |
 
 ## 根目录兼容入口

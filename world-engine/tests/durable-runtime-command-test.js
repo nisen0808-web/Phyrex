@@ -133,13 +133,14 @@ async function main() {
   {
     const legacyHash = digest({ version: 1, profile: 'controlled-v1', simulation: {} });
     const f = fixture({ metadata: { durableRuntime: { configHash: legacyHash } } });
-    const runtime = await createDurableWorldRuntime(f.runtimeOptions); await runtime.step();
+    await assert.rejects(createDurableWorldRuntime(f.runtimeOptions), error => error.code === 'WORLD_RUNTIME_COMMAND_PROFILE_UPGRADE_REQUIRED');
+    const runtime = await createDurableWorldRuntime({ ...f.runtimeOptions, upgradeCommandProfile: true }); await runtime.step();
     assert.notStrictEqual(runtime.summary().configHash, legacyHash);
     await runtime.close();
     const resumed = await createDurableWorldRuntime(f.runtimeOptions); await resumed.close();
     await assert.rejects(createDurableWorldRuntime({ ...f.runtimeOptions, simulation: { changed: true } }),
       error => error.code === 'WORLD_RUNTIME_CONFIG_MISMATCH');
-    pass('version-1 runtime config hash upgrades once while unrelated configuration changes remain blocked');
+    pass('version-1 runtime config hash explicitly upgrades once while unrelated configuration changes remain blocked');
   }
 
   {
@@ -160,6 +161,29 @@ async function main() {
     const second = await runtime.step(); assert.strictEqual(second.commands, 1);
     assert.strictEqual(runtime.summary().commandsApplied, MAX_COMMANDS_PER_BATCH + 1);
     await runtime.close(); pass('command consumption is bounded per batch and preserves FIFO backlog for later revisions');
+  }
+
+  {
+    const f = fixture();
+    const { registerLocation, advanceWorld } = require('../core/world-engine');
+    const { createPlayerCharacter } = require('../core/player-engine');
+    const { executePlayerCommand } = require('../core/command-engine');
+    registerLocation(f.ledger.world, { id: 'home' });
+    createPlayerCharacter(f.ledger.world, 'player-1', { id: 'hero', locationId: 'home' });
+    f.ledger.commands.push(command(1, 'work-before-trim', 'player-1', { type: 'work', amount: 7 }));
+    const runtime = await createDurableWorldRuntime({ ...f.runtimeOptions,
+      advance(world, ticks, _options, afterTick) {
+        for (let i = 0; i < ticks; i++) {
+          advanceWorld(world); afterTick(world);
+          if (i === 0) for (let j = 0; j < 501; j++) executePlayerCommand(world, 'player-1', { type: 'wait' });
+        }
+      } });
+    await runtime.step(2);
+    assert.strictEqual(runtime.getWorld().commands.byId['work-before-trim'], undefined);
+    assert.strictEqual(f.ledger.commands[0].result.status, 'completed');
+    assert.strictEqual(f.ledger.commands[0].result.outcome.value.amount, 7);
+    assert.strictEqual(f.ledger.commands[0].result.updatedAt, 1);
+    await runtime.close(); pass('settled outcomes survive later command-history trimming in the same batch');
   }
 
   console.log(`durable runtime command contracts completed ${groups} groups: ${groups} passed, 0 failed`);

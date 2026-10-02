@@ -1,6 +1,8 @@
 # Engine Development Progress
 
-当前开发层：事务内世界/玩家 pending 容量、满队列幂等、玩家命令记录分页与管理员积压诊断。新增两个 discovery 脚本，回归分母为 115；增加 Node 20/22 真实 SQL 的 10 组队列专项。实现边界见 COMMAND_QUEUE_OPERATIONS.md，当前提交的最终通过情况以对应 CI 日志和交付 verification.json 为准。
+当前开发层：玩家命令领域校验、角色归属与生命周期完整性、动作真实结果回写、显式规则升级。新增三个 discovery 脚本，回归分母 118；新增 Node 20/22 真实 SQL 玩家契约专项 10 组。实现与升级步骤见 PLAYER_COMMAND_CONTRACT.md，最终通过情况以本提交 CI 与交付 verification.json 为准。
+
+上一层 d86715c：事务内世界/玩家 pending 容量、满队列幂等、玩家命令记录分页与管理员积压诊断。新增两个 discovery 脚本，回归分母为 115；增加 Node 20/22 真实 SQL 的 10 组队列专项。实现边界见 COMMAND_QUEUE_OPERATIONS.md，当前提交的最终通过情况以对应 CI 日志和交付 verification.json 为准。
 
 上一层 c1b1abc 已完成统一 engine:serve、隔离 Worker、安全状态读取和启停；113/113 回归及 14 个必跑 CI 作业全部通过。以下性能层与功能层数据均为历史基线。
 

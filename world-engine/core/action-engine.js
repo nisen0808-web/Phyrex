@@ -25,7 +25,8 @@ function applyActionTick(world, action, options = {}) {
     return fail(action, 'actor_not_alive');
   }
 
-  const handler = (options.actionHandlers && options.actionHandlers[action.type]) || DEFAULT_ACTION_HANDLERS[action.type];
+  const handler = (options.actionHandlers && Object.hasOwn(options.actionHandlers, action.type) && options.actionHandlers[action.type])
+    || (Object.hasOwn(DEFAULT_ACTION_HANDLERS, action.type) && DEFAULT_ACTION_HANDLERS[action.type]);
 
   if (!handler) {
     return fail(action, `unknown_action:${action.type}`);
@@ -36,6 +37,10 @@ function applyActionTick(world, action, options = {}) {
     return fail(action, precheck.reason);
   }
 
+  if (Object.hasOwn(DEFAULT_ACTION_HANDLERS, action.type)) {
+    const invalid = validateBuiltInAction(world, action, actor);
+    if (invalid) return fail(action, invalid);
+  }
   action.remaining -= 1;
 
   if (action.remaining > 0) {
@@ -72,6 +77,28 @@ function checkActionPreconditions(world, action, actor) {
   return { ok: true };
 }
 
+function validateBuiltInAction(world, action, actor) {
+  if (!actor) return 'missing_actor';
+  if (!Number.isSafeInteger(action.remaining) || action.remaining < 1) return 'invalid_duration';
+  const p = action.payload || {};
+  for (const key of ['amount', 'health', 'energy', 'energyCost']) {
+    if (p[key] !== undefined && (typeof p[key] !== 'number' || !Number.isFinite(p[key]) || p[key] < 0)) return 'invalid_number';
+  }
+  if (p.resource !== undefined && (typeof p.resource !== 'string' || !p.resource || Object.hasOwn(Object.prototype, p.resource))) return 'invalid_resource';
+  if (action.type === 'move' && !Object.hasOwn(world.locations, p.to || action.targetId || action.locationId)) return 'missing_location';
+  if (action.type === 'gather' && !Object.hasOwn(world.locations, actor.locationId)) return 'missing_location';
+  if (['interact', 'transfer', 'damage'].includes(action.type)) {
+    const target = Object.hasOwn(world.entities, action.targetId) ? world.entities[action.targetId] : null;
+    if (!target) return 'missing_entity_target';
+    if (action.playerLocationRequired && target.locationId !== actor.locationId) return 'target_not_at_location';
+    if (action.playerCommandId && target.status !== 'alive') return 'target_not_alive';
+  }
+  if (action.type === 'work' && !Number.isFinite(Number(actor.resources[p.resource || 'currency'] || 0) + (p.amount ?? 5))) return 'resource_overflow';
+  if (action.type === 'gather' && !Number.isFinite(Number(actor.resources[p.resource || 'material'] || 0) + (p.amount ?? 1))) return 'resource_overflow';
+  if (action.type === 'transfer' && !Number.isFinite(Number(world.entities[action.targetId].resources[p.resource || 'currency'] || 0) + (p.amount ?? 0))) return 'resource_overflow';
+  return null;
+}
+
 function handleMove(world, action, actor, options = {}) {
   const to = action.payload.to || action.targetId || action.locationId;
   if (!to || !world.locations[to]) throw new Error('move action requires valid target location');
@@ -106,7 +133,7 @@ function handleGather(world, action, actor, options = {}) {
   if (!location) throw new Error('gather requires actor location');
 
   const key = action.payload.resource || 'material';
-  const amount = Number(action.payload.amount || 1);
+  const amount = Number(action.payload.amount ?? 1);
   const available = Number(location.resources[key] || 0);
   const gathered = Math.min(available, amount);
 
@@ -125,8 +152,8 @@ function handleGather(world, action, actor, options = {}) {
 }
 
 function handleRest(world, action, actor, options = {}) {
-  const healthGain = Number(action.payload.health || 10);
-  const energyGain = Number(action.payload.energy || 15);
+  const healthGain = Number(action.payload.health ?? 10);
+  const energyGain = Number(action.payload.energy ?? 15);
 
   actor.stats.health = clamp(actor.stats.health + healthGain, 0, actor.stats.maxHealth || 100);
   actor.stats.energy = clamp(actor.stats.energy + energyGain, 0, actor.stats.maxEnergy || 100);
@@ -144,8 +171,8 @@ function handleRest(world, action, actor, options = {}) {
 
 function handleWork(world, action, actor, options = {}) {
   const resource = action.payload.resource || 'currency';
-  const amount = Number(action.payload.amount || 5);
-  const energyCost = Number(action.payload.energyCost || 5);
+  const amount = Number(action.payload.amount ?? 5);
+  const energyCost = Number(action.payload.energyCost ?? 5);
 
   actor.stats.energy = clamp(actor.stats.energy - energyCost, 0, actor.stats.maxEnergy || 100);
   actor.resources[resource] = Number(actor.resources[resource] || 0) + amount;
@@ -166,7 +193,7 @@ function handleInteract(world, action, actor, options = {}) {
   if (!target) throw new Error('interact requires entity target');
 
   const effect = action.payload.effect || 'social';
-  const amount = Number(action.payload.amount || 1);
+  const amount = Number(action.payload.amount ?? 1);
 
   pushEvent(world, {
     type: 'entity.interacted',
@@ -184,7 +211,7 @@ function handleTransfer(world, action, actor, options = {}) {
   if (!target) throw new Error('transfer requires entity target');
 
   const resource = action.payload.resource || 'currency';
-  const amount = Math.max(0, Number(action.payload.amount || 0));
+  const amount = Math.max(0, Number(action.payload.amount ?? 0));
   const current = Number(actor.resources[resource] || 0);
   const transferred = Math.min(current, amount);
 
@@ -206,7 +233,7 @@ function handleDamage(world, action, actor, options = {}) {
   const target = world.entities[action.targetId];
   if (!target) throw new Error('damage requires entity target');
 
-  const amount = Math.max(0, Number(action.payload.amount || actor.stats.power || 1));
+  const amount = Math.max(0, Number(action.payload.amount ?? actor.stats.power ?? 1));
   target.stats.health = clamp(target.stats.health - amount, 0, target.stats.maxHealth || 100);
 
   if (target.stats.health <= 0) {

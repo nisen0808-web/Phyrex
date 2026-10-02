@@ -1,5 +1,6 @@
 # 单写引擎服务
 
+当前运行器使用 v3 玩家命令规则。已有 v1/v2 世界需要停止旧写入器并显式升级，步骤与命令字段见 [PLAYER_COMMAND_CONTRACT.md](PLAYER_COMMAND_CONTRACT.md)。
 完成数据库初始化和账户配置后，从仓库根目录启动：
 
 ```sh
