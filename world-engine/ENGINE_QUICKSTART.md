@@ -1,6 +1,6 @@
 # 世界引擎 v1 启动与恢复
 
-当前运行器使用 v4 服务端行动规则。已有 v1/v2/v3 世界需要停止旧写入器并显式升级，步骤与行动配置见 [PLAYER_ACTION_RULES.md](PLAYER_ACTION_RULES.md)。
+当前运行器使用 v5 服务端行动规则。已有 v1/v2/v3/v4 世界需要停止旧写入器并显式升级，步骤与行动配置见 [PLAYER_ACTION_RULES.md](PLAYER_ACTION_RULES.md)。
 需要 Node.js 20 或 22、npm、PostgreSQL 18。命令从仓库根目录执行。Windows 使用 `npm.cmd`；macOS/Linux 可以直接使用 `npm`。`npm --prefix world-engine run ...` 启动的脚本工作目录是 `world-engine/`，因此脚本参数 `output/...` 指向 `world-engine/output/...`。
 
 ## 准备数据库
@@ -119,3 +119,9 @@ npm.cmd --prefix world-engine run test:engine:scale -- large
 真实 SQL 测试必须另外提供 `WORLD_ENGINE_TEST_DATABASE_URL`，数据库名以 `_test` 或 `_ci` 结尾。不要指向开发业务库；测试只创建和删除自己的随机 schema，但需要显式隔离。完整 scripts 清单见 [NPM_SCRIPTS.md](NPM_SCRIPTS.md)。SQL 快速启动门禁 `test:postgres:quickstart` 会以新进程执行本说明中的初始化、迁移、导入、账户、运行器、备份、恢复命令，再检查 HTTP 命令和恢复后的继续运行。
 
 CI 的成功必须包括实际完成标记。历史上 `npm test | tee ...` 未开启 pipefail，曾出现 57 个测试中 5 个失败但 job 仍绿色；#61 修复。所有新门禁保留 bash 的 `-e -o pipefail` 和结果断言，不能把输出管道成功当成引擎测试成功。
+
+## 物品与统一验收
+
+新建世界需要示例商店时，在 engine:init 增加 `--commerce starter`；默认保持原世界构建方式。购买、装备、使用和交易见 DURABLE_INVENTORY.md。
+
+`npm --prefix world-engine run engine:verify -- --suite regression` 可运行完整普通回归；Linux 隔离数据库环境使用 `--suite all --report output/verification-new.json` 运行全套 22 个门禁。范围与 SDK 入口见 ENGINE_V1_RELEASE.md。

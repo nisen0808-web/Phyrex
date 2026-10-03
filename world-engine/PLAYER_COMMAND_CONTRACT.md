@@ -1,6 +1,6 @@
 # 玩家命令、角色生命周期与执行结果
 
-当前持久运行器版本为 4，命令规则标识 `postgres-player-rules-v3`。收益、消耗、训练成长与 tick 预算以 [PLAYER_ACTION_RULES.md](PLAYER_ACTION_RULES.md) 为准。本层补齐入库之后的领域边界：HTTP 202 表示命令已入队；语义校验在执行时针对当前世界进行，失败仍在同一 checkpoint 中确认，不能让一条坏命令反复堵住后面的命令。
+当前持久运行器版本为 5，命令规则标识 `postgres-inventory-v4`。收益、消耗、训练成长与 tick 预算以 [PLAYER_ACTION_RULES.md](PLAYER_ACTION_RULES.md) 为准。本层补齐入库之后的领域边界：HTTP 202 表示命令已入队；语义校验在执行时针对当前世界进行，失败仍在同一 checkpoint 中确认，不能让一条坏命令反复堵住后面的命令。
 
 ## 输入与容量
 
@@ -35,14 +35,14 @@ accepted 是队列接收计数，completed/rejected 包含稍后结算，所以�
 
 默认内建玩家动作一 tick 完成，运行器在演化后捕获执行结果，再和世界、inbox 确认一同原子提交。失败提交和确认丢失继续使用冻结的候选批次重试，不重放动作、不重复消耗随机流。自定义 advance 若不处理动作，回执可能仍为 accepted；历史 SQL 回执保持提交时结果，不会被后续任意写回。已被世界命令日志占用的命令 ID 返回 command_id_collision；遗留危险键名返回 invalid_identifier，均不会覆盖旧命令或阻塞整个队列。
 
-旧版本 1/2/3 的 runtime config hash 默认返回 `WORLD_RUNTIME_COMMAND_PROFILE_UPGRADE_REQUIRED`。升级前停止旧写入器并做备份，在原 simulation 配置下执行一次：
+旧版本 1/2/3/4 的 runtime config hash 默认返回 `WORLD_RUNTIME_COMMAND_PROFILE_UPGRADE_REQUIRED`。升级前停止旧写入器并做备份，在原 simulation 配置下执行一次：
 
 ```sh
 npm --prefix world-engine run runtime:postgres -- --world-id engine-world --batches 1 --upgrade-command-profile
 npm run engine:serve -- --world-id engine-world
 ```
 
-也可在 engine:serve 添加同名标志，让首批提交升级。升级前的 pending 命令按新规则校验，原有 applied 回执不重放。首批 checkpoint 记录新 configHash、commandProfile 与 upgradedFrom，后续运行保留来源。未知 hash 或不同 simulation 配置依然拒绝，标志不能绕过配置冲突。已升级的世界不能交给旧运行器写入。没有 runtime 元数据的新世界直接采用 v4。
+也可在 engine:serve 添加同名标志，让首批提交升级。升级前的 pending 命令按新规则校验，原有 applied 回执不重放。首批 checkpoint 记录新 configHash、commandProfile 与 upgradedFrom，后续运行保留来源。未知 hash 或不同 simulation 配置依然拒绝，标志不能绕过配置冲突。已升级的世界不能交给旧运行器写入。没有 runtime 元数据的新世界直接采用 v5。
 
 Migration 1–4 原样保留；这次升级的是存档中的运行规则，不新增数据库表。
 

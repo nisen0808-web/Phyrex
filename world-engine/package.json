@@ -1,6 +1,6 @@
 {
   "name": "world-engine",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "test": "node tests/run-all.js",
@@ -44,9 +44,12 @@
     "test:postgres:service": "node tests/integration/postgres-engine-service.js",
     "test:postgres:command-queue": "node tests/integration/postgres-command-queue.js",
     "test:postgres:player-contract": "node tests/integration/postgres-player-contract.js",
-    "test:postgres:player-actions": "node tests/integration/postgres-player-actions.js"
+    "test:postgres:player-actions": "node tests/integration/postgres-player-actions.js",
+    "test:postgres:inventory": "node tests/integration/postgres-inventory.js",
+    "engine:verify": "node demo/engine-verify-cli.js"
   },
   "dependencies": {
     "pg": "8.23.0"
-  }
+  },
+  "main": "index.js"
 }

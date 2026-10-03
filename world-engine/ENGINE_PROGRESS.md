@@ -1,6 +1,8 @@
 # Engine Development Progress
 
-当前开发层：服务端工作/采集/训练成长/休息/战斗规则、体力与单 tick 行动预算、拥有角色的自主行为接入、规则配置与安全读取、runtime v4 显式升级。新增三个 discovery 脚本，回归分母 121；真实 SQL 行动规则专项 10 组。实现见 PLAYER_ACTION_RULES.md，最终验收按当前交付提交的原始日志。
+当前收尾层：持久物品/装备/消费/赠送/商店，重复装备和货币守恒修复，安全只读背包/商店视图、runtime v5 显式升级、1.0.0 private SDK 和统一验收入口。完整回归 125 项，新增真实 SQL 库存专项 12 组。见 ENGINE_V1_RELEASE.md 与 DURABLE_INVENTORY.md，最终通过以本提交证据为准。
+
+上一层 b2f637a：服务端工作/采集/训练成长/休息/战斗规则、体力与单 tick 行动预算、拥有角色的自主行为接入、规则配置与安全读取、runtime v4 显式升级。新增三个 discovery 脚本，回归分母 121；真实 SQL 行动规则专项 10 组。实现见 PLAYER_ACTION_RULES.md，最终验收按当前交付提交的原始日志。
 
 上一层 ef9c24a：玩家命令领域校验、角色归属与生命周期完整性、动作真实结果回写、显式规则升级。新增三个 discovery 脚本，回归分母 118；新增 Node 20/22 真实 SQL 玩家契约专项 10 组。实现与升级步骤见 PLAYER_COMMAND_CONTRACT.md，最终通过情况以本提交 CI 与交付 verification.json 为准。
 

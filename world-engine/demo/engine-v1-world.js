@@ -6,6 +6,7 @@ const { initializeDeterministicSimulation } = require('../core/deterministic-sim
 const { ENGINE_V1_PROFILE } = require('../runtime/engine-v1-profile');
 
 function createEngineWorld(options = {}) {
+  if (options.commerce !== undefined && !['none', 'starter'].includes(options.commerce)) throw new Error('Invalid commerce pack');
   const population = options.population ?? 12;
   if (!Number.isSafeInteger(population) || population < 2 || population > 1000) throw new Error('Initial population must be 2..1000');
   const world = createWorld({ id: options.worldId ?? 'engine-world', seed: options.seed ?? 'engine-v1' });
@@ -21,6 +22,7 @@ function createEngineWorld(options = {}) {
   organization.members = Object.keys(world.entities);
   createPlayer(world, { id: 'observer', controlMode: 'observer' });
   initializeDeterministicSimulation(world, JSON.parse(JSON.stringify({ ...ENGINE_V1_PROFILE, ...(options.simulation || {}) })));
+  if (options.commerce === 'starter') require('../core/shop-engine').seedLocationShops(world, 'village');
   return world;
 }
 module.exports = { createEngineWorld };

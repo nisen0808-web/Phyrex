@@ -1,4 +1,5 @@
 'use strict';
+const { commerceView } = require('./inventory-operations-engine');
 const { getPlayerActionRules, stateOf } = require('./player-action-rules-engine');
 
 // Explicit DTOs: adding a field to a world/entity must not expose it over HTTP.
@@ -19,6 +20,7 @@ function playerStateView(world, revision, playerId) {
       resources: numbers(entity.resources, ['currency', 'food']),
       actionState: stateOf(entity) } : null,
     actionRules: getPlayerActionRules(world),
+    inventory: commerceView(world, entity),
     location: location ? { id: location.id, name: text(location.name) } : null,
   };
 }

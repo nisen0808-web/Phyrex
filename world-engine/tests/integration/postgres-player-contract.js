@@ -138,7 +138,7 @@ async function main() {
     assert.strictEqual((await store.getWorldHead('upgrade')).revision, 1);
     await cli('upgrade', ['--upgrade-command-profile']);
     const upgraded = await store.loadWorld('upgrade');
-    assert.strictEqual(upgraded.metadata.durableRuntime.version, 4);
+    assert.strictEqual(upgraded.metadata.durableRuntime.version, 5);
     assert.strictEqual(upgraded.metadata.durableRuntime.upgradedFrom, oldHash);
     assert.strictEqual(upgraded.metadata.durableRuntime.commandProfile, COMMAND_PROFILE);
     assert.strictEqual((await store.getCommand('upgrade', 'legacy-bad')).result.status, 'rejected');

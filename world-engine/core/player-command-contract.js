@@ -5,6 +5,8 @@ const { DEFAULT_GOAL_TEMPLATES } = require('./goal-engine');
 const { DEFAULT_SPECIES } = require('./species-engine');
 const RESERVED = new Set(Object.getOwnPropertyNames(Object.prototype));
 const COMMAND_FIELDS = Object.freeze({
+  equip_item: ['itemId'], unequip_item: ['slot'], use_item: ['itemId'],
+  buy_item: ['shopId', 'definitionId', 'quantity'], sell_item: ['shopId', 'itemId', 'quantity'], give_item: ['itemId', 'targetId'],
   wait: ['ticks'], move: ['locationId', 'priority'], gather: ['resource', 'amount', 'priority'],
   work: ['resource', 'amount', 'energyCost', 'priority'], train: ['amount', 'energyCost', 'power', 'priority'],
   rest: ['health', 'energy', 'priority'], interact: ['targetId', 'effect', 'amount', 'priority'],
@@ -46,11 +48,12 @@ function validateCommand(command, world, options = {}) {
   const p = command.payload;
   if (!record(p) || !finiteData(p)) return 'invalid_payload';
   if (options.publicPlayer && Object.keys(p).some(key => !fields.includes(key))) return 'unsupported_field';
-  for (const key of ['locationId', 'targetId', 'organizationId', 'entityId', 'resource', 'effect', 'role', 'goalType', 'species']) {
+  for (const key of ['locationId', 'targetId', 'organizationId', 'entityId', 'resource', 'effect', 'role', 'goalType', 'species', 'itemId', 'shopId', 'definitionId', 'slot']) {
     if (p[key] !== undefined && !(command.type === 'observe' && key === 'locationId' && p[key] === null)
         && !identifier(p[key], 200)) return 'invalid_identifier';
   }
   for (const key of ['active', 'lethal', 'createContract']) if (p[key] !== undefined && typeof p[key] !== 'boolean') return 'invalid_boolean';
+  if (p.quantity !== undefined && !numeric(p.quantity, 1, 100, true)) return 'invalid_quantity';
   if (p.priority !== undefined && !numeric(p.priority, 0, 100)) return 'invalid_number';
   const bounds = { amount: [0, command.type === 'transfer' ? 1000000 : 100], energyCost: [0, 100],
     health: [0, 100], energy: [0, 100], power: [0, 1000000], ticks: [1, 1000] };

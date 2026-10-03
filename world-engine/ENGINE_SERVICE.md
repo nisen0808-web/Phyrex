@@ -1,6 +1,6 @@
 # 单写引擎服务
 
-当前运行器使用 v4 服务端行动规则。已有 v1/v2/v3 世界需要停止旧写入器并显式升级，步骤与规则配置见 [PLAYER_ACTION_RULES.md](PLAYER_ACTION_RULES.md)。
+当前运行器使用 v5 服务端行动规则。已有 v1/v2/v3/v4 世界需要停止旧写入器并显式升级，步骤与规则配置见 [PLAYER_ACTION_RULES.md](PLAYER_ACTION_RULES.md)。
 完成数据库初始化和账户配置后，从仓库根目录启动：
 
 ```sh
@@ -59,4 +59,6 @@ Ctrl+C / SIGTERM 先停止 HTTP 接收，等待已接受请求和审计，再要
 
 命令队列容量、重连分页和积压诊断的完整契约见 [COMMAND_QUEUE_OPERATIONS.md](COMMAND_QUEUE_OPERATIONS.md)。满队列返回 429，不影响健康运行器继续消费；它与故障停收的 503 是不同情况。
 
-玩家状态视图还返回 `actionRules` 和 `character.actionState`（规则版本、最近行动 tick、累计经验）。收益与体力规则、v4 存档升级见 PLAYER_ACTION_RULES.md。
+玩家状态视图还返回 `actionRules` 和 `character.actionState`（规则版本、最近行动 tick、累计经验）。收益与体力规则、v5 存档升级见 PLAYER_ACTION_RULES.md。
+
+玩家 state 还包含安全的 inventory 物品/装备/当地商店视图，读取不会初始化资产。详见 DURABLE_INVENTORY.md。

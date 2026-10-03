@@ -1,6 +1,6 @@
 # 玩家行动规则与成长结算
 
-持久运行器版本为 **4**，命令 profile 为 `postgres-player-rules-v3`，行动规则版本为 **1**。公共玩家命令提交意图，收益、消耗、成长和伤害由引擎计算。输入与角色生命周期契约继续见 PLAYER_COMMAND_CONTRACT.md。本次不更改 Migration 1–4。
+持久运行器版本为 **5**，命令 profile 为 `postgres-inventory-v4`，行动规则版本为 **1**。公共玩家命令提交意图，收益、消耗、成长和伤害由引擎计算。输入与角色生命周期契约继续见 PLAYER_COMMAND_CONTRACT.md。本次不更改 Migration 1–4。
 
 ## 默认规则
 
@@ -39,19 +39,19 @@ npm --prefix world-engine run engine:init -- --output output/bootstrap.json --wo
 
 参数路径相对于 world-engine。无效规则不生成世界文件。配置与 simulation 参数一起进入 runtime config hash；已开始运行的世界不能随意改规则，修改后即使添加升级标志也返回 `WORLD_RUNTIME_CONFIG_MISMATCH`。本层未提供运行中规则迁移工具。
 
-旧 runtime v1/v2/v3 世界先停止写入、完整备份，然后在原 simulation 配置下显式升级：
+旧 runtime v1/v2/v3/v4 世界先停止写入、完整备份，然后在原 simulation 配置下显式升级：
 
 ```sh
 npm --prefix world-engine run runtime:postgres -- --world-id engine-world --batches 1 --upgrade-command-profile
 npm run engine:serve -- --world-id engine-world
 ```
 
-仅已知旧配置 hash 可以升级。首个成功 checkpoint 保存 v4 配置和 upgradedFrom；旧 pending 命令按新规则执行，曾经允许的零消耗或超额收益请求会被拒绝。旧 applied 回执不重放。升级标志不覆盖未知 hash、simulation 差异或 v4 规则冲突。升级后不要让旧运行器写入该世界。
+仅已知旧配置 hash 可以升级。首个成功 checkpoint 保存 v5 配置和 upgradedFrom；旧 pending 命令按新规则执行，曾经允许的零消耗或超额收益请求会被拒绝。旧 applied 回执不重放。升级标志不覆盖未知 hash、simulation 差异或 v5 规则冲突。升级后不要让旧运行器写入该世界。
 
 ## 验收与边界
 
 三个新增 discovery 脚本覆盖规则权威性、同 tick 预算、库存守恒、体力、训练阈值、伤害、恢复、配置 hash 与 CLI。`npm --prefix world-engine run test:postgres:player-actions` 增加 10 组真实 PostgreSQL 场景：服务端收益、体力恢复、采集、转移、训练重启、战斗死亡、HTTP 规则读取、提交确认丢失、SQL 回滚和两个新进程的 v3 升级恢复。
 
-SQL 专项必须使用独立 `_ci`/`_test` 数据库，缺失即失败。Node 20/22 各执行完整专项，保留 bash/pipefail 与实际完成标记；全回归分母为 121，最终通过证据以交付提交对应的 verification.json 和原始 CI 日志为准。
+SQL 专项必须使用独立 `_ci`/`_test` 数据库，缺失即失败。Node 20/22 各执行完整专项，保留 bash/pipefail 与实际完成标记；当前全回归分母为 125，最终通过证据以交付提交对应的 verification.json 和原始 CI 日志为准。
 
-这是确定性的引擎规则与可配置数值基线；未包含技能树、职业数值平衡、装备系统或多角色组队战斗协议，也不把这些未实现内容列作已完成。
+这是确定性的引擎规则与可配置数值基线；未包含完整技能树、职业数值平衡或多角色组队战斗协议；装备与消费/商店已接入同一规则动作预算，见 DURABLE_INVENTORY.md，也不把这些未实现内容列作已完成。

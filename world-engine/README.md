@@ -2,6 +2,8 @@
 
 这是一个主题无关、持续运行和演化的世界引擎。
 
+当前 v1 的总能力、编程入口和统一验收见 [引擎 v1 交付](ENGINE_V1_RELEASE.md)，物品/装备/商店的持久流程见 [库存与交易](DURABLE_INVENTORY.md)。
+
 人口增长后的运行诊断与已实现的等价性能优化见 [真实运行剖析](RUNTIME_PERFORMANCE.md)。
 
 第二批优化及完整 tick / 单项测量见 [信息传播与状态复制](KNOWLEDGE_SCALE_PERFORMANCE.md)。
@@ -1097,7 +1099,9 @@ Novels are updated
 
 ---
 
-## 后续优先开发路线
+## 历史优先路线（基础模块现已实现）
+
+下列方向已有对应核心模块和回归，不再表示从零待开发；当前范围与边界以 ENGINE_V1_RELEASE.md 为准。
 
 ### 1. Information Engine
 

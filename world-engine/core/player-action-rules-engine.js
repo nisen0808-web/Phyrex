@@ -2,8 +2,9 @@
 const { createEvent } = require('./schema');
 const { nextWorldId } = require('./world-id-engine');
 
+const { TYPES: ITEM_ACTIONS, planInventoryOperation, applyInventoryOperation } = require('./inventory-operations-engine');
 const RULE_VERSION = 1;
-const PRIORITY = Object.freeze({ move: 70, gather: 50, work: 55, train: 60, rest: 65, interact: 45, transfer: 50, damage: 80 });
+const PRIORITY = Object.freeze({ equip_item: 60, unequip_item: 60, use_item: 65, buy_item: 55, sell_item: 55, give_item: 50, move: 70, gather: 50, work: 55, train: 60, rest: 65, interact: 45, transfer: 50, damage: 80 });
 const DEFAULT_PLAYER_ACTION_RULES = Object.freeze({ version: RULE_VERSION,
   workResource: 'currency', workYield: 10, workEnergy: 6, gatherYield: 3, gatherEnergy: 4,
   trainingExperience: 2, trainingEnergy: 8, experiencePerPower: 10, trainingPowerCap: 1000,
@@ -50,10 +51,15 @@ function preparePlayerAction(world, entity, type, payload = {}, rules = getPlaye
   if (!stateOf(entity) || !['energy', 'maxEnergy', 'health', 'maxHealth', 'power', 'defense'].every(key => safeNumber(entity.stats?.[key]))) return { reason: 'invalid_actor_state' };
   if (entity.stats.health === 0 || entity.stats.maxHealth === 0) return { reason: 'invalid_actor_state' };
   if (payload.priority !== undefined && payload.priority !== PRIORITY[type]) return { reason: 'server_controlled_parameter' };
-  let energyCost = { work: rules.workEnergy, gather: rules.gatherEnergy, train: rules.trainingEnergy,
+  let energyCost = { equip_item: 0, unequip_item: 0, use_item: 0, buy_item: 0, sell_item: 0, give_item: 0, work: rules.workEnergy, gather: rules.gatherEnergy, train: rules.trainingEnergy,
     damage: rules.attackEnergy, move: rules.moveEnergy, transfer: rules.transferEnergy, interact: rules.interactEnergy, rest: 0 }[type];
   if (payload.energyCost !== undefined && payload.energyCost !== energyCost) return { reason: 'server_controlled_parameter' };
   const intent = {}, terms = { energyCost };
+  if (ITEM_ACTIONS.includes(type)) {
+    const plan = planInventoryOperation(world, entity, type, payload);
+    if (plan.reason) return { reason: plan.reason };
+    Object.assign(intent, payload); terms.inventory = plan;
+  }
   if (type === 'move') {
     const to = payload.locationId;
     if (!own(world.locations, to)) return { reason: 'missing_location' };
@@ -129,7 +135,9 @@ function applyPlayerRuleAction(world, action, entity, options = {}) {
   if (prepared.reason) return failure(prepared.reason);
   const { terms } = prepared, p = prepared.action.payload, type = action.type;
   let value, eventType, participants = [entity.id], locationId = entity.locationId;
-  if (type === 'move') {
+  if (ITEM_ACTIONS.includes(type)) {
+    value = applyInventoryOperation(world, terms.inventory); eventType = `inventory.${type}`;
+  } else if (type === 'move') {
     value = { moved: true, from: entity.locationId, to: p.locationId }; entity.locationId = p.locationId;
     locationId = p.locationId; eventType = 'entity.moved';
   } else if (type === 'work' || type === 'gather') {

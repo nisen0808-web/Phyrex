@@ -13,8 +13,8 @@ const { getPlayerActionRules } = require('../core/player-action-rules-engine');
 const { repairLoadedWorld } = require('../core/persistence-engine');
 const { canonicalWorldCopy, canonicalizeWorldInPlace } = require('./canonical-world');
 
-const DURABLE_RUNTIME_VERSION = 4;
-const COMMAND_PROFILE = 'postgres-player-rules-v3';
+const DURABLE_RUNTIME_VERSION = 5;
+const COMMAND_PROFILE = 'postgres-inventory-v4';
 const MAX_COMMANDS_PER_BATCH = 100;
 
 function runtimeError(code) {
@@ -106,11 +106,12 @@ async function createDurableWorldRuntime(options = {}) {
     safeInteger(loaded.world.tick, 'loaded tick');
     playerRules = freezeJson(getPlayerActionRules(loaded.world));
     configHash = digest({ version: DURABLE_RUNTIME_VERSION, profile, simulation, commands: { profile: COMMAND_PROFILE, maxPerBatch: MAX_COMMANDS_PER_BATCH, rules: playerRules } });
+    const previousActionsHash = digest({ version: 4, profile, simulation, commands: { profile: 'postgres-player-rules-v3', maxPerBatch: MAX_COMMANDS_PER_BATCH, rules: playerRules } });
     const previousConfig = loaded.metadata?.durableRuntime?.configHash;
     const priorUpgrade = loaded.metadata?.durableRuntime?.upgradedFrom;
     if (previousConfig === configHash && /^[0-9a-f]{64}$/.test(priorUpgrade || '')) upgradedFrom = priorUpgrade;
     if (previousConfig && previousConfig !== configHash) {
-      if (![legacyConfigHash, previousConfigHash, previousPlayerHash].includes(previousConfig)) throw runtimeError('CONFIG_MISMATCH');
+      if (![legacyConfigHash, previousConfigHash, previousPlayerHash, previousActionsHash].includes(previousConfig)) throw runtimeError('CONFIG_MISMATCH');
       if (!options.upgradeCommandProfile) throw runtimeError('COMMAND_PROFILE_UPGRADE_REQUIRED');
       upgradedFrom = previousConfig;
     }

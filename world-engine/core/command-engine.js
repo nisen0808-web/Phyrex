@@ -16,6 +16,8 @@ const COMMAND_STATUS = {
 };
 
 const COMMAND_TYPES = {
+  EQUIP_ITEM: 'equip_item', UNEQUIP_ITEM: 'unequip_item', USE_ITEM: 'use_item',
+  BUY_ITEM: 'buy_item', SELL_ITEM: 'sell_item', GIVE_ITEM: 'give_item',
   WAIT: 'wait',
   MOVE: 'move',
   GATHER: 'gather',
@@ -130,7 +132,7 @@ function dispatchCommand(world, command, options = {}) {
     if (options.publicPlayer && target.locationId !== entity.locationId) return reject(command, 'target_not_at_location');
   }
   if (type === 'gather' && !own(world.locations, entity.locationId)) return reject(command, 'missing_location');
-  if (options.publicPlayer && Object.hasOwn(PRIORITY, type)) {
+  if ((options.publicPlayer || ['equip_item', 'unequip_item', 'use_item', 'buy_item', 'sell_item', 'give_item'].includes(type)) && Object.hasOwn(PRIORITY, type)) {
     if (world.actionQueue.some(action => action.actorId === entity.id && action.playerActionRuleVersion)) return reject(command, 'character_busy');
     const rules = getPlayerActionRules(world), prepared = preparePlayerAction(world, entity, type, command.payload, rules);
     if (prepared.reason) return reject(command, prepared.reason);
@@ -223,7 +225,7 @@ function normalizeCommand(world, playerId, input = {}) {
 
 function copyCommandTopLevelPayload(input) {
   const out = {};
-  for (const key of ['locationId', 'targetId', 'targetType', 'organizationId', 'entityId', 'resource', 'amount', 'ticks', 'role', 'goalType', 'priority', 'effect', 'energyCost', 'health', 'energy', 'power', 'lethal', 'createContract']) {
+  for (const key of ['itemId', 'shopId', 'definitionId', 'quantity', 'slot', 'locationId', 'targetId', 'targetType', 'organizationId', 'entityId', 'resource', 'amount', 'ticks', 'role', 'goalType', 'priority', 'effect', 'energyCost', 'health', 'energy', 'power', 'lethal', 'createContract']) {
     if (input[key] !== undefined) out[key] = input[key];
   }
   return out;

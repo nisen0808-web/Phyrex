@@ -139,7 +139,7 @@ async function main() {
     const firstTraining = await row('v3-upgrade', 'first-training');
     assert.strictEqual(firstTraining.result.status, 'completed'); assert.strictEqual((await row('v3-upgrade', 'old-free-action')).result.status, 'rejected');
     await cli('v3-upgrade'); assert.deepStrictEqual(await row('v3-upgrade', 'first-training'), firstTraining);
-    const upgraded = await store.loadWorld('v3-upgrade'); assert.strictEqual(upgraded.metadata.durableRuntime.version, 4);
+    const upgraded = await store.loadWorld('v3-upgrade'); assert.strictEqual(upgraded.metadata.durableRuntime.version, 5);
     assert.strictEqual(upgraded.metadata.durableRuntime.upgradedFrom, oldHash);
     pass('two fresh full-kernel CLI processes upgrade v3 explicitly and retain the original applied action receipt');
 

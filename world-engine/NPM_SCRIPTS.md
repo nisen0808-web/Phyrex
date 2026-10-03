@@ -48,6 +48,8 @@
 | `npm --prefix world-engine run test:postgres:command-queue` | `node tests/integration/postgres-command-queue.js` |
 | `npm --prefix world-engine run test:postgres:player-contract` | `node tests/integration/postgres-player-contract.js` |
 | `npm --prefix world-engine run test:postgres:player-actions` | `node tests/integration/postgres-player-actions.js` |
+| `npm --prefix world-engine run test:postgres:inventory` | `node tests/integration/postgres-inventory.js` |
+| `npm --prefix world-engine run engine:verify` | `node demo/engine-verify-cli.js` |
 
 ## 根目录兼容入口
 
@@ -85,3 +87,5 @@
 - test:postgres:command-queue 验证事务容量、分页、权限撤销与进程恢复；Node 20/22 的 PostgreSQL CI 均执行 10 组场景。
 
 - `npm --prefix world-engine run test:postgres:player-actions`：10 组真实 SQL 的服务端行动、训练成长、回滚、丢确认与显式 v3→v4 升级。配置与使用见 PLAYER_ACTION_RULES.md。
+
+- test:postgres:inventory：12 组真实 SQL 物品/装备/交易/升级专项；engine:verify：可列出/执行全部 22 个门禁，首个失败停下，要求实际完成标记。见 ENGINE_V1_RELEASE.md。

@@ -22,6 +22,7 @@ function main() {
   assert.strictEqual(result.status, 0, `play-shell sample script should exit 0\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`);
   assert.ok(result.stdout.includes('World Engine Scripted Shell'), 'script output should include shell header');
   assert.ok(result.stdout.includes('Script completed.'), 'script output should complete');
+  assert.ok(result.stdout.includes('Used spirit_stone.'), 'sample consumes energy item only after energy expenditure');
   assert.ok(result.stdout.includes('Snapshot written'), 'script output should write snapshot');
   assert.ok(fs.existsSync(snapshotPath), 'sample shell snapshot should be created');
 

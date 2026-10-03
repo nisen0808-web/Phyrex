@@ -7,12 +7,12 @@ const { configurePlayerActionRules } = require('../core/player-action-rules-engi
 
 async function main(argv = process.argv.slice(2)) {
   if (argv.length === 1 && argv[0] === '--help') {
-    console.log('Usage: engine-init-cli.js --output NEW_FILE [--world-id engine-world] [--seed engine-v1] [--population 12] [--player-rules RULES_JSON_FILE]\nCreates a deterministic sample world with four locations, population, organization, observer and v1 retention settings. No accounts or tokens are embedded.');
+    console.log('Usage: engine-init-cli.js --output NEW_FILE [--world-id engine-world] [--seed engine-v1] [--population 12] [--player-rules RULES_JSON_FILE] [--commerce starter|none]\nCreates a deterministic sample world with four locations, population, organization, observer and v1 retention settings. No accounts or tokens are embedded.');
     return;
   }
   const options = {};
   for (let i = 0; i < argv.length; i++) {
-    const key = { '--output': 'output', '--world-id': 'worldId', '--seed': 'seed', '--population': 'population', '--player-rules': 'rulesFile' }[argv[i]];
+    const key = { '--output': 'output', '--world-id': 'worldId', '--seed': 'seed', '--population': 'population', '--player-rules': 'rulesFile', '--commerce': 'commerce' }[argv[i]];
     const value = argv[++i];
     if (!key || !value || value.startsWith('--') || Object.hasOwn(options, key)) throw new Error('Invalid initialization arguments');
     options[key] = value;
