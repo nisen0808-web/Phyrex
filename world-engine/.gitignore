@@ -3,3 +3,5 @@ output/
 data/
 .env
 .env.postgres
+secrets/
+backups/

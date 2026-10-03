@@ -60,7 +60,15 @@ function createAccount(world, input = {}) {
     meta: { ...(input.meta || {}) },
   };
   state.byId[id] = account;
-  for (const playerId of account.playerIds) state.byPlayer[playerId] = id;
+  for (const playerId of account.playerIds) {
+    for (const previous of Object.values(state.byId)) {
+      if (previous.id !== id && previous.playerIds.includes(playerId)) {
+        previous.playerIds = previous.playerIds.filter(value => value !== playerId);
+        previous.updatedAt = world.tick;
+      }
+    }
+    state.byPlayer[playerId] = id;
+  }
   state.stats.created = Number(state.stats.created || 0) + 1;
   return account;
 }
@@ -75,6 +83,14 @@ function linkPlayerToAccount(world, accountId, playerId) {
   const account = getAccount(world, accountId);
   if (!account) throw new Error(`Missing account ${accountId}`);
   if (!world.players?.byId?.[playerId]) throw new Error(`Missing player ${playerId}`);
+  // Permission checks use account.playerIds. A transfer must revoke the old
+  // ownership there as well as changing the reverse index.
+  for (const previous of Object.values(state.byId)) {
+    if (previous.id !== accountId && previous.playerIds.includes(playerId)) {
+      previous.playerIds = previous.playerIds.filter(id => id !== playerId);
+      previous.updatedAt = world.tick;
+    }
+  }
   if (!account.playerIds.includes(playerId)) account.playerIds.push(playerId);
   account.updatedAt = world.tick;
   state.byPlayer[playerId] = accountId;
@@ -226,8 +242,9 @@ function sanitizeSession(session) {
 function trimAccountSessions(world, accountId, limit) {
   const state = ensureAccountState(world);
   const sessions = Object.values(state.sessions || {})
-    .filter(session => session.accountId === accountId)
-    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+    .filter(session => session.accountId === accountId && session.status === SESSION_STATUS.ACTIVE)
+    // Sessions created within one tick still evict the oldest insertion.
+    .reverse().sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
   for (const session of sessions.slice(limit)) revokeSession(world, session.id, 'trimmed');
 }
 

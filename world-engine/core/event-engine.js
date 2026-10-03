@@ -199,7 +199,7 @@ function scheduleRandomEvents(world, options = {}) {
 
 function recordEventMemory(world, event, payload = {}) {
   world.memory.push({
-    id: `memory_${world.tick}_${world.memory.length + 1}`,
+    id: nextWorldId(world, 'memory', 'event.memory'),
     tick: world.tick,
     type: `event.${event.type}`,
     payload: {
@@ -215,7 +215,7 @@ function recordEventMemory(world, event, payload = {}) {
 
 function recordCausalityFromEvent(world, event, type) {
   world.causality.push({
-    id: `cause_${world.tick}_${world.causality.length + 1}`,
+    id: nextWorldId(world, 'cause', 'event.causality'),
     tick: world.tick,
     type,
     sourceId: event.actorIds?.[0] || null,

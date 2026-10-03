@@ -38,7 +38,7 @@ async function main() {
   const pass = name => { groups += 1; console.log(`PASS ${name}`); };
   try {
     const migration = await store.migrate();
-    assert.strictEqual(migration.version, 3);
+    assert.strictEqual(migration.version, require('../../storage/postgres/migrations').MIGRATIONS.length);
     assert.strictEqual((await auditStore.summary()).records, 0);
     pass('migration 3 creates a separately queryable durable command API audit store');
 

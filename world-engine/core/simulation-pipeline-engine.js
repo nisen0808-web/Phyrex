@@ -1,4 +1,6 @@
 'use strict';
+const { pruneCausality } = require('./causality-retention-engine');
+const { pruneWorldGoalHistory } = require('./goal-retention-engine');
 
 const { advanceOneTick, enqueueAction } = require('./world-engine');
 const { planAllEntityActions } = require('./goal-engine');
@@ -193,7 +195,7 @@ function createSimulationSystemDefinitions() {
     }),
     system('agency.opportunity', 'agency', {
       after: ['agency.desire'],
-      reads: ['entities', 'opportunities', 'goals', 'locations'],
+      reads: ['entities', 'opportunities', 'goals', 'locations', 'processes', 'conflicts', 'governance'],
       writes: ['entities', 'opportunities', 'goals'],
       enabledBy: 'autoOpportunity',
       run: context => {
@@ -383,7 +385,7 @@ function createSimulationSystemDefinitions() {
     }),
     system('civilization.conflict', 'civilization', {
       after: ['civilization.emergence'],
-      reads: ['conflicts', 'entities', 'organizations', 'governance'],
+      reads: ['conflicts', 'entities', 'organizations', 'governance', 'processes', 'opportunities'],
       writes: ['conflicts', 'entities', 'organizations', 'memory'],
       enabledBy: 'autoConflict',
       run: context => {
@@ -456,8 +458,8 @@ function createSimulationSystemDefinitions() {
     }),
     system('finalize.report', 'finalize', {
       after: ['finalize.novel'],
-      reads: ['simulation', 'memory'],
-      writes: ['simulation', 'memory'],
+      reads: ['simulation', 'memory', 'causality', 'events', 'actionQueue', 'processes', 'causalityArchive', 'entities'],
+      writes: ['simulation', 'memory', 'causality', 'causalityArchive', 'entities'],
       run: context => {
         const { world, frame } = frameContext(context);
         finalizeSimulationFrame(world, frame);
@@ -540,6 +542,8 @@ function finalizeSimulationFrame(world, frame) {
   if (frame.finalized) return frame.report;
   if (frame.report.tickAfter === null) frame.report.tickAfter = world.tick;
   trimWorldMemory(world, frame.config.maxWorldMemory);
+  pruneCausality(world, frame.config.retention || {});
+  pruneWorldGoalHistory(world, frame.config.retention || {});
   addCounter(frame.simulation, 'ticks', 1);
   frame.simulation.lastTickReport = compactSimulationReport(frame.report);
   frame.simulation.reports.push(frame.simulation.lastTickReport);

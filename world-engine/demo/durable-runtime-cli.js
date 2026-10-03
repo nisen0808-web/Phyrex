@@ -10,7 +10,8 @@ function parseArgs(argv = []) {
     '--batches': 'batches', '--interval': 'intervalMs', '--retry-delay': 'retryDelayMs', '--max-attempts': 'maxCommitAttempts' };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === '--continuous') args.continuous = true;
+    if (arg === '--upgrade-command-profile' && args.upgradeCommandProfile === undefined) args.upgradeCommandProfile = true;
+    else if (arg === '--continuous') args.continuous = true;
     else if (arg === '--help') args.help = true;
     else if (names[arg] && argv[index + 1] && !argv[index + 1].startsWith('--')) args[names[arg]] = argv[++index];
     else throw new Error('Invalid durable runtime option');
@@ -22,7 +23,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
   const args = parseArgs(argv);
   if (args.help) {
     console.log('Usage: npm run runtime:postgres -- --world-id <saved-world> [--batches <n> | --continuous]\n'
-      + 'Options: --schema <name> --ticks-per-batch <1..100> --interval <ms> --retry-delay <ms> --max-attempts <n>\n'
+      + 'Options: --upgrade-command-profile --schema <name> --ticks-per-batch <1..100> --interval <ms> --retry-delay <ms> --max-attempts <n>\n'
       + 'Requires an existing migrated PostgreSQL store and checkpoint; no automatic new-world creation.\n'
       + 'Connection and credentials: WORLD_ENGINE_DATABASE_URL only; never put passwords in CLI arguments.');
     return null;
@@ -37,7 +38,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
   try {
     runtime = await createDurableWorldRuntime({ worldId: args.worldId ?? env.WORLD_ENGINE_WORLD_ID,
       database: { schema: args.schema }, env, ticksPerBatch: args.ticksPerBatch,
-      intervalMs, retryDelayMs, maxCommitAttempts: args.maxCommitAttempts,
+      intervalMs, retryDelayMs, maxCommitAttempts: args.maxCommitAttempts, upgradeCommandProfile: args.upgradeCommandProfile,
       onCommit: result => console.log(JSON.stringify({ type: 'committed', ...result })),
     });
     console.log(JSON.stringify({ type: 'ready', ...runtime.summary() }));
@@ -50,9 +51,8 @@ async function main(argv = process.argv.slice(2), env = process.env) {
         if (status.status === 'blocked') throw new Error('Runtime requires recovery');
       }
       if (!stopping && (args.continuous || completed < batches)) {
-        const pending = runtime.summary().pending;
-        const wait = pending ? Math.min(10000, retryDelayMs * (2 ** Math.min(pending.attempts - 1, 20))) : intervalMs;
-        await delay(wait, undefined, { signal: controller.signal }).catch(error => { if (error.name !== 'AbortError') throw error; });
+        await delay(runtime.summary().nextDelayMs, undefined, { signal: controller.signal })
+          .catch(error => { if (error.name !== 'AbortError') throw error; });
       }
     }
     const result = await runtime.close();

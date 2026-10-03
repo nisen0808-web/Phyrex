@@ -118,6 +118,7 @@ function recordLifeEvent(world, input = {}) {
 }
 
 function ingestWorldMemory(world, options = {}) {
+  const retention = historyRetentionOptions(options);
   ensureHistoryState(world);
   const minImportance = Number(options.minImportance || 0);
   const consumed = new Set(world.history.consumedMemoryIds || []);
@@ -131,7 +132,55 @@ function ingestWorldMemory(world, options = {}) {
   }
 
   world.history.consumedMemoryIds = Array.from(consumed);
+  if (retention) pruneHistory(world, retention);
   return created;
+}
+
+function historyRetentionOptions(options = {}) {
+  const result = {};
+  for (const key of ['maxEventsPerEntity', 'maxTimelineEvents']) {
+    if (options[key] === undefined) continue;
+    if (!Number.isSafeInteger(options[key]) || options[key] < 1 || options[key] > 1000000) {
+      throw new Error(`Invalid history ${key}`);
+    }
+    result[key] = options[key];
+  }
+  return Object.keys(result).length ? result : null;
+}
+
+function pruneHistory(world, options = {}) {
+  const config = historyRetentionOptions(options);
+  if (!config) return { removed: 0 };
+  const history = ensureHistoryState(world);
+  const before = Object.values(history.lifeEventsByEntity).reduce((sum, events) => sum + events.length, 0);
+  const candidates = new Set();
+  for (const [entityId, events] of Object.entries(history.lifeEventsByEntity)) {
+    const kept = config.maxEventsPerEntity ? events.slice(-config.maxEventsPerEntity) : events;
+    history.lifeEventsByEntity[entityId] = kept;
+    for (const event of kept) candidates.add(event.id);
+  }
+  let timeline = history.globalTimeline.filter(event => candidates.has(event.id));
+  if (config.maxTimelineEvents) timeline = timeline.slice(-config.maxTimelineEvents);
+  const retained = new Set(timeline.map(event => event.id));
+  history.globalTimeline = timeline;
+  history.indexes = { byType: {}, byLocation: {}, byTick: {} };
+  let after = 0;
+  for (const [entityId, events] of Object.entries(history.lifeEventsByEntity)) {
+    const kept = events.filter(event => retained.has(event.id));
+    history.lifeEventsByEntity[entityId] = kept;
+    after += kept.length;
+    for (const event of kept) {
+      addIndex(history.indexes.byType, event.type, event.id);
+      if (event.locationId) addIndex(history.indexes.byLocation, event.locationId, event.id);
+      addIndex(history.indexes.byTick, String(event.tick), event.id);
+    }
+    updateLifeArcs(world, entityId);
+  }
+  // Only memories still in the rolling input buffer can be ingested again.
+  const liveMemoryIds = new Set((world.memory || []).map(memory => memory.id));
+  history.consumedMemoryIds = (history.consumedMemoryIds || []).filter(id => liveMemoryIds.has(id));
+  history.retention = { ...config, removedEvents: (history.retention?.removedEvents || 0) + before - after };
+  return { removed: before - after };
 }
 
 function memoryToLifeEvents(world, memory) {
@@ -335,6 +384,7 @@ module.exports = {
   createLifeEvent,
   recordLifeEvent,
   ingestWorldMemory,
+  pruneHistory,
   memoryToLifeEvents,
   updateLifeArcs,
   getEntityChronicle,

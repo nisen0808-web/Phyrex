@@ -4,6 +4,7 @@ const { normalizePostgresConfig, safePostgresConfig, databaseError, integer } = 
 const { MIGRATIONS, checkMigrationHistory } = require('./migrations');
 const { textId, safeInteger, fromSqlInteger } = require('./codec');
 const { sanitizeError } = require('./store');
+const { auditDigest, lockAuditRequest } = require('./audit-receipt');
 
 function createPostgresCommandApiAuditStore(options = {}) {
   const config = normalizePostgresConfig(options.database || options, options.env || process.env);
@@ -48,6 +49,15 @@ function createPostgresCommandApiAuditStore(options = {}) {
     const row = captureAudit(input);
     await ensureReady();
     return transaction(async client => {
+      await lockAuditRequest(client, schema, row.requestId);
+      const receipt = await client.query(`SELECT sequence,input_digest,created_at FROM ${schema}.command_api_audit_receipts WHERE request_id=$1`, [row.requestId]);
+      if (receipt.rows.length) {
+        const previous = receipt.rows[0];
+        if (previous.input_digest !== auditDigest(row)) throw databaseError('IDEMPOTENCY_CONFLICT', 'Audit request ID was reused for different data');
+        return { ...row, sequence: fromSqlInteger(previous.sequence),
+          createdAt: previous.created_at instanceof Date ? previous.created_at.toISOString() : previous.created_at,
+          idempotent: true, retained: false };
+      }
       const inserted = await client.query(`INSERT INTO ${schema}.command_api_audit
         (request_id,world_id,account_id,player_id,command_id,method,route,status_code,error_code)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
@@ -63,10 +73,14 @@ function createPostgresCommandApiAuditStore(options = {}) {
     });
   }
 
-  async function list(options = {}) {
+  async function list(options = {}, readOptions = {}) {
     const limit = integer(options.limit, 100, 1, 1000, 'audit limit');
     const order = options.order ?? 'desc';
     if (!['asc','desc'].includes(order)) throw databaseError('INVALID_INPUT', 'Audit order must be asc or desc');
+    const expectedWorldRevision = readOptions.expectedWorldRevision === undefined
+      ? null : safeInteger(readOptions.expectedWorldRevision, 'expectedWorldRevision', 1);
+    // Capture the authorization fence before the first await, just like query values.
+    const fencedWorldId = expectedWorldRevision === null ? null : textId(options.worldId, 'audit worldId');
     const conditions = [], values = [];
     const add = (clause, value) => { values.push(value); conditions.push(clause.replace('?', `$${values.length}`)); };
     if (options.worldId !== undefined) add('world_id = ?', textId(options.worldId, 'audit worldId'));
@@ -77,9 +91,19 @@ function createPostgresCommandApiAuditStore(options = {}) {
     if (options.route !== undefined) add('route = ?', textId(options.route, 'audit route', 64));
     if (options.statusCode !== undefined) add('status_code = ?', auditStatus(options.statusCode));
     if (options.afterSequence !== undefined) add('sequence > ?', safeInteger(options.afterSequence, 'audit afterSequence'));
+    if (options.beforeSequence !== undefined) add('sequence < ?', safeInteger(options.beforeSequence, 'audit beforeSequence', 1));
     values.push(limit);
     await ensureReady();
     return transaction(async client => {
+      // Revision and records share one repeatable-read snapshot. A checkpoint
+      // committed before this read transaction invalidates stale authorization.
+      if (expectedWorldRevision !== null) {
+        const world = await client.query(`SELECT revision FROM ${schema}.worlds WHERE world_id=$1 AND latest_sequence IS NOT NULL`, [fencedWorldId]);
+        if (!world.rows.length) throw databaseError('MISSING_WORLD', 'Audit world does not have a committed checkpoint');
+        if (fromSqlInteger(world.rows[0].revision, 'world revision') !== expectedWorldRevision) {
+          throw databaseError('REVISION_CONFLICT', 'World revision changed; re-authorize before reading audit');
+        }
+      }
       const result = await client.query(`SELECT * FROM ${schema}.command_api_audit ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
         ORDER BY sequence ${order.toUpperCase()} LIMIT $${values.length}`, values);
       return result.rows.map(summarizeAudit);

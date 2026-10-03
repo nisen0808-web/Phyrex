@@ -1,0 +1,35 @@
+'use strict';
+const assert = require('assert');
+const { inventoryFixture, grantItem } = require('./helpers/inventory-fixture');
+const { submit, act, advanceWorld } = require('./helpers/player-rules-fixture');
+const { playerStateView } = require('../core/durable-state-view-engine');
+const { digest, detachedJson } = require('../storage/postgres/codec');
+const world = inventoryFixture(), hero = world.entities['hero-one'];
+const gameplay = () => digest({ entities: world.entities, items: world.items, shops: world.shops, queue: world.actionQueue });
+for (const payload of [{ shopId: 'market', definitionId: 'wooden_sword', price: 1 }, { shopId: '__proto__', definitionId: 'healing_pill' }, { shopId: 'market', definitionId: 'healing_pill', quantity: 0 }]) {
+  const before = gameplay(); assert.strictEqual(submit(world, 'buy_item', payload).command.status, 'rejected'); assert.strictEqual(gameplay(), before);
+}
+const bought = act(world, 'buy_item', { shopId: 'market', definitionId: 'wooden_sword' });
+const id = bought.result.value.itemId; assert.strictEqual(bought.status, 'completed');
+const equip = submit(world, 'equip_item', { itemId: id }).command;
+assert.strictEqual(submit(world, 'work').result.reason, 'character_busy'); advanceWorld(world);
+assert.strictEqual(equip.status, 'completed'); assert.strictEqual(hero.stats.power, 14);
+assert.strictEqual(submit(world, 'give_item', { itemId: id, targetId: 'hero-two' }).result.reason, 'item_equipped');
+act(world, 'unequip_item', { slot: 'weapon' });
+const copy = detachedJson(world);
+act(world, 'give_item', { itemId: id, targetId: 'hero-two' }); act(copy, 'give_item', { itemId: id, targetId: 'hero-two' });
+assert.strictEqual(digest(world), digest(copy)); assert.strictEqual(world.items.instances[id].ownerId, 'hero-two');
+assert.strictEqual(submit(world, 'equip_item', { itemId: id }).result.reason, 'item_not_owned');
+const potion = grantItem(world, 'entity', hero.id, 'healing_pill'); hero.stats.health = 80;
+const pending = submit(world, 'use_item', { itemId: potion.id }).command; hero.status = 'dead'; advanceWorld(world);
+assert.strictEqual(pending.status, 'rejected'); assert.strictEqual(potion.quantity, 1); hero.status = 'alive';
+const move = submit(world, 'buy_item', { shopId: 'market', definitionId: 'healing_pill' }).command; hero.locationId = 'away'; advanceWorld(world);
+assert.strictEqual(move.result.reason, 'shop_not_at_location'); hero.locationId = 'home';
+potion.meta = { secret: 'private-item' }; potion.effects.secret = 'private-effect'; world.shops.byId.market.secret = 'private-shop';
+const beforeView = digest(world), view = playerStateView(world, 7, 'one');
+assert.strictEqual(digest(world), beforeView); assert.ok(!JSON.stringify(view).includes('private-'));
+assert.ok(!view.inventory.items.some(i => i.id === id), 'another owner inventory is private');
+view.inventory.items[0].quantity = 999; assert.strictEqual(potion.quantity, 1);
+const empty = inventoryFixture(); delete empty.items; delete empty.shops; const emptyHash = digest(empty);
+playerStateView(empty, 1, 'one'); assert.strictEqual(digest(empty), emptyHash, 'read must not seed shops or definitions');
+console.log('durable inventory actions passed: public contracts, shared action budget, ownership, execution-time checks, save recovery and pure redacted views');

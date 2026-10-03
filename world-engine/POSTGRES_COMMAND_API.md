@@ -7,6 +7,7 @@ This service exposes authenticated asynchronous command submission and status po
 ```text
 POST /durable/worlds/:worldId/players/:playerId/commands
 GET  /durable/worlds/:worldId/commands/:commandId
+GET  /durable/worlds/:worldId/admin/audit
 ```
 
 POST requires `Content-Type: application/json` and a Bearer session token. The request body must contain caller-owned durable `id` and command `type`. The complete command body becomes the immutable inbox input; the top-level ID is stored separately as the durable idempotency key.
@@ -14,6 +15,12 @@ POST requires `Content-Type: application/json` and a Bearer session token. The r
 A newly queued command returns HTTP 202 and `status=pending`. Reposting the exact same command is idempotent. If the command has already been applied, an exact repost returns HTTP 200 with the existing terminal result. Reusing the same ID for different input or a different player returns conflict.
 
 GET returns the durable pending/applied state. It never executes a command.
+
+The admin audit endpoint requires GM/Admin privileges, shares the status-read
+limiter and binds reads to the authorization revision. It returns only safe audit
+fields using descending `beforeSequence` pagination. See
+[POSTGRES_COMMAND_AUDIT_QUERY.md](POSTGRES_COMMAND_AUDIT_QUERY.md) for its strict
+filter contract, concurrency boundary and validation.
 
 ## Authorization
 
@@ -128,4 +135,8 @@ The existing PostgreSQL store, inbox, runtime and runtime-command suites remain 
 
 ## Remaining boundary
 
-This is an engine/service primitive, not a production internet deployment. Distributed gateway rate limiting, durable operational audit, production TLS/secrets, durable session/account mutation workflows, multi-instance leader policy, retention and backup/restore remain separate acceptance work.
+This is an engine/service primitive, not a production internet deployment. Durable
+operational audit (Migration 3) and privileged audit reads are implemented.
+Distributed gateway rate limiting, audit retention/reliable delivery, production
+TLS/secrets, durable session/account mutation workflows, multi-instance leader
+policy and backup/restore remain separate acceptance work.

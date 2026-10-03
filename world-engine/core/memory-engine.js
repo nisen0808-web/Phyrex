@@ -1,6 +1,7 @@
 'use strict';
 
 const { nextWorldId } = require('./world-id-engine');
+const { addOrderedIndex: addIndex } = require('./ordered-index-engine');
 
 const MEMORY_SCOPE = {
   ENTITY: 'entity',
@@ -283,6 +284,20 @@ function trimGlobalMemories(world, maxGlobal = DEFAULT_MEMORY_OPTIONS.maxGlobalM
 
   for (const key of Object.keys(state.byOwner)) {
     const memories = (state.byOwner[key] || []).map(id => state.byId[id]).filter(Boolean);
+    // Most buckets were sorted by the previous insertion. Preserve that stable
+    // order without sorting or building a retention Set when nothing can drop.
+    if (Number.isSafeInteger(maxPerOwner) && maxPerOwner >= memories.length) {
+      let sorted = true, previous = Infinity;
+      for (const memory of memories) {
+        const score = scoreMemoryForRetention(memory);
+        if (!Number.isFinite(score) || score > previous) { sorted = false; break; }
+        previous = score;
+      }
+      if (sorted) {
+        state.byOwner[key] = memories.map(memory => memory.id);
+        continue;
+      }
+    }
     const kept = memories.sort((a, b) => scoreMemoryForRetention(b) - scoreMemoryForRetention(a)).slice(0, maxPerOwner);
     const keptIds = new Set(kept.map(memory => memory.id));
     for (const memory of memories) {
@@ -294,17 +309,38 @@ function trimGlobalMemories(world, maxGlobal = DEFAULT_MEMORY_OPTIONS.maxGlobalM
     state.byOwner[key] = kept.map(memory => memory.id);
   }
 
-  const all = Object.values(state.byId);
-  if (all.length > maxGlobal) {
-    const keep = new Set(all.sort((a, b) => scoreMemoryForRetention(b) - scoreMemoryForRetention(a)).slice(0, maxGlobal).map(memory => memory.id));
-    for (const memory of all) {
-      if (!keep.has(memory.id)) {
-        delete state.byId[memory.id];
-        pruned.push(memory.id);
+  const globalIds = Object.keys(state.byId);
+  if (globalIds.length > maxGlobal) {
+    const all = globalIds.map(id => state.byId[id]);
+    // One insertion beyond the global limit only needs the last minimum:
+    // stable descending sort keeps earlier ties and evicts the latest tie.
+    let victim = null, lowest = Infinity;
+    if (Number.isSafeInteger(maxGlobal) && maxGlobal >= 0 && all.length === maxGlobal + 1) {
+      for (let index = 0; index < all.length; index++) {
+        const memory = all[index];
+        const score = scoreMemoryForRetention(memory);
+        if (!Number.isFinite(score) || !['string', 'number'].includes(typeof memory.id)
+            || String(memory.id) !== globalIds[index]) { victim = null; break; }
+        if (score <= lowest) { lowest = score; victim = memory; }
       }
     }
-    for (const key of Object.keys(state.byOwner)) {
-      state.byOwner[key] = (state.byOwner[key] || []).filter(id => keep.has(id));
+    if (victim) {
+      delete state.byId[victim.id];
+      pruned.push(victim.id);
+      for (const key of Object.keys(state.byOwner)) {
+        state.byOwner[key] = state.byOwner[key].filter(id => Object.hasOwn(state.byId, id) && state.byId[id].id === id);
+      }
+    } else {
+      const keep = new Set(all.sort((a, b) => scoreMemoryForRetention(b) - scoreMemoryForRetention(a)).slice(0, maxGlobal).map(memory => memory.id));
+      for (const memory of all) {
+        if (!keep.has(memory.id)) {
+          delete state.byId[memory.id];
+          pruned.push(memory.id);
+        }
+      }
+      for (const key of Object.keys(state.byOwner)) {
+        state.byOwner[key] = (state.byOwner[key] || []).filter(id => keep.has(id));
+      }
     }
   }
 
@@ -381,25 +417,21 @@ function rebuildMemoryIndexes(world, force = false) {
   const count = Object.keys(state.byId).length;
   if (!force && !state._indexDirty && state._lastIndexedCount === count) return;
   state.indexes = { byType: {}, byScope: {}, byTag: {} };
-  for (const memory of Object.values(state.byId)) indexMemory(world, memory);
+  const membership = new Map();
+  for (const memory of Object.values(state.byId)) indexMemory(world, memory, membership);
   state._indexDirty = false;
   state._lastIndexedCount = count;
 }
 
-function indexMemory(world, memory) {
+function indexMemory(world, memory, membership) {
   const state = ensureMemoryState(world);
-  addIndex(state.indexes.byType, memory.type, memory.id);
-  addIndex(state.indexes.byScope, memory.scope, memory.id);
-  for (const tag of memory.tags || []) addIndex(state.indexes.byTag, tag, memory.id);
+  addIndex(state.indexes.byType, memory.type, memory.id, membership);
+  addIndex(state.indexes.byScope, memory.scope, memory.id, membership);
+  for (const tag of memory.tags || []) addIndex(state.indexes.byTag, tag, memory.id, membership);
 }
 
 function ownerKey(ownerType, ownerId) {
   return `${ownerType}:${ownerId}`;
-}
-
-function addIndex(index, key, value) {
-  if (!index[key]) index[key] = [];
-  if (!index[key].includes(value)) index[key].push(value);
 }
 
 function clamp(value, min, max) {

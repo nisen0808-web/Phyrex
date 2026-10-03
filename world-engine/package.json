@@ -1,6 +1,6 @@
 {
   "name": "world-engine",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "test": "node tests/run-all.js",
@@ -20,6 +20,16 @@
     "api:live:db": "node demo/api-server.js --auto-loop --interval 1000 --ticks-per-cycle 1 --autosave-every 25 --autosave-mode database --db-provider jsonl --db-dir world-engine/data/db --db-name world-engine --resume-mode if-present",
     "viewer": "node viewer/serve-viewer.js",
     "database:postgres": "node demo/database-postgres-cli.js",
+    "database:backup": "node demo/database-backup-cli.js",
+    "database:maintain": "node demo/database-maintenance-cli.js",
+    "account:admin": "node demo/account-admin-cli.js",
+    "test:engine:scale": "node tests/integration/engine-scale.js",
+    "engine:init": "node demo/engine-init-cli.js",
+    "engine:profile": "node demo/engine-profile-cli.js",
+    "test:postgres:quickstart": "node tests/integration/postgres-engine-quickstart.js",
+    "test:postgres:account-admin": "node tests/integration/postgres-account-admin.js",
+    "test:postgres:maintenance": "node tests/integration/postgres-maintenance.js",
+    "test:postgres:backup": "node tests/integration/postgres-backup.js",
     "test:postgres": "node tests/integration/postgres-store.js",
     "test:postgres:commands": "node tests/integration/postgres-command-inbox.js",
     "runtime:postgres": "node demo/durable-runtime-cli.js",
@@ -27,9 +37,19 @@
     "test:postgres:runtime-commands": "node tests/integration/postgres-runtime-commands.js",
     "api:postgres:commands": "node demo/durable-command-api-server.js",
     "test:postgres:command-api": "node tests/integration/postgres-command-api.js",
-    "test:postgres:command-audit": "node tests/integration/postgres-command-audit.js"
+    "test:postgres:command-audit": "node tests/integration/postgres-command-audit.js",
+    "test:postgres:endurance": "node tests/integration/postgres-engine-endurance.js",
+    "test:postgres:command-audit-query": "node tests/integration/postgres-command-audit-query.js",
+    "engine:serve": "node demo/engine-serve-cli.js",
+    "test:postgres:service": "node tests/integration/postgres-engine-service.js",
+    "test:postgres:command-queue": "node tests/integration/postgres-command-queue.js",
+    "test:postgres:player-contract": "node tests/integration/postgres-player-contract.js",
+    "test:postgres:player-actions": "node tests/integration/postgres-player-actions.js",
+    "test:postgres:inventory": "node tests/integration/postgres-inventory.js",
+    "engine:verify": "node demo/engine-verify-cli.js"
   },
   "dependencies": {
     "pg": "8.23.0"
-  }
+  },
+  "main": "index.js"
 }

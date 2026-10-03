@@ -8,14 +8,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
   if (!args) return null;
   const host = args.host || env.HOST || '127.0.0.1';
   const port = boundedPort(args.port || env.PORT || 8791);
-  const apiOptions = { env, rateLimitNow: wallClockNow };
-  if (args.maxBodyBytes !== undefined) apiOptions.maxBodyBytes = Number(args.maxBodyBytes);
-  copyNumericEnv(apiOptions, env, 'sourceRateLimit', 'WORLD_ENGINE_COMMAND_API_SOURCE_RATE_LIMIT');
-  copyNumericEnv(apiOptions, env, 'accountSubmitRateLimit', 'WORLD_ENGINE_COMMAND_API_ACCOUNT_SUBMIT_RATE_LIMIT');
-  copyNumericEnv(apiOptions, env, 'accountReadRateLimit', 'WORLD_ENGINE_COMMAND_API_ACCOUNT_READ_RATE_LIMIT');
-  copyNumericEnv(apiOptions, env, 'rateLimitWindowMs', 'WORLD_ENGINE_COMMAND_API_RATE_LIMIT_WINDOW_MS');
-  copyNumericEnv(apiOptions, env, 'maxTrackedSources', 'WORLD_ENGINE_COMMAND_API_MAX_TRACKED_SOURCES');
-  copyNumericEnv(apiOptions, env, 'maxTrackedAccounts', 'WORLD_ENGINE_COMMAND_API_MAX_TRACKED_ACCOUNTS');
+  const apiOptions = commandApiOptions(args, env);
   const api = await createDurableCommandApiServer(apiOptions);
   let stopping = false;
   const shutdown = async signal => {
@@ -30,15 +23,14 @@ async function main(argv = process.argv.slice(2), env = process.env) {
       process.exitCode = 1;
     }
   };
+  try {
+    await new Promise((resolve, reject) => {
+      api.server.once('error', reject);
+      api.server.listen(port, host, () => { api.server.removeListener('error', reject); resolve(); });
+    });
+  } catch (error) { await api.close().catch(() => {}); throw error; }
   process.once('SIGINT', () => { shutdown('SIGINT'); });
   process.once('SIGTERM', () => { shutdown('SIGTERM'); });
-  await new Promise((resolve, reject) => {
-    api.server.once('error', reject);
-    api.server.listen(port, host, () => {
-      api.server.removeListener('error', reject);
-      resolve();
-    });
-  });
   console.log(JSON.stringify({
     ok: true,
     service: 'durable-command-api',
@@ -47,9 +39,26 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     endpoints: [
       'POST /durable/worlds/:worldId/players/:playerId/commands',
       'GET /durable/worlds/:worldId/commands/:commandId',
+      'GET /durable/worlds/:worldId/players/:playerId/commands',
+      'GET /durable/worlds/:worldId/admin/queue',
+      'GET /durable/worlds/:worldId/admin/audit',
+      'GET /durable/worlds/:worldId/players/:playerId/state',
+      'GET /durable/worlds/:worldId/admin/summary',
     ],
   }, null, 2));
   return api;
+}
+
+function commandApiOptions(args = {}, env = process.env) {
+  const apiOptions = { env, rateLimitNow: wallClockNow };
+  if (args.maxBodyBytes !== undefined) apiOptions.maxBodyBytes = Number(args.maxBodyBytes);
+  copyNumericEnv(apiOptions, env, 'sourceRateLimit', 'WORLD_ENGINE_COMMAND_API_SOURCE_RATE_LIMIT');
+  copyNumericEnv(apiOptions, env, 'accountSubmitRateLimit', 'WORLD_ENGINE_COMMAND_API_ACCOUNT_SUBMIT_RATE_LIMIT');
+  copyNumericEnv(apiOptions, env, 'accountReadRateLimit', 'WORLD_ENGINE_COMMAND_API_ACCOUNT_READ_RATE_LIMIT');
+  copyNumericEnv(apiOptions, env, 'rateLimitWindowMs', 'WORLD_ENGINE_COMMAND_API_RATE_LIMIT_WINDOW_MS');
+  copyNumericEnv(apiOptions, env, 'maxTrackedSources', 'WORLD_ENGINE_COMMAND_API_MAX_TRACKED_SOURCES');
+  copyNumericEnv(apiOptions, env, 'maxTrackedAccounts', 'WORLD_ENGINE_COMMAND_API_MAX_TRACKED_ACCOUNTS');
+  return apiOptions;
 }
 
 function parseArgs(argv = []) {
@@ -103,4 +112,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main, parseArgs, copyNumericEnv, boundedPort, safeErrorCode };
+module.exports = { main, commandApiOptions, parseArgs, copyNumericEnv, boundedPort, safeErrorCode };

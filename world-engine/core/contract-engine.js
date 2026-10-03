@@ -1,6 +1,7 @@
 'use strict';
 
 const { nextWorldId } = require('./world-id-engine');
+const { validateTerminalLimit, pruneTerminalRecords, processReferences, finiteTick } = require('./terminal-retention-engine');
 
 const { changeRelationship } = require('./relationship-engine');
 const { recordLifeEvent, LIFE_EVENT_TYPES } = require('./history-engine');
@@ -179,6 +180,7 @@ function createContract(world, input = {}) {
 }
 
 function processContractsTick(world, options = {}) {
+  validateTerminalLimit(options.maxTerminalContracts, 'maxTerminalContracts');
   const state = ensureContractState(world);
   const changed = [];
   for (const contract of Object.values(state.byId)) {
@@ -199,8 +201,20 @@ function processContractsTick(world, options = {}) {
       changed.push(contract);
     }
   }
-  rebuildContractIndexes(world);
+  if (!pruneContracts(world, options)) rebuildContractIndexes(world);
   return changed;
+}
+
+function pruneContracts(world, options = {}) {
+  validateTerminalLimit(options.maxTerminalContracts, 'maxTerminalContracts');
+  if (options.maxTerminalContracts === undefined || !world.contracts) return null;
+  const report = pruneTerminalRecords(world.contracts, options.maxTerminalContracts, {
+    isTerminal: row => ['completed', 'broken', 'cancelled', 'expired'].includes(row.status),
+    terminalTick: row => finiteTick(row.completedAt, row.brokenAt, row.expiresAt, row.createdAt),
+    protectedIds: processReferences(world, 'contract'),
+  });
+  rebuildContractIndexes(world);
+  return report;
 }
 
 function updateContractMetrics(world, contract, options = {}) {
@@ -360,7 +374,7 @@ function getPowerScore(world, entityId) {
 
 function recordContractMemory(world, contract, type, payload = {}) {
   const memory = {
-    id: `contract_memory_${world.tick}_${contract.history.length + 1}`,
+    id: nextWorldId(world, 'contract_memory', 'contract.memory'),
     tick: world.tick,
     type,
     payload: { contractId: contract.id, controllerId: contract.controllerId, subjectId: contract.subjectId, ...payload },
@@ -420,6 +434,7 @@ module.exports = {
   createContract,
   createDomesticationContract,
   processContractsTick,
+  pruneContracts,
   completeContract,
   breakContract,
   cancelContract,

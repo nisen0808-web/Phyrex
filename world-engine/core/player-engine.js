@@ -3,7 +3,8 @@
 const { nextWorldId } = require('./world-id-engine');
 
 const { registerEntity, recordMemory } = require('./world-engine');
-const { assignSpecies } = require('./species-engine');
+const { assignSpecies, DEFAULT_SPECIES } = require('./species-engine');
+const { identifier, finiteData, own } = require('./player-command-contract');
 
 const PLAYER_STATUS = {
   ACTIVE: 'active',
@@ -42,7 +43,12 @@ function ensurePlayerState(world) {
 function createPlayer(world, input = {}) {
   const state = ensurePlayerState(world);
   const id = input.id || nextWorldId(world, 'player', 'player.create');
-  if (state.byId[id]) throw new Error(`Player already exists: ${id}`);
+  if (!identifier(id)) throw new Error('Invalid player id');
+  if (Object.hasOwn(state.byId, id)) throw new Error(`Player already exists: ${id}`);
+  if (input.activeEntityId) {
+    const entity = own(world.entities, input.activeEntityId);
+    if (!entity || own(state.byEntityId, entity.id) || entity.meta?.playerId) throw new Error('Character unavailable');
+  }
 
   const player = {
     id,
@@ -68,9 +74,21 @@ function createPlayer(world, input = {}) {
 }
 
 function createPlayerCharacter(world, playerId, input = {}, options = {}) {
-  const player = getPlayer(world, playerId) || createPlayer(world, { id: playerId, name: input.playerName || playerId });
+  // Preflight the complete character before registration, counters or ownership change.
+  if (!identifier(playerId) || !finiteData(input)) throw new Error('Invalid character input');
+  let player = getPlayer(world, playerId);
   const locationId = input.locationId || options.defaultLocationId || pickDefaultLocation(world);
-  const entityId = input.id || `${playerId}_character_${player.controlledEntityIds.length + 1}`;
+  const entityId = input.id || `${playerId}_character_${(player?.controlledEntityIds.length || 0) + 1}`;
+  const speciesId = input.species || options.defaultSpecies || DEFAULT_PLAYER_OPTIONS.defaultSpecies;
+  if (!identifier(entityId) || Object.hasOwn(world.entities, entityId)) throw new Error('Character id unavailable');
+  if (locationId && !own(world.locations, locationId)) throw new Error('Missing character location');
+  if (!own(world.species?.byId || DEFAULT_SPECIES, speciesId)) throw new Error('Missing character species');
+  for (const section of ['stats', 'resources', 'traits']) {
+    if (input[section] !== undefined && (typeof input[section] !== 'object' || input[section] === null || Array.isArray(input[section])
+        || Object.values(input[section]).some(n => typeof n !== 'number' || !Number.isFinite(n) || n < 0))) throw new Error('Invalid character attributes');
+  }
+  if (input.tags !== undefined && (!Array.isArray(input.tags) || input.tags.some(t => typeof t !== 'string'))) throw new Error('Invalid character tags');
+  if (!player) player = createPlayer(world, { id: playerId, name: input.playerName || playerId });
 
   const entity = registerEntity(world, {
     id: entityId,
@@ -98,7 +116,7 @@ function createPlayerCharacter(world, playerId, input = {}, options = {}) {
       ...(input.demographics || {}),
     },
     tags: ['player_character', ...(input.tags || [])],
-    meta: { playerId, control: 'player', ...(input.meta || {}) },
+    meta: { ...(input.meta || {}), playerId, control: 'player' },
   });
 
   assignSpecies(world, entity.id, input.species || options.defaultSpecies || DEFAULT_PLAYER_OPTIONS.defaultSpecies);
@@ -121,10 +139,14 @@ function bindPlayerToEntity(world, playerId, entityId, options = {}) {
   if (!player) throw new Error(`Missing player ${playerId}`);
   if (!entity) throw new Error(`Missing entity ${entityId}`);
 
+  const owner = own(ensurePlayerState(world).byEntityId, entityId);
+  if ((owner && owner !== playerId) || (entity.meta?.playerId && entity.meta.playerId !== playerId)) throw new Error('Character already controlled');
   if (!player.controlledEntityIds.includes(entityId)) player.controlledEntityIds.push(entityId);
-  if (options.active !== false) player.activeEntityId = entityId;
-  player.controlMode = PLAYER_CONTROL_MODE.CHARACTER;
-  player.status = entity.status === 'alive' ? PLAYER_STATUS.ACTIVE : PLAYER_STATUS.DEAD;
+  if (options.active !== false) {
+    player.activeEntityId = entityId;
+    player.controlMode = PLAYER_CONTROL_MODE.CHARACTER;
+    player.status = entity.status === 'alive' ? PLAYER_STATUS.ACTIVE : PLAYER_STATUS.DEAD;
+  }
   player.updatedAt = world.tick;
   entity.meta = { ...(entity.meta || {}), playerId, control: 'player' };
   ensurePlayerState(world).byEntityId[entityId] = playerId;
@@ -138,7 +160,8 @@ function switchPlayerCharacter(world, playerId, entityId) {
   const entity = world.entities[entityId];
   if (!player) throw new Error(`Missing player ${playerId}`);
   if (!entity) throw new Error(`Missing entity ${entityId}`);
-  if (!player.controlledEntityIds.includes(entityId)) throw new Error(`Player ${playerId} does not control ${entityId}`);
+  if (!player.controlledEntityIds.includes(entityId) || own(ensurePlayerState(world).byEntityId, entityId) !== playerId || entity.meta?.playerId !== playerId) throw new Error(`Player ${playerId} does not control ${entityId}`);
+  if (entity.status !== 'alive') throw new Error('Character is not alive');
   player.activeEntityId = entityId;
   player.controlMode = PLAYER_CONTROL_MODE.CHARACTER;
   player.status = entity.status === 'alive' ? PLAYER_STATUS.ACTIVE : PLAYER_STATUS.DEAD;
@@ -175,7 +198,7 @@ function processPlayersTick(world) {
       } else {
         player.status = PLAYER_STATUS.DEAD;
         state.stats.deathsObserved += before !== PLAYER_STATUS.DEAD ? 1 : 0;
-        recordPlayerMemory(world, player, 'player.character_dead', { entityId: active?.id || null });
+        if (before !== PLAYER_STATUS.DEAD) recordPlayerMemory(world, player, 'player.character_dead', { entityId: active?.id || null });
       }
     }
     player.updatedAt = world.tick;
@@ -185,7 +208,7 @@ function processPlayersTick(world) {
 }
 
 function getPlayer(world, playerId) {
-  return ensurePlayerState(world).byId[playerId] || null;
+  return own(ensurePlayerState(world).byId, playerId) || null;
 }
 
 function getPlayerByEntity(world, entityId) {
@@ -254,7 +277,7 @@ function summarizeLocation(location) {
 }
 
 function findNextControlledAliveEntity(world, player) {
-  return player.controlledEntityIds.map(id => world.entities[id]).find(entity => entity?.status === 'alive') || null;
+  return player.controlledEntityIds.map(id => own(world.entities, id)).find(entity => entity?.status === 'alive' && entity.meta?.playerId === player.id && own(world.players.byEntityId, entity.id) === player.id) || null;
 }
 
 function pickDefaultLocation(world) {

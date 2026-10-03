@@ -59,7 +59,7 @@ function ensureDemographics(entity, world, input = {}) {
   const speciesOptions = getSpeciesPopulationOptions(world, entity.species || 'human');
   if (!entity.demographics) {
     entity.demographics = {
-      birthTick: input.birthTick ?? world.tick,
+      birthTick: input.birthTick ?? null,
       deathTick: input.deathTick ?? null,
       age: input.age ?? 0,
       ageGroup: input.ageGroup || AGE_GROUPS.CHILD,
@@ -73,14 +73,29 @@ function ensureDemographics(entity, world, input = {}) {
       familyId: input.familyId || entity.familyId || null,
     };
   }
+  const demo = entity.demographics;
+  if (demo.birthTick === null || demo.birthTick === undefined) {
+    const age = Number(demo.age ?? input.age ?? 0);
+    const ticksPerYear = Number(world.population?.options?.ticksPerYear ?? DEFAULT_POPULATION_OPTIONS.ticksPerYear);
+    if (!Number.isFinite(age) || age < 0 || !Number.isFinite(ticksPerYear) || ticksPerYear <= 0) {
+      throw new Error('Population age and calendar must be finite non-negative age and positive ticks per year');
+    }
+    const birthTick = world.tick - Math.floor(age * ticksPerYear);
+    if (!Number.isSafeInteger(birthTick)) throw new Error('Population birthday exceeds safe tick range');
+    demo.birthTick = birthTick;
+  }
+  if (!demo.sex) demo.sex = input.sex || pickSex(entity.id);
+  if (!Array.isArray(demo.childrenIds)) demo.childrenIds = [];
   entity.demographics.age = calculateAge(world, entity);
   entity.demographics.ageGroup = getAgeGroup(entity.demographics.age, mergePopulationOptionsForEntity(world, entity));
   return entity.demographics;
 }
 
 function initializePopulation(world, options = {}) {
+  const config = { ...DEFAULT_POPULATION_OPTIONS, ...(options || {}) };
+  validatePopulationCalendar(config);
   const population = ensurePopulationState(world);
-  population.options = { ...DEFAULT_POPULATION_OPTIONS, ...(options || {}) };
+  population.options = config;
   for (const entity of Object.values(world.entities)) ensureDemographics(entity, world, entity.demographics || {});
   rebuildPopulationIndexes(world);
   return population;
@@ -88,7 +103,9 @@ function initializePopulation(world, options = {}) {
 
 function processPopulationTick(world, options = {}) {
   const population = ensurePopulationState(world);
-  population.options = { ...population.options, ...(options || {}) };
+  const config = { ...population.options, ...(options || {}) };
+  validatePopulationCalendar(config);
+  population.options = config;
 
   const births = [];
   const deaths = [];
@@ -134,6 +151,12 @@ function calculateAge(world, entity) {
   const opts = world.population?.options || DEFAULT_POPULATION_OPTIONS;
   const birthTick = entity.demographics?.birthTick ?? world.tick;
   return Math.max(0, Math.floor((world.tick - birthTick) / opts.ticksPerYear));
+}
+
+function validatePopulationCalendar(options) {
+  if (!Number.isFinite(options.ticksPerYear) || options.ticksPerYear <= 0) {
+    throw new Error('Population ticksPerYear must be a positive finite number');
+  }
 }
 
 function getAgeGroup(age, options = DEFAULT_POPULATION_OPTIONS) {

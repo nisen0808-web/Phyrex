@@ -80,6 +80,10 @@ const DEFAULT_ITEM_DEFINITIONS = [
   },
 ];
 
+function validId(value) { return typeof value === 'string' && value.trim().length > 0 && value.length <= 200 && !/[\u0000-\u001f]/.test(value) && !Object.hasOwn(Object.prototype, value); }
+function checkQuantity(value) { if (!Number.isSafeInteger(value) || value < 1 || value > 1000000) throw new Error('Invalid item quantity'); return value; }
+function checkOwner(world, type, id) { if (type && (!validId(type) || !validId(id))) throw new Error('Invalid item owner'); if (type === 'entity' && !Object.hasOwn(world.entities, id)) throw new Error('Missing item owner'); }
+
 const DEFAULT_ITEM_OPTIONS = {
   maxInstances: 1000,
 };
@@ -114,7 +118,8 @@ function seedDefaultItems(world) {
 }
 
 function defineItem(world, input = {}) {
-  if (!input.id) throw new Error('Item definition requires id');
+  if (!validId(input.id)) throw new Error('Invalid item definition id');
+  if (!Number.isSafeInteger(input.price ?? 1) || (input.price ?? 1) < 1 || (input.price ?? 1) > 1000000) throw new Error('Invalid item price');
   const state = world.items || (world.items = { definitions: {}, instances: {}, byOwner: {}, stats: { definitions: 0, created: 0, granted: 0, removed: 0, equipped: 0, unequipped: 0, used: 0, pruned: 0 } });
   const definition = {
     id: input.id,
@@ -122,7 +127,7 @@ function defineItem(world, input = {}) {
     type: input.type || ITEM_TYPES.MATERIAL,
     rarity: input.rarity || ITEM_RARITY.COMMON,
     slot: input.slot || null,
-    price: Number(input.price || 1),
+    price: input.price ?? 1,
     stackable: input.stackable !== false,
     stats: { ...(input.stats || {}) },
     effects: { ...(input.effects || {}) },
@@ -143,9 +148,12 @@ function createItemInstance(world, input = {}) {
   const state = ensureItemState(world);
   const definition = getItemDefinition(world, input.definitionId || input.itemId);
   if (!definition) throw new Error(`Missing item definition ${input.definitionId || input.itemId}`);
-  const quantity = Math.max(1, Number(input.quantity || 1));
+  const quantity = checkQuantity(input.quantity === undefined ? 1 : input.quantity);
+  if (!definition.stackable && quantity !== 1) throw new Error('Nonstackable quantity must be one');
   const ownerType = input.ownerType || null;
   const ownerId = input.ownerId || null;
+  checkOwner(world, ownerType, ownerId);
+  if (input.id !== undefined && (!validId(input.id) || Object.hasOwn(state.instances, input.id))) throw new Error('Invalid or duplicate item id');
   const id = input.id || nextWorldId(world, 'item', 'item.create');
   const instance = {
     id,
@@ -173,13 +181,15 @@ function createItemInstance(world, input = {}) {
 }
 
 function grantItem(world, ownerType, ownerId, definitionId, quantity = 1, options = {}) {
+  checkQuantity(quantity); checkOwner(world, ownerType, ownerId);
   const state = ensureItemState(world);
   const definition = getItemDefinition(world, definitionId);
   if (!definition) throw new Error(`Missing item definition ${definitionId}`);
   if (definition.stackable) {
     const existing = getOwnerItems(world, ownerType, ownerId).find(item => item.definitionId === definitionId && !item.equipped);
     if (existing) {
-      existing.quantity += Math.max(1, Number(quantity || 1));
+      checkQuantity(existing.quantity + quantity);
+      existing.quantity += quantity;
       existing.updatedAt = world.tick;
       state.stats.granted += 1;
       return existing;
@@ -194,7 +204,9 @@ function removeItem(world, itemInstanceId, quantity = 1) {
   const state = ensureItemState(world);
   const item = state.instances[itemInstanceId];
   if (!item) return null;
-  const amount = Math.max(1, Number(quantity || 1));
+  const amount = checkQuantity(quantity);
+  if (item.equipped) throw new Error('Unequip item before removing it');
+  if (amount > item.quantity) throw new Error('Insufficient item quantity');
   if (item.quantity > amount) {
     item.quantity -= amount;
     item.updatedAt = world.tick;
@@ -215,9 +227,11 @@ function getOwnerItems(world, ownerType, ownerId) {
 }
 
 function transferItem(world, itemInstanceId, ownerType, ownerId) {
+  checkOwner(world, ownerType, ownerId);
   const state = ensureItemState(world);
   const item = state.instances[itemInstanceId];
   if (!item) return null;
+  if (item.equipped) throw new Error('Unequip item before transferring it');
   unindexItemInstance(world, item);
   item.ownerType = ownerType;
   item.ownerId = ownerId;

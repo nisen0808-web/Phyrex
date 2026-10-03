@@ -171,12 +171,14 @@ function calculateRelationshipNetworkScore(world, entityId) {
 }
 
 function calculateCausalityScore(world, entityId) {
+  const archive = world.causalityArchive?.scoresByEntity;
+  const archivedScore = archive && Object.hasOwn(archive, entityId) ? archive[entityId] : 0;
   return (world.causality || []).reduce((sum, cause) => {
     if (cause.sourceId === entityId || cause.targetId === entityId) {
       return sum + Number(cause.weight || 1);
     }
     return sum;
-  }, 0);
+  }, archivedScore);
 }
 
 function calculateFactionInfluence(world, entity) {

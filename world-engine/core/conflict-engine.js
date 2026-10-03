@@ -7,6 +7,7 @@ const { nextWorldId } = require('./world-id-engine');
 const { createProcess, PROCESS_TYPES } = require('./process-engine');
 const { createInformation, INFORMATION_TYPES } = require('./information-engine');
 const { applyGovernanceProcessConflictEffects } = require('./conflict-governance-process-engine');
+const { validateTerminalLimit, pruneTerminalRecords, processReferences, finiteTick } = require('./terminal-retention-engine');
 
 const CONFLICT_STATUS = {
   TENSION: 'tension',
@@ -89,6 +90,7 @@ function createConflict(world, input = {}) {
 
 function processConflictTick(world, options = {}) {
   const config = { ...DEFAULT_CONFLICT_OPTIONS, ...(options || {}) };
+  validateTerminalLimit(config.maxResolvedConflicts, 'maxResolvedConflicts');
   const created = detectConflicts(world, config);
   const escalated = [];
   const battles = [];
@@ -121,8 +123,27 @@ function processConflictTick(world, options = {}) {
     }
   }
 
-  rebuildConflictIndexes(world);
+  if (!pruneConflicts(world, config)) rebuildConflictIndexes(world);
   return { created, escalated, battles: battles.filter(Boolean), resolved, governanceProcessEffects, stats: getConflictStats(world) };
+}
+
+function pruneConflicts(world, options = {}) {
+  const limit = options.maxResolvedConflicts;
+  validateTerminalLimit(limit, 'maxResolvedConflicts');
+  if (limit === undefined || !world.conflicts) return null;
+  const protectedIds = processReferences(world, 'conflict');
+  for (const opportunity of Object.values(world.opportunities?.byId || {})) {
+    if (opportunity.status !== 'active') continue;
+    if (opportunity.payload?.conflictId) protectedIds.add(opportunity.payload.conflictId);
+    if (opportunity.targetId) protectedIds.add(opportunity.targetId);
+  }
+  const report = pruneTerminalRecords(world.conflicts, limit, {
+    isTerminal: record => record.status === 'resolved',
+    terminalTick: record => finiteTick(record.resolvedAt, record.startedAt),
+    protectedIds,
+  });
+  rebuildConflictIndexes(world, true);
+  return report;
 }
 
 function detectConflicts(world, options = {}) {
@@ -343,6 +364,7 @@ function getConflictStats(world) {
     governanceProcessEffects: state.stats.governanceProcessEffects,
     governanceSuppressions: state.stats.governanceSuppressions,
     governanceMobilizations: state.stats.governanceMobilizations,
+    ...(state.retention ? { retention: { ...state.retention } } : {}),
     byType: countIndex(state.indexes.byType),
     byStatus: countIndex(state.indexes.byStatus),
   };
@@ -369,10 +391,12 @@ function getConflictChronicle(world, conflictId) {
   };
 }
 
-function rebuildConflictIndexes(world) {
+function rebuildConflictIndexes(world, deterministicOrder = false) {
   const state = ensureConflictState(world);
   state.indexes = { byStatus: {}, byType: {}, byParticipant: {} };
-  for (const conflict of Object.values(state.byId)) indexConflict(world, conflict);
+  const records = Object.values(state.byId);
+  if (deterministicOrder) records.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  for (const conflict of records) indexConflict(world, conflict);
 }
 
 function indexConflict(world, conflict) {
@@ -422,4 +446,5 @@ module.exports = {
   getConflictStats,
   getConflictChronicle,
   rebuildConflictIndexes,
+  pruneConflicts,
 };

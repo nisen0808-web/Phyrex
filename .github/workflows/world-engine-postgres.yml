@@ -90,6 +90,76 @@ jobs:
           mkdir -p world-engine/output/ci
           npm --prefix world-engine run test:postgres:command-audit 2>&1 | tee world-engine/output/ci/postgres-command-audit.log
           grep -F 'postgres command audit completed 4 scenario groups: 4 passed, 0 failed' world-engine/output/ci/postgres-command-audit.log
+      - name: Run real PostgreSQL privileged audit query tests
+        env:
+          WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
+        run: |
+          mkdir -p world-engine/output/ci
+          npm --prefix world-engine run test:postgres:command-audit-query 2>&1 | tee world-engine/output/ci/postgres-command-audit-query.log
+          grep -F 'postgres command audit query completed 10 scenario groups: 10 passed, 0 failed' world-engine/output/ci/postgres-command-audit-query.log
+      - name: Run complete database backup and restore tests
+        env:
+          WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
+        run: |
+          mkdir -p world-engine/output/ci
+          npm --prefix world-engine run test:postgres:backup 2>&1 | tee world-engine/output/ci/postgres-backup.log
+          grep -F 'postgres backup completed 6 scenario groups: 6 passed, 0 failed' world-engine/output/ci/postgres-backup.log
+      - name: Run backed-up database maintenance tests
+        env:
+          WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
+        run: |
+          mkdir -p world-engine/output/ci
+          npm --prefix world-engine run test:postgres:maintenance 2>&1 | tee world-engine/output/ci/postgres-maintenance.log
+          grep -F 'postgres maintenance completed 8 scenario groups: 8 passed, 0 failed' world-engine/output/ci/postgres-maintenance.log
+      - name: Run persistent account administration tests
+        env:
+          WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
+        run: |
+          mkdir -p world-engine/output/ci
+          npm --prefix world-engine run test:postgres:account-admin 2>&1 | tee world-engine/output/ci/postgres-account-admin.log
+          grep -F 'postgres account admin completed 8 scenario groups: 8 passed, 0 failed' world-engine/output/ci/postgres-account-admin.log
+      - name: Run documented CLI bootstrap and restore end-to-end
+        env:
+          WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
+        run: |
+          mkdir -p world-engine/output/ci
+          npm --prefix world-engine run test:postgres:quickstart 2>&1 | tee world-engine/output/ci/postgres-quickstart.log
+          grep -F 'postgres quickstart completed 6 scenario groups: 6 passed, 0 failed' world-engine/output/ci/postgres-quickstart.log
+      - name: Run isolated engine service lifecycle end-to-end
+        env:
+          WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
+        run: |
+          mkdir -p world-engine/output/ci
+          npm --prefix world-engine run test:postgres:service 2>&1 | tee world-engine/output/ci/postgres-service.log
+          grep -F 'postgres service completed 8 scenario groups: 8 passed, 0 failed' world-engine/output/ci/postgres-service.log
+      - name: Run transactional command queue capacity and history tests
+        env:
+          WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
+        run: |
+          mkdir -p world-engine/output/ci
+          npm --prefix world-engine run test:postgres:command-queue 2>&1 | tee world-engine/output/ci/postgres-command-queue.log
+          grep -F 'postgres command queue completed 10 scenario groups: 10 passed, 0 failed' world-engine/output/ci/postgres-command-queue.log
+      - name: Run player command contracts and lifecycle recovery
+        env:
+          WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
+        run: |
+          mkdir -p world-engine/output/ci
+          npm --prefix world-engine run test:postgres:player-contract 2>&1 | tee world-engine/output/ci/postgres-player-contract.log
+          grep -F 'postgres player contract completed 10 scenario groups: 10 passed, 0 failed' world-engine/output/ci/postgres-player-contract.log
+      - name: Run authoritative player actions, growth and recovery
+        env:
+          WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
+        run: |
+          mkdir -p world-engine/output/ci
+          npm --prefix world-engine run test:postgres:player-actions 2>&1 | tee world-engine/output/ci/postgres-player-actions.log
+          grep -F 'postgres player actions completed 10 scenario groups: 10 passed, 0 failed' world-engine/output/ci/postgres-player-actions.log
+      - name: Run inventory, commerce and equipment recovery
+        env:
+          WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
+        run: |
+          mkdir -p world-engine/output/ci
+          npm --prefix world-engine run test:postgres:inventory 2>&1 | tee world-engine/output/ci/postgres-inventory.log
+          grep -F 'postgres inventory completed 12 scenario groups: 12 passed, 0 failed' world-engine/output/ci/postgres-inventory.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

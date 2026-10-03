@@ -8,11 +8,13 @@ const {
   runDeterministicSimulationTickWithCultureBeliefFlow,
 } = require('../core/culture-belief-flow-runtime-engine');
 const { executePlayerCommand } = require('../core/command-engine');
+const { identifier } = require('../core/player-command-contract');
+const { getPlayerActionRules } = require('../core/player-action-rules-engine');
 const { repairLoadedWorld } = require('../core/persistence-engine');
 const { canonicalWorldCopy, canonicalizeWorldInPlace } = require('./canonical-world');
 
-const DURABLE_RUNTIME_VERSION = 2;
-const COMMAND_PROFILE = 'postgres-inbox-v1';
+const DURABLE_RUNTIME_VERSION = 5;
+const COMMAND_PROFILE = 'postgres-inventory-v4';
 const MAX_COMMANDS_PER_BATCH = 100;
 
 function runtimeError(code) {
@@ -35,19 +37,23 @@ function freezeJson(value) {
   }
   return value;
 }
-function advanceDeterministicBatch(world, ticks, simulation = {}) {
+function advanceDeterministicBatch(world, ticks, simulation = {}, afterTick) {
   const kernel = createCultureBeliefFlowDeterministicKernel();
   for (let index = 0; index < ticks; index += 1) {
     canonicalizeWorldInPlace(world);
     const report = runDeterministicSimulationTickWithCultureBeliefFlow(world, simulation, kernel);
     if (!report.kernel || report.kernel.failed !== 0) throw runtimeError('SIMULATION_FAILED');
+    if (afterTick) afterTick(world);
   }
 }
 function executeDurableCommands(world, commands = []) {
   const results = [];
   for (const durable of commands) {
-    if (world.commands?.byId?.[durable.id]) throw runtimeError('COMMAND_ID_COLLISION');
-    const execution = executePlayerCommand(world, durable.playerId, { ...detachedJson(durable.input), id: durable.id });
+    const rejected = !identifier(durable.id) || !identifier(durable.playerId) ? 'invalid_identifier'
+      : Object.hasOwn(world.commands?.byId || {}, durable.id) ? 'command_id_collision' : null;
+    const execution = rejected ? { command: { status: 'rejected', updatedAt: world.tick }, result: {
+      ok: false, completed: true, commandId: durable.id, reason: rejected,
+    } } : executePlayerCommand(world, durable.playerId, { ...detachedJson(durable.input), id: durable.id }, { publicPlayer: true });
     results.push({
       sequence: durable.sequence,
       id: durable.id,
@@ -79,9 +85,11 @@ async function createDurableWorldRuntime(options = {}) {
   const profile = options.advance ? textId(options.simulationId, 'custom simulationId') : 'culture-info-v1';
   const advance = options.advance || advanceDeterministicBatch;
   const onCommit = options.onCommit;
+  if (options.upgradeCommandProfile !== undefined && typeof options.upgradeCommandProfile !== 'boolean') throw runtimeError('INVALID_UPGRADE_OPTION');
   const legacyConfigHash = digest({ version: 1, profile, simulation });
-  const configHash = digest({ version: DURABLE_RUNTIME_VERSION, profile, simulation,
-    commands: { profile: COMMAND_PROFILE, maxPerBatch: MAX_COMMANDS_PER_BATCH } });
+  const previousConfigHash = digest({ version: 2, profile, simulation, commands: { profile: 'postgres-inbox-v1', maxPerBatch: MAX_COMMANDS_PER_BATCH } });
+  const previousPlayerHash = digest({ version: 3, profile, simulation, commands: { profile: 'postgres-player-contract-v2', maxPerBatch: MAX_COMMANDS_PER_BATCH } });
+  let upgradedFrom = null, configHash, playerRules;
   const ownsStore = !options.store || options.closeStore === true;
   const store = options.store || createPostgresDatabaseStore({ ...(options.database || {}), env: options.env });
   let committed, revision;
@@ -96,8 +104,17 @@ async function createDurableWorldRuntime(options = {}) {
     }
     revision = safeInteger(loaded.revision, 'loaded revision', 1);
     safeInteger(loaded.world.tick, 'loaded tick');
+    playerRules = freezeJson(getPlayerActionRules(loaded.world));
+    configHash = digest({ version: DURABLE_RUNTIME_VERSION, profile, simulation, commands: { profile: COMMAND_PROFILE, maxPerBatch: MAX_COMMANDS_PER_BATCH, rules: playerRules } });
+    const previousActionsHash = digest({ version: 4, profile, simulation, commands: { profile: 'postgres-player-rules-v3', maxPerBatch: MAX_COMMANDS_PER_BATCH, rules: playerRules } });
     const previousConfig = loaded.metadata?.durableRuntime?.configHash;
-    if (previousConfig && previousConfig !== configHash && previousConfig !== legacyConfigHash) throw runtimeError('CONFIG_MISMATCH');
+    const priorUpgrade = loaded.metadata?.durableRuntime?.upgradedFrom;
+    if (previousConfig === configHash && /^[0-9a-f]{64}$/.test(priorUpgrade || '')) upgradedFrom = priorUpgrade;
+    if (previousConfig && previousConfig !== configHash) {
+      if (![legacyConfigHash, previousConfigHash, previousPlayerHash, previousActionsHash].includes(previousConfig)) throw runtimeError('CONFIG_MISMATCH');
+      if (!options.upgradeCommandProfile) throw runtimeError('COMMAND_PROFILE_UPGRADE_REQUIRED');
+      upgradedFrom = previousConfig;
+    }
     committed = freezeJson(canonicalWorldCopy(loaded.world));
   } catch (error) {
     if (ownsStore && typeof store.close === 'function') await store.close().catch(() => {});
@@ -119,12 +136,17 @@ async function createDurableWorldRuntime(options = {}) {
         tickBefore: pending.tickBefore, tickAfter: pending.world.tick, attempts: pending.attempts,
         commands: pending.commandResults.length,
       } : null,
-      prepareAttempts, commits, ticksCommitted, commandsApplied, failures, observerErrors, lastError,
+      prepareAttempts, nextDelayMs: nextDelayMs(), commits, ticksCommitted, commandsApplied, failures, observerErrors, lastError,
       lastReceipt: lastReceipt ? { ...lastReceipt } : null, configHash,
       commandProfile: COMMAND_PROFILE, maxCommandsPerBatch: MAX_COMMANDS_PER_BATCH,
     };
   }
   function getWorld() { return detachedJson(committed); }
+  function nextDelayMs() {
+    const attempts = pending ? pending.attempts : prepareAttempts;
+    return attempts > 0
+      ? Math.min(maxRetryDelayMs, retryDelayMs * (2 ** Math.min(attempts - 1, 20))) : intervalMs;
+  }
   function assertOpen() { if (closing || closed) throw runtimeError('CLOSED'); }
   function cancelTimer() { if (timer) clearTimeout(timer); timer = null; }
   function pause() { running = false; cancelTimer(); return summary(); }
@@ -205,9 +227,23 @@ async function createDurableWorldRuntime(options = {}) {
             throw error;
           }
           try {
+            if (digest(getPlayerActionRules(candidate)) !== digest(playerRules)) throw runtimeError('CONFIG_MISMATCH');
             const commandResults = executeDurableCommands(candidate, commands);
-            await advance(candidate, amount, detachedJson(simulation));
+            // Capture settlements each tick before later history retention can
+            // discard them in a long batch. Nothing is published before SQL commit.
+            const captureResults = current => {
+              for (const receipt of commandResults) {
+                if (receipt.result.status !== 'accepted') continue;
+                const command = Object.hasOwn(current.commands?.byId || {}, receipt.id) ? current.commands.byId[receipt.id] : null;
+                if (command?.playerId === receipt.playerId) receipt.result = {
+                  status: command.status, outcome: detachedJson(command.result), updatedAt: command.updatedAt,
+                };
+              }
+            };
+            await advance(candidate, amount, detachedJson(simulation), commandResults.length ? captureResults : undefined);
             if (candidate.id !== worldId || candidate.tick !== committed.tick + amount) throw runtimeError('INVALID_ADVANCEMENT');
+            captureResults(candidate);
+            if (digest(getPlayerActionRules(candidate)) !== digest(playerRules)) throw runtimeError('CONFIG_MISMATCH');
             repairLoadedWorld(candidate);
             const world = freezeJson(canonicalWorldCopy(candidate));
             const frozenCommandResults = freezeJson(detachedJson(commandResults));
@@ -216,7 +252,7 @@ async function createDurableWorldRuntime(options = {}) {
               ticks: amount, attempts: 0, canRetry: true,
               saveOptions: freezeJson({ requestId, expectedRevision: revision, reason: 'durable_runtime_batch',
                 metadata: { durableRuntime: { version: DURABLE_RUNTIME_VERSION, configHash, profile,
-                  commandProfile: COMMAND_PROFILE } },
+                  commandProfile: COMMAND_PROFILE, ...(upgradedFrom ? { upgradedFrom } : {}) } },
                 events: [{ type: 'runtime.batch_committed', payload: { tickBefore: committed.tick, ticks: amount,
                   commands: frozenCommandResults.length, configHash } }],
                 commandResults: frozenCommandResults,
@@ -252,10 +288,7 @@ async function createDurableWorldRuntime(options = {}) {
     timer = setTimeout(async () => {
       timer = null;
       try { await step(); } catch (_) { /* failure is retained in summary */ }
-      const attempts = pending ? pending.attempts : prepareAttempts;
-      const backoff = attempts > 0
-        ? Math.min(maxRetryDelayMs, retryDelayMs * (2 ** Math.min(attempts - 1, 20))) : intervalMs;
-      schedule(backoff);
+      schedule(nextDelayMs());
     }, delay);
   }
   function start() {

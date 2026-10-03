@@ -197,6 +197,24 @@ function hasExistingGovernanceOpportunity(world, key) {
   return Object.values(world.opportunities?.byId || {}).some(opportunity => opportunity.payload?.governanceOpportunityKey === key && ['active', 'claimed'].includes(opportunity.status));
 }
 
+function protectsGovernanceClaim(world, opportunity) {
+  const payload = opportunity.payload || {};
+  const key = payload.governanceOpportunityKey;
+  if (opportunity.status !== 'claimed' || !key) return false;
+  // Keep the existing claim while its source can generate the same reward.
+  // Generated process/conflict IDs are monotonic and are never recycled.
+  if (typeof key === 'string' && payload.processId && key.startsWith(`governance:process:${payload.processId}:`)) {
+    return world.processes?.byId?.[payload.processId]?.status === 'active';
+  }
+  if (typeof key === 'string' && payload.conflictId && key.startsWith(`governance:conflict:${payload.conflictId}:`)) {
+    const conflict = world.conflicts?.byId?.[payload.conflictId];
+    return Boolean(conflict && conflict.status !== 'resolved');
+  }
+  // Environment keys can recur for the lifetime of a government. Unknown
+  // future key types also stay protected rather than risking duplicate rewards.
+  return true;
+}
+
 function firstLocationForGovernment(world, government) {
   if (!government) return null;
   for (const cityId of government.cityIds || []) {
@@ -214,4 +232,5 @@ function first(items) {
 module.exports = {
   DEFAULT_GOVERNANCE_OPPORTUNITY_OPTIONS,
   generateGovernanceOpportunities,
+  protectsGovernanceClaim,
 };

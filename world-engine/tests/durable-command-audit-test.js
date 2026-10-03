@@ -87,6 +87,20 @@ async function main() {
     await new Promise(resolve => setImmediate(resolve));
     assert.strictEqual(api2.auditStats().failures, 1);
     await api2.close();
+    let releaseAudit, startedAudit;
+    const waiting = new Promise(resolve => { releaseAudit = resolve; });
+    const started = new Promise(resolve => { startedAudit = resolve; });
+    let writeCompleted = false, apiClosed = false;
+    const delayedAudit = { ...f.auditStore, async append() { startedAudit(); await waiting; writeCompleted = true; } };
+    const api3 = await createDurableCommandApiServer({ store: f.store, auditStore: delayedAudit, rateLimitNow: () => 0 });
+    const port3 = await listen(api3.server);
+    const delivered = await request(port3, 'GET', '/durable/worlds/audit_world/commands/cmd-1', { token: 'audit-token' });
+    assert.strictEqual(delivered.status, 200); await started;
+    const closing = api3.close().then(() => { apiClosed = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(apiClosed, false, 'shutdown must wait for the audit of an already delivered response');
+    releaseAudit(); await closing;
+    assert.strictEqual(writeCompleted, true);
     console.log('durable command audit test passed');
   } finally { await api.close(); }
 }

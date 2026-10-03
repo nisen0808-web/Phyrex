@@ -1,9 +1,7 @@
 'use strict';
 
-const { changeEntityResource, changeEntityStat, recordMemory } = require('./world-engine');
 const { getActivePlayerCharacter } = require('./player-engine');
-const { getOwnerItems, getItemDefinition, removeItem, grantItem, getItemStats } = require('./item-engine');
-const { recordPlayerJournal, JOURNAL_TYPES } = require('./player-journal-engine');
+const { getOwnerItems, getItemDefinition, grantItem, getItemStats } = require('./item-engine');
 
 const EQUIPMENT_SLOTS = ['weapon', 'armor', 'accessory', 'tool'];
 
@@ -27,91 +25,19 @@ function getPlayerInventory(world, playerId) {
 }
 
 function equipItem(world, entityId, itemInstanceId, options = {}) {
-  const entity = world.entities?.[entityId];
-  if (!entity) throw new Error(`Missing entity ${entityId}`);
-  const item = getOwnerItems(world, 'entity', entityId).find(entry => entry.id === itemInstanceId);
-  if (!item) throw new Error(`Missing inventory item ${itemInstanceId}`);
-  const definition = getItemDefinition(world, item.definitionId);
-  if (!definition || definition.type !== 'equipment') throw new Error(`Item ${itemInstanceId} is not equipment`);
-  const slot = item.slot || definition.slot;
-  if (!slot) throw new Error(`Equipment ${itemInstanceId} has no slot`);
-
-  ensureEquipmentMeta(entity);
-  const previousId = entity.meta.equipment[slot];
-  if (previousId && previousId !== item.id) unequipItem(world, entityId, slot, { silent: true });
-
-  item.equipped = true;
-  item.updatedAt = world.tick;
-  entity.meta.equipment[slot] = item.id;
-  applyItemStats(world, entityId, item.stats || {}, 1);
-  recordMemory(world, { type: 'inventory.equipped', payload: { entityId, itemId: item.id, slot } });
-  if (options.playerId) recordPlayerJournal(world, options.playerId, {
-    type: JOURNAL_TYPES.REWARD,
-    title: `Equipped ${item.name}`,
-    summary: `${entity.name} equipped ${item.name} in ${slot}.`,
-    entityId,
-    tags: ['inventory', 'equipment', slot],
-    payload: { itemId: item.id, slot },
-  });
-  return { item: summarizeItem(world, item), slot, previousId };
+  const value = require('./inventory-operations-engine').performInventoryOperation(world, world.entities?.[entityId], 'equip_item', { itemId: itemInstanceId });
+  return { ...value, item: summarizeItem(world, world.items.instances[itemInstanceId]) };
 }
-
 function unequipItem(world, entityId, slotOrItemId, options = {}) {
   const entity = world.entities?.[entityId];
-  if (!entity) throw new Error(`Missing entity ${entityId}`);
-  ensureEquipmentMeta(entity);
-  const slot = entity.meta.equipment[slotOrItemId] ? slotOrItemId : findSlotByItemId(entity, slotOrItemId);
-  if (!slot) return null;
-  const itemId = entity.meta.equipment[slot];
-  const item = world.items?.instances?.[itemId];
-  if (!item) {
-    delete entity.meta.equipment[slot];
-    return null;
-  }
-  item.equipped = false;
-  item.updatedAt = world.tick;
-  delete entity.meta.equipment[slot];
-  applyItemStats(world, entityId, item.stats || {}, -1);
-  if (!options.silent) recordMemory(world, { type: 'inventory.unequipped', payload: { entityId, itemId, slot } });
-  if (options.playerId) recordPlayerJournal(world, options.playerId, {
-    type: JOURNAL_TYPES.SYSTEM,
-    title: `Unequipped ${item.name}`,
-    summary: `${entity.name} removed ${item.name} from ${slot}.`,
-    entityId,
-    tags: ['inventory', 'equipment', slot],
-    payload: { itemId: item.id, slot },
-  });
-  return { item: summarizeItem(world, item), slot };
+  if (!entity) throw new Error('Missing entity');
+  const slot = EQUIPMENT_SLOTS.includes(slotOrItemId) ? slotOrItemId : findSlotByItemId(entity, slotOrItemId);
+  if (!slot || !entity.meta?.equipment?.[slot]) return null;
+  const value = require('./inventory-operations-engine').performInventoryOperation(world, entity, 'unequip_item', { slot });
+  return { ...value, item: summarizeItem(world, world.items.instances[value.itemId]) };
 }
-
 function useItem(world, entityId, itemInstanceId, options = {}) {
-  const entity = world.entities?.[entityId];
-  if (!entity) throw new Error(`Missing entity ${entityId}`);
-  const item = getOwnerItems(world, 'entity', entityId).find(entry => entry.id === itemInstanceId);
-  if (!item) throw new Error(`Missing inventory item ${itemInstanceId}`);
-  const definition = getItemDefinition(world, item.definitionId);
-  if (!definition || definition.type !== 'consumable') throw new Error(`Item ${itemInstanceId} is not consumable`);
-  const effects = item.effects || definition.effects || {};
-  for (const [stat, amount] of Object.entries(effects)) {
-    if (stat === 'health' && entity.stats.maxHealth !== undefined) {
-      entity.stats.health = Math.min(Number(entity.stats.maxHealth || 100), Number(entity.stats.health || 0) + Number(amount || 0));
-    } else if (stat === 'energy' && entity.stats.maxEnergy !== undefined) {
-      entity.stats.energy = Math.min(Number(entity.stats.maxEnergy || 100), Number(entity.stats.energy || 0) + Number(amount || 0));
-    } else {
-      changeEntityStat(world, entityId, stat, Number(amount || 0));
-    }
-  }
-  removeItem(world, item.id, 1);
-  recordMemory(world, { type: 'inventory.used', payload: { entityId, itemId: item.id, definitionId: item.definitionId, effects } });
-  if (options.playerId) recordPlayerJournal(world, options.playerId, {
-    type: JOURNAL_TYPES.REWARD,
-    title: `Used ${item.name}`,
-    summary: `${entity.name} used ${item.name}.`,
-    entityId,
-    tags: ['inventory', 'consumable'],
-    payload: { itemId: item.id, definitionId: item.definitionId, effects },
-  });
-  return { itemId: item.id, definitionId: item.definitionId, effects };
+  return require('./inventory-operations-engine').performInventoryOperation(world, world.entities?.[entityId], 'use_item', { itemId: itemInstanceId });
 }
 
 function grantStarterItems(world, entityId) {
@@ -141,7 +67,7 @@ function getEquipmentStats(world, entityId) {
   for (const itemId of Object.values(entity.meta.equipment)) {
     const item = world.items?.instances?.[itemId];
     if (!item) continue;
-    for (const [stat, value] of Object.entries(item.stats || {})) totals[stat] = Number(totals[stat] || 0) + Number(value || 0);
+    for (const [stat, value] of Object.entries(item.equipmentApplied || item.stats || {})) totals[stat] = Number(totals[stat] || 0) + Number(value || 0);
   }
   return totals;
 }
@@ -193,10 +119,6 @@ function findSlotByItemId(entity, itemId) {
     if (id === itemId) return slot;
   }
   return null;
-}
-
-function applyItemStats(world, entityId, stats, direction) {
-  for (const [stat, value] of Object.entries(stats || {})) changeEntityStat(world, entityId, stat, Number(value || 0) * direction);
 }
 
 module.exports = {

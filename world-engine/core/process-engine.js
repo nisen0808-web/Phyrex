@@ -1,6 +1,7 @@
 'use strict';
 
 const { nextWorldId } = require('./world-id-engine');
+const { processReferences } = require('./terminal-retention-engine');
 
 const {
   ingestGovernanceResponsesAsProcesses,
@@ -94,9 +95,11 @@ function createProcess(world, input = {}) {
 
 function processProcessesTick(world, options = {}) {
   const config = { ...DEFAULT_PROCESS_OPTIONS, ...(options || {}) };
+  if (config.preserveActive !== undefined && typeof config.preserveActive !== 'boolean') throw new Error('preserveActive must be boolean');
   ensureProcessState(world).retention = {
     maxProcesses: processLimit(config.maxProcesses, DEFAULT_PROCESS_OPTIONS.maxProcesses),
     maxInactiveProcesses: processLimit(config.maxInactiveProcesses, DEFAULT_PROCESS_OPTIONS.maxInactiveProcesses),
+    ...(config.preserveActive === true ? { preserveActive: true } : {}),
   };
   const created = [];
   const updated = [];
@@ -272,10 +275,29 @@ function updateProcessProgress(world, processId, options = {}) {
 }
 
 function pruneProcesses(world, options = {}) {
+  if (options.preserveActive !== undefined && typeof options.preserveActive !== 'boolean') throw new Error('preserveActive must be boolean');
   const state = ensureProcessState(world);
   const maxProcesses = processLimit(options.maxProcesses, DEFAULT_PROCESS_OPTIONS.maxProcesses);
   const maxInactive = processLimit(options.maxInactiveProcesses, DEFAULT_PROCESS_OPTIONS.maxInactiveProcesses);
   const all = Object.values(state.byId);
+  if (options.preserveActive === true) {
+    const protectedIds = processReferences(world, 'process');
+    for (const opportunity of Object.values(world.opportunities?.byId || {})) {
+      if (opportunity.status === 'active' && typeof opportunity.payload?.processId === 'string') protectedIds.add(opportunity.payload.processId);
+    }
+    const candidates = all.filter(row => ['resolved', 'stalled'].includes(row.status) && !protectedIds.has(row.id))
+      .sort((a, b) => Number(a.resolvedAt ?? a.lastUpdatedAt ?? 0) - Number(b.resolvedAt ?? b.lastUpdatedAt ?? 0)
+        || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const inactive = all.filter(row => ['resolved', 'stalled'].includes(row.status)).length;
+    const remove = candidates.slice(0, Math.max(0, inactive - maxInactive, all.length - maxProcesses)).map(row => row.id);
+    for (const id of remove) delete state.byId[id];
+    state.stats.pruned += remove.length;
+    state.capacity = { maxProcesses, maxInactiveProcesses: maxInactive, retained: all.length - remove.length,
+      protected: all.length - candidates.length, overLimit: Math.max(0, all.length - remove.length - maxProcesses),
+      inactiveOverLimit: Math.max(0, inactive - remove.length - maxInactive) };
+    if (remove.length) rebuildProcessIndexes(world);
+    return remove;
+  }
   const compareOldest = (a, b) => Number(a.resolvedAt ?? a.lastUpdatedAt ?? 0) - Number(b.resolvedAt ?? b.lastUpdatedAt ?? 0)
     || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   const inactive = all.filter(p => p.status !== PROCESS_STATUS.ACTIVE).sort(compareOldest);

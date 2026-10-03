@@ -2,8 +2,11 @@
 const crypto = require('crypto');
 const { normalizePostgresConfig, safePostgresConfig, databaseError, integer } = require('./config');
 const { MIGRATIONS, checkMigrationHistory } = require('./migrations');
+const { createCommandQueueOperations, readPendingCapacity } = require('./command-queue');
+const { createBackupOperations } = require('./backup');
+const { createMaintenanceOperations } = require('./maintenance');
 const { textId, safeInteger, fromSqlInteger, captureCheckpoint, captureEvent, captureInboxCommand, digest,
-  canonicalJson, summarizeSave, restoreSave } = require('./codec');
+  canonicalJson, summarizeSave, restoreSave, validateArchivedSave, detachedJson } = require('./codec');
 
 function createPostgresDatabaseStore(options = {}) {
   const config = normalizePostgresConfig(options.database || options, options.env || process.env);
@@ -90,7 +93,7 @@ function createPostgresDatabaseStore(options = {}) {
       const existing = await client.query(`SELECT * FROM ${schema}.world_saves WHERE world_id=$1 AND request_id=$2`, [envelope.worldId, requestId]);
       if (existing.rows.length) {
         if (existing.rows[0].request_hash !== requestHash) throw databaseError('IDEMPOTENCY_CONFLICT', 'Request ID was already used for a different checkpoint');
-        restoreSave(existing.rows[0]);
+        if (!validateArchivedSave(existing.rows[0])) restoreSave(existing.rows[0]);
         return summarizeSave(existing.rows[0], true);
       }
       const revision = fromSqlInteger(current.rows[0].revision, 'revision');
@@ -133,6 +136,17 @@ function createPostgresDatabaseStore(options = {}) {
       return result.rows.length ? restoreSave(result.rows[0]) : null;
     }, true);
   }
+  async function getWorldHead(worldId) {
+    textId(worldId, 'worldId');
+    await ensureReady();
+    return transaction(async client => {
+      // Never transfer/decode the checkpoint payload just to check readiness.
+      const result = await client.query(`SELECT w.world_id, w.revision, s.tick FROM ${schema}.worlds w
+        JOIN ${schema}.world_saves s ON s.world_id=w.world_id AND s.sequence=w.latest_sequence WHERE w.world_id=$1`, [worldId]);
+      const row = result.rows[0];
+      return row ? { worldId: row.world_id, revision: fromSqlInteger(row.revision), tick: fromSqlInteger(row.tick) } : null;
+    }, true);
+  }
   async function listWorlds(listOptions = {}) {
     const limit = integer(listOptions.limit, 100, 1, 1000, 'world limit');
     await ensureReady();
@@ -142,13 +156,24 @@ function createPostgresDatabaseStore(options = {}) {
       return result.rows.map(row => summarizeSave(row));
     }, true);
   }
+  async function getCheckpointRequest(worldId, requestId) {
+    const selected = textId(worldId, 'worldId'), id = textId(requestId, 'requestId', 128);
+    await ensureReady();
+    return transaction(async client => {
+      const result = await client.query(`SELECT * FROM ${schema}.world_saves WHERE world_id=$1 AND request_id=$2`, [selected, id]);
+      if (!result.rows.length) return null;
+      const row = result.rows[0], archived = validateArchivedSave(row);
+      if (!archived) restoreSave(row);
+      return { ...summarizeSave(row), archived, metadata: detachedJson(archived ? row.archived_metadata : row.envelope.metadata) };
+    }, true);
+  }
   async function enqueueCommand(input, commandOptions = {}) {
     const command = captureInboxCommand(input);
     const expectedWorldRevision = commandOptions.expectedWorldRevision === undefined
       ? null : safeInteger(commandOptions.expectedWorldRevision, 'expectedWorldRevision', 1);
     await ensureReady();
     return transaction(async client => {
-      const world = await client.query(`SELECT revision, latest_sequence FROM ${schema}.worlds WHERE world_id=$1 FOR SHARE`, [command.worldId]);
+      const world = await client.query(`SELECT revision, latest_sequence FROM ${schema}.worlds WHERE world_id=$1 FOR UPDATE`, [command.worldId]);
       if (!world.rows.length || world.rows[0].latest_sequence === null) throw databaseError('MISSING_WORLD', 'Command world does not have a committed checkpoint');
       const revision = fromSqlInteger(world.rows[0].revision, 'world revision');
       if (expectedWorldRevision !== null && revision !== expectedWorldRevision) {
@@ -156,6 +181,19 @@ function createPostgresDatabaseStore(options = {}) {
         error.expectedRevision = expectedWorldRevision; error.actualRevision = revision;
         throw error;
       }
+      // Serialize admission with other enqueues and checkpoint application.
+      // Check identity before capacity so a full queue still acknowledges retries.
+      const found = await client.query(`SELECT * FROM ${schema}.world_commands WHERE world_id=$1 AND command_id=$2`, [command.worldId, command.id]);
+      if (found.rows.length) {
+        const previous = summarizeCommand(found.rows[0]);
+        if (previous.playerId !== command.playerId || previous.inputDigest !== command.inputDigest) {
+          throw databaseError('IDEMPOTENCY_CONFLICT', 'Command ID was already used for different input');
+        }
+        return { ...previous, idempotent: true };
+      }
+      const capacity = await readPendingCapacity(client, schema, command.worldId, command.playerId, config.maxPendingCommands);
+      if (capacity.pending >= config.maxPendingCommands) throw databaseError('QUEUE_FULL', 'Pending command capacity reached');
+      if (capacity.playerPending >= config.maxPendingPerPlayer) throw databaseError('PLAYER_QUEUE_FULL', 'Player pending command capacity reached');
       const inserted = await client.query(`INSERT INTO ${schema}.world_commands
         (world_id,command_id,player_id,input,input_digest) VALUES ($1,$2,$3,$4::jsonb,$5)
         ON CONFLICT (world_id,command_id) DO NOTHING RETURNING *`,
@@ -268,7 +306,11 @@ function createPostgresDatabaseStore(options = {}) {
     return closePromise;
   }
   return Object.freeze({ version: 2, provider: 'postgres', config: Object.freeze(safePostgresConfig(config)),
-    migrate, saveWorld, loadWorld, listWorlds, enqueueCommand, getCommand, listCommands, listPendingCommands,
+    ...createCommandQueueOperations({ transaction, ensureReady, schema, config }),
+    ...createBackupOperations({ transaction, readSchema, ensureReady, schema }),
+    ...createMaintenanceOperations({ transaction, ensureReady, schema }),
+    getCheckpointRequest,
+    migrate, saveWorld, loadWorld, getWorldHead, listWorlds, enqueueCommand, getCommand, listCommands, listPendingCommands,
     appendEvent, listEvents, summary, close });
 }
 function summarizeEvent(row) {
