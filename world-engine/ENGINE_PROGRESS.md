@@ -1,6 +1,8 @@
 # Engine Development Progress
 
-当前收尾层：持久物品/装备/消费/赠送/商店，重复装备和货币守恒修复，安全只读背包/商店视图、runtime v5 显式升级、1.0.0 private SDK 和统一验收入口。完整回归 125 项，新增真实 SQL 库存专项 12 组。见 ENGINE_V1_RELEASE.md 与 DURABLE_INVENTORY.md，最终通过以本提交证据为准。
+当前修订版 1.0.1：修复创始人物组织归属、显式 false 保留覆盖、管理摘要组织数和自定义行动处理器；零体力装备意见已补实测覆盖。普通回归 126 项，真实 SQL 初始化/HTTP 统计增强，既有 16 个 SQL 专项和 14 个 CI 作业保留。详见 RELEASE_1_0_1.md；最终通过以本提交交付证据为准。v1 已合并到 main c20f856，当前修订从该主线开始。
+
+上一层 565ae7f：持久物品/装备/消费/赠送/商店，重复装备和货币守恒修复，安全只读背包/商店视图、runtime v5 显式升级、1.0.0 private SDK 和统一验收入口。完整回归 125 项，新增真实 SQL 库存专项 12 组，已通过 PR #73 合并。
 
 上一层 b2f637a：服务端工作/采集/训练成长/休息/战斗规则、体力与单 tick 行动预算、拥有角色的自主行为接入、规则配置与安全读取、runtime v4 显式升级。新增三个 discovery 脚本，回归分母 121；真实 SQL 行动规则专项 10 组。实现见 PLAYER_ACTION_RULES.md，最终验收按当前交付提交的原始日志。
 
@@ -12,7 +14,7 @@
 
 历史性能层基于 441d2d0，增加局部索引去重、稳定的前 K 条传播连接选择和普通 JSON 状态复制快路径；完整回归分母为 110。完整 tick 同机中位数从 5.96 秒降至 5.15 秒，结果摘要相同。实现、单项测量与限制见 KNOWLEDGE_SCALE_PERFORMANCE.md；最终 CI 证据按本层提交保存，下面保留历史基线。
 
-当前整合分支完成单写 PostgreSQL 世界引擎 v1 的功能验收，详见 ENGINE_COMPLETION.md、ENGINE_ACCEPTANCE.md 和 ENGINE_QUICKSTART.md。功能提交 e99cb1c 的本地/CI 回归 106/106、真实 SQL、耐久和六组生命周期长测全部通过。main 仍为 #70，后续代码在 #73；下文保留各历史阶段，不将开放 PR 写成已合并。
+历史 e99cb1c 完成单写 PostgreSQL 世界引擎 v1 的早期功能验收，详见 ENGINE_COMPLETION.md、ENGINE_ACCEPTANCE.md 和 ENGINE_QUICKSTART.md。当时本地/CI 回归 106/106、真实 SQL、耐久和六组生命周期长测全部通过，main 当时仍为 #70；这些历史数据不代表当前修订版本。
 
 ## 已验收主线
 

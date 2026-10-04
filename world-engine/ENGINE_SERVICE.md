@@ -29,7 +29,7 @@ npm run engine:serve -- --world-id engine-world --host 127.0.0.1 --port 8791
 | `GET /admin/queue` | GM/Admin；有界积压诊断、容量和最早 pending sequence |
 | `GET /commands/:commandId` | 命令所属玩家账户或 GM/Admin；读取 pending/applied 和结果 |
 | `GET /players/:playerId/state` | 已绑定玩家或 GM/Admin；玩家基本字段、当前受控角色的固定数值字段、当前地点 ID/名称 |
-| `GET /admin/summary` | GM/Admin；tick/revision，实体总数、存活实体数、地点、组织、玩家数量 |
+| `GET /admin/summary` | GM/Admin；tick/revision，实体总数、存活实体数、地点、organizations 组织数、factions 旧阵营数、玩家数量 |
 | `GET /admin/audit` | GM/Admin；白名单过滤、最多 1000 条、sequence 游标；route 过滤支持 `state`、`summary`、`history`、`queue` |
 
 `state`、`summary` 不接受查询参数，不返回任意 meta、账户/会话、token hash、私有记忆、其他角色清单或完整世界存档。角色视图数值字段固定为 health/maxHealth/energy/maxEnergy/power/defense/speed/intelligence/social，以及 currency/food；没有角色时 character 为 null。这是最小观察接口，不是完整游戏客户端的地图、背包和叙事页面。新增业务路由沿用独立审计事务，失败不改变已完成命令；不需要改变 Migration 1–4。

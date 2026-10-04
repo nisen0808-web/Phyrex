@@ -20,7 +20,7 @@ async function main() {
     assert.strictEqual((await request(port, `${base}/players/one/state`, { token: null })).status, 401);
     assert.strictEqual((await request(port, `${base}/admin/summary`)).status, 403);
     const summary = await request(port, `${base}/admin/summary`, { token: 'admin-secret-token' });
-    assert.strictEqual(summary.status, 200); assert.deepStrictEqual(summary.body.data.counts, { entities: 1, alive: 1, locations: 1, factions: 0, players: 2 });
+    assert.strictEqual(summary.status, 200); assert.deepStrictEqual(summary.body.data.counts, { entities: 1, alive: 1, locations: 1, factions: 0, organizations: 0, players: 2 });
     assert.strictEqual((await request(port, `${base}/players/one/state?include=accounts`)).status, 400);
     assert.strictEqual((await request(port, `${base}/players/one/state`, { method: 'POST' })).status, 405);
     assert.strictEqual(JSON.stringify(f.state.world), before, 'reads must not mutate committed data');

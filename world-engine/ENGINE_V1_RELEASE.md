@@ -1,6 +1,6 @@
 # 单写世界引擎 v1 交付范围与统一验收
 
-软件包版本 **1.0.0**（private，未发布 npm），持久运行器版本 **5**，SQL Migration **1–4**。这三个版本标识用途不同。当前整合分支为 feature/engine-completion / PR #73，功能验收与 main 合并状态分别记录。
+软件包版本 **1.0.1**（private，未发布 npm），持久运行器版本 **5**，SQL Migration **1–4**。这三个版本标识用途不同。v1 已通过 PR #73 合并至 main（c20f856）；本次审查修复、规模基线变化和兼容性见 [1.0.1 发布说明](RELEASE_1_0_1.md)，隔离测试和上线准备见 [运行手册](ISOLATED_VALIDATION_RUNBOOK.md)。本次修订的最终提交与合并状态随交付证据记录。
 
 ## 完成边界
 

@@ -40,7 +40,7 @@ function applyActionTick(world, action, options = {}) {
     return fail(action, precheck.reason);
   }
 
-  if (Object.hasOwn(DEFAULT_ACTION_HANDLERS, action.type)) {
+  if (Object.hasOwn(DEFAULT_ACTION_HANDLERS, action.type) && handler === DEFAULT_ACTION_HANDLERS[action.type]) {
     const invalid = validateBuiltInAction(world, action, actor);
     if (invalid) return fail(action, invalid);
   }
