@@ -7,7 +7,7 @@ const { spawnSync } = require('child_process');
 const engine = require('..');
 const { gatesFor, verify } = require('../demo/engine-verify-cli');
 async function main() {
-  assert.strictEqual(engine.version, '1.0.0'); assert.ok(Object.isFrozen(engine));
+  assert.strictEqual(engine.version, '1.0.1'); assert.ok(Object.isFrozen(engine));
   const world = engine.createSampleWorld({ population: 2, commerce: 'starter' });
   assert.ok(world.shops.byId.shop_village_general);
   engine.createPlayerCharacter(world, 'observer', { locationId: 'village' });

@@ -99,7 +99,7 @@ function processProcessesTick(world, options = {}) {
   ensureProcessState(world).retention = {
     maxProcesses: processLimit(config.maxProcesses, DEFAULT_PROCESS_OPTIONS.maxProcesses),
     maxInactiveProcesses: processLimit(config.maxInactiveProcesses, DEFAULT_PROCESS_OPTIONS.maxInactiveProcesses),
-    ...(config.preserveActive === true ? { preserveActive: true } : {}),
+    preserveActive: config.preserveActive === true,
   };
   const created = [];
   const updated = [];

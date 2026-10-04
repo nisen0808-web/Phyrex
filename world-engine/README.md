@@ -4,6 +4,8 @@
 
 当前 v1 的总能力、编程入口和统一验收见 [引擎 v1 交付](ENGINE_V1_RELEASE.md)，物品/装备/商店的持久流程见 [库存与交易](DURABLE_INVENTORY.md)。
 
+最新审查修复见 [1.0.1 发布说明](RELEASE_1_0_1.md)，隔离测试环境复现和后续运行准备见 [运行手册](ISOLATED_VALIDATION_RUNBOOK.md)。
+
 人口增长后的运行诊断与已实现的等价性能优化见 [真实运行剖析](RUNTIME_PERFORMANCE.md)。
 
 第二批优化及完整 tick / 单项测量见 [信息传播与状态复制](KNOWLEDGE_SCALE_PERFORMANCE.md)。

@@ -1,0 +1,57 @@
+{
+  "version": "1.0.1",
+  "previousCommit": "565ae7f40db8cfff6339e470cc316a0d7c6500c7",
+  "reason": "Founders now join via the organization API, which establishes roles, indexes, entity membership and join events. Explicit false retention overrides are also preserved. Population, ticks and all invariant gates remain unchanged.",
+  "derivation": "Local Node 22.23.3 runs reached the final digest check after all lifecycle, finite-state, consistency, capacity and independent recovery assertions. They intentionally failed the prior digest and are not recorded as passing acceptance. Node 20/22 CI must independently verify these fixed new digests.",
+  "sourceHashDefinition": "SHA-256 of UTF-8 text with LF newlines",
+  "sourceFilesSHA256": {
+    "demo/engine-v1-world.js": "6a3a09c415b072b003b9318da67c5c2c68878b34a733c744b15f6be2af0580da",
+    "core/process-engine.js": "e211bb4223dfccbb7d7d9c16865bd25ea03397ed9554c5eab2427dcc67c8deec",
+    "core/action-engine.js": "059641091ac4e9342889b3b3c520176f5f1c3b171273cc50db0ccf3ebc3b0c9b",
+    "core/durable-state-view-engine.js": "a3d66c9a6ec85a6d3473bdc2ebde6ba5271a94d0a3ca8cff7bb61148959db2ce"
+  },
+  "cases": {
+    "small": {
+      "population": 4,
+      "ticks": 1000,
+      "seed": "scale-small-v1",
+      "checkpoints": 10,
+      "peakBytes": 23944361,
+      "births": 200,
+      "deaths": 18,
+      "totalEntities": 204,
+      "maxGeneration": 7,
+      "removedCauses": 47574,
+      "finalDigest": "e60736edb0e95104f50a462f7115f26f4fe95780dbdf71018b6bf05e91f35007",
+      "previousDigest": "39ddd1460f7ba67ba4609aaf98690c7f8d4836920b01ee101bebaf0f2c4ffd1c"
+    },
+    "medium": {
+      "population": 12,
+      "ticks": 600,
+      "seed": "scale-medium-v1",
+      "checkpoints": 6,
+      "peakBytes": 9009768,
+      "births": 28,
+      "deaths": 5,
+      "totalEntities": 40,
+      "maxGeneration": 3,
+      "removedCauses": 8439,
+      "finalDigest": "cfd56697870f1c5dfadbc467184f4e4c15304706ae2961ace383e57afb92c8e1",
+      "previousDigest": "6df12d3c633dd908c60d0cfaf3f98c4dc1035ebd63ee031493c5f7cd311ed42a"
+    },
+    "large": {
+      "population": 32,
+      "ticks": 300,
+      "seed": "scale-large-v1",
+      "checkpoints": 3,
+      "peakBytes": 12492192,
+      "births": 65,
+      "deaths": 7,
+      "totalEntities": 97,
+      "maxGeneration": 3,
+      "removedCauses": 18077,
+      "finalDigest": "d3765a8611368998cc7f7213c965a62ff6fcb74d503c75e3cabab139acf23cf9",
+      "previousDigest": "658cdcb6b942f7b64c3db06e51e8ad29f502d0200862abd3c77d30a3a1e3e76e"
+    }
+  }
+}

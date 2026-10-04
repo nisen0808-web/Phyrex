@@ -32,8 +32,17 @@ async function main() {
     await cli('engine-init-cli.js', ['--output', worldFile, '--world-id', 'quickstart', '--seed', 'quickstart', '--population', '4']);
     await cli('database-postgres-cli.js', ['migrate']);
     await cli('database-postgres-cli.js', ['import', '--input', worldFile, '--expected-revision', '0', '--request-id', 'bootstrap']);
-    assert.strictEqual((await store.loadWorld('quickstart')).revision, 1);
-    assert.strictEqual((await store.loadWorld('quickstart')).world.simulation.options.process.preserveActive, true);
+    const initialized = await store.loadWorld('quickstart');
+    assert.strictEqual(initialized.revision, 1);
+    assert.strictEqual(initialized.world.simulation.options.process.preserveActive, true);
+    const organization = Object.values(initialized.world.organizations.byId)[0];
+    assert.strictEqual(organization.members.length, 4);
+    for (const id of organization.members) {
+      assert.strictEqual(organization.roles[id], id === organization.leaderId ? 'leader' : 'member');
+      assert.deepStrictEqual(initialized.world.entities[id].organizationIds, [organization.id]);
+      assert.strictEqual(initialized.world.entities[id].factionId, organization.id);
+      assert.deepStrictEqual(initialized.world.organizations.indexes.byMember[id], [organization.id]);
+    }
     pass('documented initialization, migration and import commands work as fresh processes');
 
     const common = ['--world-id', 'quickstart', '--account-id', 'operator'];
@@ -50,6 +59,13 @@ async function main() {
     api = await createDurableCommandApiServer({ env, rateLimitNow: () => 0 });
     await new Promise(resolve => api.server.listen(0, '127.0.0.1', resolve));
     const url = `http://127.0.0.1:${api.server.address().port}/durable/worlds/quickstart`;
+    assert.strictEqual((await fetch(`${url}/admin/summary`)).status, 401);
+    const summary = await fetch(`${url}/admin/summary`, { headers: { Authorization: `Bearer ${token}` } });
+    assert.strictEqual(summary.status, 200);
+    const summaryBody = await summary.json();
+    assert.strictEqual(summaryBody.data.counts.organizations, 1);
+    assert.strictEqual(summaryBody.data.counts.factions, 0);
+    assert.strictEqual((await store.loadWorld('quickstart')).revision, 4, 'admin projection must not mutate the world');
     const submit = id => fetch(`${url}/players/observer/commands`, { method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ id, type: 'wait' }) });
     assert.strictEqual((await submit('first')).status, 202);

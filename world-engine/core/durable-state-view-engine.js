@@ -29,6 +29,7 @@ function worldSummaryView(world, revision) {
   for (const entity of Object.values(world.entities || {})) { entities++; if (entity.status === 'alive') alive++; }
   return { worldId: world.id, revision, tick: world.tick,
     counts: { entities, alive, locations: Object.keys(world.locations || {}).length,
-      factions: Object.keys(world.factions || {}).length, players: Object.keys(world.players?.byId || {}).length } };
+      factions: Object.keys(world.factions || {}).length, organizations: Object.keys(world.organizations?.byId || {}).length,
+      players: Object.keys(world.players?.byId || {}).length } };
 }
 module.exports = { playerStateView, worldSummaryView };
