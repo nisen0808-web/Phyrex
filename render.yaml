@@ -14,8 +14,7 @@ services:
     numInstances: 1
     autoDeployTrigger: "off"
     maxShutdownDelaySeconds: 30
-    previews:
-      generation: "off"
+    # Service previews are disabled by omitting previews.generation.
     envVars:
       - key: NODE_VERSION
         value: "22.23.3"
