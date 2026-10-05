@@ -1,0 +1,35 @@
+'use strict';
+const assert = require('node:assert/strict');
+const { inventoryFixture, grantItem } = require('./helpers/inventory-fixture');
+const { playerStateView } = require('../core/durable-state-view-engine');
+async function main() {
+  const { nextStep, receiptText, itemName, itemDescription, actionDescriptions, displayName } = await import('../client/durable/guide.mjs');
+  const world = inventoryFixture(), hero = world.entities['hero-one'];
+  const state = () => playerStateView(world, 1, 'one');
+  assert.equal(nextStep(state()).type, 'work');
+  assert.equal(nextStep(state(), { pending: { id: 'same-id' } }).kind, 'retry');
+  assert.equal(nextStep(state(), { waitingId: 'existing-command' }).kind, 'refresh');
+  hero.stats.energy = 0; assert.equal(nextStep(state()).type, 'rest');
+  hero.stats.energy = 100;
+  const completed = new Set(['work']);
+  const purchase = nextStep(state(), { completed });
+  assert.equal(purchase.type, 'buy_item'); assert.equal(purchase.payload.quantity, 1);
+  assert.ok(state().inventory.shops.some(shop => shop.id === purchase.payload.shopId && shop.stock.some(item => item.definitionId === purchase.payload.definitionId && item.type === 'equipment' && item.quantity > 0)));
+  hero.resources.currency = 0; assert.equal(nextStep(state(), { completed }).type, 'work');
+  const item = grantItem(world, 'entity', hero.id, purchase.payload.definitionId, 1);
+  assert.equal(nextStep(state(), { completed }).type, 'equip_item');
+  item.equipped = true; assert.equal(nextStep(state(), { completed }).kind, 'actions');
+  world.players.byId.one.controlMode = 'observer'; assert.equal(nextStep(state(), { completed }).kind, 'refresh');
+  assert.match(receiptText({ status: 'pending', result: { status: 'completed' } }, 'work'), /等待世界结算/);
+  assert.match(receiptText({ status: 'applied', result: { status: 'accepted' } }, 'work'), /尚未确认完成/);
+  assert.match(receiptText({ status: 'applied', result: { status: 'rejected', outcome: { reason: 'insufficient_energy' } } }), /先休息/);
+  const work = { status: 'applied', result: { status: 'completed', outcome: { actionType: 'work', value: { resource: 'currency', amount: 17, energyCost: 4 } } } };
+  assert.match(receiptText(work), /货币 \+17/); assert.match(receiptText(work), /体力消耗 4/);
+  assert.match(actionDescriptions({ workYield: 17, workEnergy: 4, workResource: 'currency' }).work, /17 货币/);
+  assert.equal(itemName({ definitionId: 'wooden_sword', name: 'Wooden Sword' }), '木剑');
+  assert.equal(itemName({ definitionId: 'wooden_sword', name: '定制长剑' }), '定制长剑');
+  assert.match(itemDescription({ type: 'equipment', stats: { energy: 2 } }), /体力上限 \+2/);
+  assert.equal(displayName('founder_1'), '旅人 2');
+  console.log('durable console guide passed: real rules, pending/rejected outcomes, affordable equipment, observer and low-energy recovery');
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });
