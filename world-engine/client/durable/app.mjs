@@ -98,6 +98,7 @@ async function send(type, payload) {
 }
 function showReceipt(receipt) {
   lastReceipt = receipt.id; shownReceipt = receipt; remember(viewedReceipts, receipt.id, receipt);
+  $('history-empty').hidden = true;
   if (waitingReceiptId(receipt)) waitingId = receipt.id;
   else if (waitingId === receipt.id) waitingId = null;
   const type = receiptType(receipt) || knownTypes.get(receipt.id);
