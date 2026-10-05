@@ -22,6 +22,8 @@
 
 静态文件只有四个精确允许路径：`/`、`/console/style.css`、`/console/app.mjs`、`/console/session.mjs`。不把请求路径拼成文件路径，不暴露旧演示文件、账户秘密、包文件或磁盘目录。页面使用 CSP（无内联脚本、无第三方源）、禁止被框架嵌入、no-store、nosniff、no-referrer。所有世界文本用 textContent 渲染。静态请求经过来源限流，但与健康探针一样不写 SQL 业务审计。
 
+脚本加载失败时，连接按钮保持禁用；令牌输入框没有原生表单字段名，登录表单明确使用 POST，CSP `form-action 'none'` 禁止所有原生表单导航。即使 JavaScript 未安装事件监听器，也不会把令牌回退到 URL 查询参数。
+
 `engine:serve` 默认开启控制台；直接构建 durable API 默认关闭，需明确 `webConsole: true`；嵌入式宿主可用 `createEngineService({ ..., api: { webConsole: false } })` 关闭。没有更改 SQL Migration 1–4、runtime v5、revision fence、提交后发布或冻结批次重试规则。
 
 ## 验证

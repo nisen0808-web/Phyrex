@@ -12,9 +12,15 @@ async function main() {
     for (const route of ['/', '/console/style.css', '/console/app.mjs', '/console/session.mjs']) {
       const response = await fetch(base + route); assert.strictEqual(response.status, 200);
       assert.match(response.headers.get('Content-Security-Policy'), /frame-ancestors 'none'/);
+      assert.match(response.headers.get('Content-Security-Policy'), /form-action 'none'/, 'failed JavaScript must not fall back to native credential submission');
       assert.ok(!response.headers.get('Content-Security-Policy').includes('unsafe-inline'));
       assert.strictEqual(response.headers.get('Cache-Control'), 'no-store');
       const source = await response.text(); assert.ok(source.length > 100);
+      if (route === '/') {
+        const form = source.match(/<form id="login-form"[^>]*>/)[0], credential = source.match(/<input id="token"[^>]*>/)[0];
+        assert.match(form, /method="post"/); assert.ok(!/\bname\s*=/.test(credential), 'credential is never a successful native form field');
+        assert.match(source, /type="submit" disabled>连接世界/, 'enable submission only after event handlers are installed');
+      }
       assert.ok(!source.includes('console-player-fixture')); assert.ok(!source.includes('console-admin-fixture'));
       assert.strictEqual((await fetch(base + route, { method: 'HEAD' })).status, 200);
     }

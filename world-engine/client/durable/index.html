@@ -18,12 +18,13 @@
     <header><div><p class="eyebrow">WORLD OPERATIONS</p><h1>世界引擎</h1><p class="muted">观察世界的变化，提交下一步行动。</p></div><span id="connection-status" class="badge">未连接</span></header>
     <section id="login-panel" class="panel">
       <div class="section-heading"><div><h2>连接你的角色</h2><p class="muted">使用已有访问令牌。令牌只保留在当前页面内存中。</p></div><span class="step">01 / CONNECT</span></div>
-      <form id="login-form" class="login-grid">
+      <form id="login-form" class="login-grid" method="post" action="/">
         <label>世界 ID<input id="world-id" name="world" value="phyrex-trial" maxlength="200" required autocomplete="off"></label>
         <label>玩家 ID<input id="player-id" name="player" value="trial-player" maxlength="200" required autocomplete="off"></label>
-        <label class="token-field">访问令牌<input id="token" name="token" type="password" required autocomplete="off" spellcheck="false" maxlength="4096" placeholder="粘贴玩家或管理员令牌"></label>
-        <button class="primary" type="submit">连接世界 →</button>
+        <label class="token-field">访问令牌<input id="token" type="password" required autocomplete="off" spellcheck="false" maxlength="4096" placeholder="粘贴玩家或管理员令牌"></label>
+        <button class="primary" type="submit" disabled>连接世界 →</button>
       </form>
+      <noscript><p class="notice error">请启用 JavaScript 后连接。访问令牌不会通过原生表单提交。</p></noscript>
     </section>
     <div id="notice" class="notice" role="status" aria-live="polite">首次访问可能需要等待免费服务唤醒。</div>
     <div id="workspace" hidden>
