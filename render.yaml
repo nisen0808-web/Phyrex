@@ -13,7 +13,7 @@ services:
     healthCheckPath: /health/ready
     numInstances: 1
     autoDeployTrigger: "off"
-    maxShutdownDelaySeconds: 30
+    # Free services use Render's default shutdown grace period.
     # Service previews are disabled by omitting previews.generation.
     envVars:
       - key: NODE_VERSION
