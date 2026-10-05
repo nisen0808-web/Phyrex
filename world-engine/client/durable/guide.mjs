@@ -40,6 +40,7 @@ const reasons = {
   no_item_effect: '当前生命或体力已满，这件物品现在没有效果，无需消耗。',
 };
 export function receiptType(receipt) { return receipt?.result?.outcome?.actionType || receipt?.result?.type || ''; }
+export function waitingReceiptId(receipt) { return receipt?.status === 'pending' || receipt?.result?.status === 'accepted' ? receipt.id : null; }
 export function receiptText(receipt, knownType = '') {
   if (!receipt) return '还没有行动记录。';
   const type = receiptType(receipt) || knownType, label = actionNames[type] || '行动';

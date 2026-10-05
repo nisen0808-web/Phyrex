@@ -3,12 +3,16 @@ const assert = require('node:assert/strict');
 const { inventoryFixture, grantItem } = require('./helpers/inventory-fixture');
 const { playerStateView } = require('../core/durable-state-view-engine');
 async function main() {
-  const { nextStep, receiptText, itemName, itemDescription, actionDescriptions, displayName } = await import('../client/durable/guide.mjs');
+  const { nextStep, receiptText, itemName, itemDescription, actionDescriptions, displayName, waitingReceiptId } = await import('../client/durable/guide.mjs');
   const world = inventoryFixture(), hero = world.entities['hero-one'];
   const state = () => playerStateView(world, 1, 'one');
   assert.equal(nextStep(state()).type, 'work');
   assert.equal(nextStep(state(), { pending: { id: 'same-id' } }).kind, 'retry');
   assert.equal(nextStep(state(), { waitingId: 'existing-command' }).kind, 'refresh');
+  const acknowledged = { id: 'acknowledged-before-refresh-failed', status: 'pending', result: null };
+  assert.equal(nextStep(state(), { waitingId: waitingReceiptId(acknowledged) }).kind, 'refresh', 'a failed state/history refresh cannot turn an acknowledged pending command into a new action');
+  assert.equal(waitingReceiptId({ id: 'a', status: 'applied', result: { status: 'accepted' } }), 'a');
+  assert.equal(waitingReceiptId({ id: 'a', status: 'applied', result: { status: 'completed' } }), null);
   hero.stats.energy = 0; assert.equal(nextStep(state()).type, 'rest');
   hero.stats.energy = 100;
   const completed = new Set(['work']);

@@ -1,5 +1,5 @@
 import { ConsoleSession } from '/console/session.mjs';
-import { actionNames, actionDescriptions, displayName, itemName, itemDescription, receiptType, receiptText, nextStep } from '/console/guide.mjs';
+import { actionNames, actionDescriptions, displayName, itemName, itemDescription, receiptType, receiptText, waitingReceiptId, nextStep } from '/console/guide.mjs';
 
 const $ = id => document.getElementById(id);
 let storage;
@@ -38,7 +38,8 @@ function clearViews() {
   $('connection-status').textContent = '未连接'; $('token').value = ''; $('guide-result').textContent = ''; $('guide-result').hidden = true;
 }
 function canAct() { return state?.character?.status === 'alive' && state?.player?.controlMode === 'character'; }
-function guideStep() { return nextStep(state, { pending: session.pending, waitingId, completed }); }
+function outstandingId() { return waitingId || waitingReceiptId(shownReceipt); }
+function guideStep() { return nextStep(state, { pending: session.pending, waitingId: outstandingId(), completed }); }
 function renderGuide() {
   const step = guideStep();
   $('guide-title').textContent = step.title; $('guide-text').textContent = step.text;
@@ -52,10 +53,10 @@ function renderGuide() {
   }
   $('guide-result').hidden = !shownReceipt;
   if (shownReceipt) $('guide-result').textContent = receiptText(shownReceipt, knownTypes.get(shownReceipt.id));
-  $('action-help').textContent = session.pending ? '上一条行动尚未确认收到。请先按原编号重试。' : waitingId ? '上一次行动还在等待结算。请在上方查看结果，完成后再做下一步。' : canAct() ? '点选行动后，在上方查看结果。数值来自当前世界规则，以实际结算为准。' : '当前没有可行动角色，按钮暂不可用。请联系管理员绑定或更换角色。';
+  $('action-help').textContent = session.pending ? '上一条行动尚未确认收到。请先按原编号重试。' : outstandingId() ? '上一次行动还在等待结算。请在上方查看结果，完成后再做下一步。' : canAct() ? '点选行动后，在上方查看结果。数值来自当前世界规则，以实际结算为准。' : '当前没有可行动角色，按钮暂不可用。请联系管理员绑定或更换角色。';
 }
 function updateButtons() {
-  for (const button of document.querySelectorAll('button[data-command]')) button.disabled = busy || !canAct() || Boolean(session.pending) || Boolean(waitingId) || Boolean(button.dataset.unavailable);
+  for (const button of document.querySelectorAll('button[data-command]')) button.disabled = busy || !canAct() || Boolean(session.pending) || Boolean(outstandingId()) || Boolean(button.dataset.unavailable);
   for (const id of ['refresh', 'open-admin', 'history-first', 'audit-first', 'refresh-receipt']) $(id).disabled = busy;
   $('history-next').disabled = busy || !historyCursor; $('audit-next').disabled = busy || !auditCursor;
   $('retry').disabled = busy; $('pending-panel').hidden = !session.pending;
@@ -97,6 +98,8 @@ async function send(type, payload) {
 }
 function showReceipt(receipt) {
   lastReceipt = receipt.id; shownReceipt = receipt; remember(viewedReceipts, receipt.id, receipt);
+  if (waitingReceiptId(receipt)) waitingId = receipt.id;
+  else if (waitingId === receipt.id) waitingId = null;
   const type = receiptType(receipt) || knownTypes.get(receipt.id);
   if (receipt.result?.status === 'completed' && type) completed.add(type);
   $('receipt-summary').textContent = receiptText(receipt, type);
@@ -177,7 +180,7 @@ async function refresh() {
   if (queued) lastReceipt = queued.id;
   if (!lastReceipt && history.records.length) lastReceipt = history.records[0].id;
   if (lastReceipt) showReceipt(await session.receipt(lastReceipt));
-  waitingId = queued && viewedReceipts.get(queued.id)?.status !== 'applied' ? queued.id : shownReceipt?.status === 'pending' || shownReceipt?.result?.status === 'accepted' ? shownReceipt.id : null;
+  waitingId = queued && viewedReceipts.get(queued.id)?.status !== 'applied' ? queued.id : waitingReceiptId(shownReceipt);
   renderState(await session.state()); renderHistory(history);
 }
 async function readAudit(before = null) {
