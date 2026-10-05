@@ -9,6 +9,7 @@ const { playerStateView, worldSummaryView } = require('./durable-state-view-engi
 const { validateSession } = require('./account-session-engine');
 const { canAccessPlayer, isPrivileged, requirePermission, requireSession } = require('./api-permission-engine');
 const { createFixedWindowRateLimiter } = require('./request-rate-limit-engine');
+const { createConsoleAssets, serveConsoleAsset } = require('../service/console-assets');
 
 const DEFAULT_DURABLE_COMMAND_API_OPTIONS = Object.freeze({
   maxBodyBytes: 64 * 1024,
@@ -51,6 +52,7 @@ async function createDurableCommandApiServer(options = {}) {
   const shutdownTimeoutMs = boundedInteger(options.shutdownTimeoutMs ?? 5000, 10, 60000, 'shutdownTimeoutMs');
   if (options.health !== undefined && typeof options.health !== 'function') throw apiError(500, 'invalid_health');
   if (options.canSubmit !== undefined && typeof options.canSubmit !== 'function') throw apiError(500, 'invalid_admission');
+  const consoleAssets = options.webConsole === true ? createConsoleAssets() : null;
   const ownsStore = !options.store || options.closeStore === true;
   const store = options.store || createPostgresDatabaseStore({ ...(options.database || {}), env: options.env });
   if (store.provider !== 'postgres' || !['loadWorld','enqueueCommand','getCommand','summary','close'].every(key => typeof store[key] === 'function')) {
@@ -78,7 +80,7 @@ async function createDurableCommandApiServer(options = {}) {
   let auditFailures = 0;
   const pendingAudits = new Set();
   const requestOptions = Object.freeze({ maxBodyBytes, authorizationAttempts, rateLimiters,
-    worldId: options.worldId, health: options.health, canSubmit: options.canSubmit });
+    worldId: options.worldId, health: options.health, canSubmit: options.canSubmit, consoleAssets });
   const server = http.createServer((req, res) => {
     setSafeHeaders(res);
     if (closing) { req.resume(); res.setHeader('Connection', 'close'); return writeMappedError(res, apiError(503, 'service_unavailable')); }
@@ -138,8 +140,16 @@ async function handleRequest(req, res, store, auditStore, options, audit) {
   const method = String(req.method || 'GET').toUpperCase();
   audit.method = method;
   const parsed = new URL(req.url || '/', 'http://localhost');
+  const asset = options.consoleAssets?.get(parsed.pathname);
+  // Static shell requests contain no operational data and must not fill SQL audit.
+  if (asset) audit.probe = true;
   if (options.health && ['/health/live', '/health/ready'].includes(parsed.pathname)) audit.probe = true;
   enforceRateLimit(options.rateLimiters.source.consume(requestSourceKey(req)));
+  if (asset) {
+    if (!['GET', 'HEAD'].includes(method)) throw apiError(405, 'method_not_allowed');
+    if (parsed.search) throw apiError(400, 'invalid_query');
+    return serveConsoleAsset(req, res, asset);
+  }
   if (audit.probe) {
     if (method !== 'GET') throw apiError(405, 'method_not_allowed');
     if (parsed.search) throw apiError(400, 'invalid_query');

@@ -31,7 +31,7 @@ async function createEngineService(options = {}, factories = {}) {
     return closePromise;
   }
   try {
-    api = await (factories.createApi || createDurableCommandApiServer)({ ...(options.api || {}),
+    api = await (factories.createApi || createDurableCommandApiServer)({ webConsole: true, ...(options.api || {}),
       env: options.env, database: options.database, worldId: options.worldId,
       rateLimitNow: wallClockNow, health: isReady, canSubmit: isReady });
     if (typeof api.store.getWorldHead !== 'function' || !await api.store.getWorldHead(options.worldId)) throw serviceError('MISSING_WORLD');
