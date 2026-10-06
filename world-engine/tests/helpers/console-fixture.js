@@ -41,7 +41,9 @@ async function consoleFixture() {
       row.status = 'applied'; row.result = { id: command.id, type: command.type, status: command.status, outcome: clone(command.result), updatedAt: command.updatedAt }; row.appliedAt = new Date().toISOString();
     }
   }
-  const api = await createDurableCommandApiServer({ store, auditStore, rateLimitNow: () => Date.now(), worldId: world.id, webConsole: true, health: async () => true });
+  const api = await createDurableCommandApiServer({ store, auditStore, rateLimitNow: () => Date.now(), worldId: world.id, webConsole: true, health: async () => true,
+    serviceStatus: () => ({ stopping: false, intervalMs: 1000, runtime: { status: 'running', ready: true,
+      revision, tick: world.tick, heartbeatAgeMs: 0, heartbeatTimeoutMs: 30000, failures: 0, failureKind: null } }) });
   await new Promise(resolve => api.server.listen(0, '127.0.0.1', resolve));
   return { api, world, rows, audits, step, port: api.server.address().port };
 }

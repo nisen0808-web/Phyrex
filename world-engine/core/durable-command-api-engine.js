@@ -10,6 +10,7 @@ const { validateSession } = require('./account-session-engine');
 const { canAccessPlayer, isPrivileged, requirePermission, requireSession } = require('./api-permission-engine');
 const { createFixedWindowRateLimiter } = require('./request-rate-limit-engine');
 const { createConsoleAssets, serveConsoleAsset } = require('../service/console-assets');
+const { serviceStatusView } = require('../service/operational-status');
 
 const DEFAULT_DURABLE_COMMAND_API_OPTIONS = Object.freeze({
   maxBodyBytes: 64 * 1024,
@@ -52,6 +53,7 @@ async function createDurableCommandApiServer(options = {}) {
   const shutdownTimeoutMs = boundedInteger(options.shutdownTimeoutMs ?? 5000, 10, 60000, 'shutdownTimeoutMs');
   if (options.health !== undefined && typeof options.health !== 'function') throw apiError(500, 'invalid_health');
   if (options.canSubmit !== undefined && typeof options.canSubmit !== 'function') throw apiError(500, 'invalid_admission');
+  if (options.serviceStatus !== undefined && (typeof options.serviceStatus !== 'function' || typeof options.worldId !== 'string' || !options.worldId)) throw apiError(500, 'invalid_service_status');
   const consoleAssets = options.webConsole === true ? createConsoleAssets() : null;
   const ownsStore = !options.store || options.closeStore === true;
   const store = options.store || createPostgresDatabaseStore({ ...(options.database || {}), env: options.env });
@@ -80,7 +82,8 @@ async function createDurableCommandApiServer(options = {}) {
   let auditFailures = 0;
   const pendingAudits = new Set();
   const requestOptions = Object.freeze({ maxBodyBytes, authorizationAttempts, rateLimiters,
-    worldId: options.worldId, health: options.health, canSubmit: options.canSubmit, consoleAssets });
+    worldId: options.worldId, health: options.health, canSubmit: options.canSubmit, consoleAssets,
+    serviceStatus: options.serviceStatus, auditStats });
   const server = http.createServer((req, res) => {
     setSafeHeaders(res);
     if (closing) { req.resume(); res.setHeader('Connection', 'close'); return writeMappedError(res, apiError(503, 'service_unavailable')); }
@@ -196,17 +199,24 @@ async function handleRequest(req, res, store, auditStore, options, audit) {
     return writeJson(res, 200, { ok: true, data: { worldId: route.worldId, playerId: route.playerId, revision: page.revision, records,
       nextBeforeSequence: records.length === query.limit ? records[records.length - 1].sequence : null } });
   }
-  if (route.kind === 'queue') {
+  if (route.kind === 'queue' || route.kind === 'operations') {
     if (method !== 'GET') throw apiError(405, 'method_not_allowed');
     if (parsed.search) throw apiError(400, 'invalid_query');
     let checked = false;
     for (let attempt = 0; attempt < options.authorizationAttempts; attempt++) {
       const context = await authenticateWorld(store, route.worldId, bearerToken(req), audit);
       if (!checked) { enforceRateLimit(options.rateLimiters.read.consume(accountRateKey(route.worldId, context.auth.account.id))); checked = true; }
-      requirePermission(isPrivileged(context.auth.account), 'queue_forbidden');
+      requirePermission(isPrivileged(context.auth.account), route.kind === 'operations' ? 'operations_forbidden' : 'queue_forbidden');
       if (typeof store.getCommandQueue !== 'function') throw apiError(503, 'service_unavailable');
       try {
         const queue = await store.getCommandQueue(route.worldId, { expectedWorldRevision: context.revision });
+        if (route.kind === 'operations') {
+          const service = serviceStatusView(options.serviceStatus?.());
+          return writeJson(res, 200, { ok: true, data: {
+            worldId: route.worldId, revision: context.revision, tick: context.world.tick,
+            service, queue: commandQueueView(queue), audit: options.auditStats(),
+          } });
+        }
         return writeJson(res, 200, { ok: true, data: commandQueueView(queue) });
       } catch (error) {
         if (error?.code === 'WORLD_DB_REVISION_CONFLICT' && attempt + 1 < options.authorizationAttempts) continue;
@@ -306,7 +316,7 @@ function parseAuditQuery(params) {
       query[key] = value;
     } else if (key === 'method' && ['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','CONNECT','TRACE'].includes(value)) {
       query.method = value;
-    } else if (key === 'route' && ['submit','status','audit','state','summary','history','queue','unknown'].includes(value)) {
+    } else if (key === 'route' && ['submit','status','audit','state','summary','history','queue','operations','unknown'].includes(value)) {
       query.route = value;
     } else {
       throw apiError(400, 'invalid_audit_query');
@@ -380,7 +390,7 @@ function parseCommandRoute(pathname) {
   if (segments.length === 5 && segments[0] === 'durable' && segments[1] === 'worlds' && segments[3] === 'commands') {
     return { kind: 'status', worldId: segments[2], commandId: segments[4] };
   }
-  if (segments.length === 5 && segments[0] === 'durable' && segments[1] === 'worlds' && segments[3] === 'admin' && ['audit','summary','queue'].includes(segments[4])) {
+  if (segments.length === 5 && segments[0] === 'durable' && segments[1] === 'worlds' && segments[3] === 'admin' && ['audit','summary','queue','operations'].includes(segments[4])) {
     return { kind: segments[4], worldId: segments[2] };
   }
   return null;
@@ -438,7 +448,7 @@ function mapError(error) {
   return { status: 500, code: 'internal_error' };
 }
 function safeApiCode(value) {
-  const allowed = new Set(['invalid_command_query','queue_forbidden','request_aborted','invalid_query','summary_forbidden','auth_required','player_forbidden','command_forbidden','audit_forbidden','invalid_audit_query','service_unavailable','player_not_found','world_not_found','command_not_found','not_found','method_not_allowed','json_required','invalid_command','command_id_required','command_type_required','request_body_too_large','json_body_required','invalid_json','invalid_path','world_revision_changed','transactional_store_required','audit_store_required','rate_limited']);
+  const allowed = new Set(['invalid_command_query','queue_forbidden','operations_forbidden','request_aborted','invalid_query','summary_forbidden','auth_required','player_forbidden','command_forbidden','audit_forbidden','invalid_audit_query','service_unavailable','player_not_found','world_not_found','command_not_found','not_found','method_not_allowed','json_required','invalid_command','command_id_required','command_type_required','request_body_too_large','json_body_required','invalid_json','invalid_path','world_revision_changed','transactional_store_required','audit_store_required','rate_limited']);
   return allowed.has(value) ? value : 'internal_error';
 }
 function setSafeHeaders(res) { res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('Referrer-Policy','no-referrer'); }

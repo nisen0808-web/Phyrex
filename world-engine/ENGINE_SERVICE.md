@@ -27,10 +27,11 @@ npm run engine:serve -- --world-id engine-world --host 127.0.0.1 --port 8791
 | `POST /players/:playerId/commands` | 已绑定玩家或 GM/Admin；命令 ID 幂等；运行器不健康时拒绝新提交，返回 503 |
 | `GET /players/:playerId/commands` | 已绑定玩家或 GM/Admin；固定字段的命令记录分页，最大 100 条 |
 | `GET /admin/queue` | GM/Admin；有界积压诊断、容量和最早 pending sequence |
+| `GET /admin/operations` | GM/Admin；同一 revision 的存档轮数与队列、独立 Worker 心跳/故障分类、本进程审计失败计数；不接受查询参数 |
 | `GET /commands/:commandId` | 命令所属玩家账户或 GM/Admin；读取 pending/applied 和结果 |
 | `GET /players/:playerId/state` | 已绑定玩家或 GM/Admin；玩家基本字段、当前受控角色的固定数值字段、当前地点 ID/名称 |
 | `GET /admin/summary` | GM/Admin；tick/revision，实体总数、存活实体数、地点、organizations 组织数、factions 旧阵营数、玩家数量 |
-| `GET /admin/audit` | GM/Admin；白名单过滤、最多 1000 条、sequence 游标；route 过滤支持 `state`、`summary`、`history`、`queue` |
+| `GET /admin/audit` | GM/Admin；白名单过滤、最多 1000 条、sequence 游标；route 过滤支持 `state`、`summary`、`history`、`queue`、`operations` |
 
 `state`、`summary` 不接受查询参数，不返回任意 meta、账户/会话、token hash、私有记忆、其他角色清单或完整世界存档。角色视图数值字段固定为 health/maxHealth/energy/maxEnergy/power/defense/speed/intelligence/social，以及 currency/food；没有角色时 character 为 null。这是最小观察接口，不是完整游戏客户端的地图、背包和叙事页面。新增业务路由沿用独立审计事务，失败不改变已完成命令；不需要改变 Migration 1–4。
 
@@ -42,6 +43,16 @@ npm run engine:serve -- --world-id engine-world --host 127.0.0.1 --port 8791
 健康接口只返回 `{ok,status}`，不泄露世界名称、数据库地址、异常详情或运行配置。它们消耗来源限流额度，不写持久审计，避免探针让审计表持续膨胀。并发数据库探针合并，完成后不缓存成功结果。
 
 Worker 每 250 ms 报告一次安全状态；默认 30 秒没有新状态、重试中、阻塞或退出都会关闭 readiness 和新命令入口。演化线程执行极重的批次时也无法发送心跳，因此超过阈值会保守停收；`--heartbeat-timeout` 可按已测批次耗时调整。故障发现有心跳传播窗口，窗口内已接受的命令保持持久 pending，由恢复后的运行器消费；停收不是跨进程即时开关。已提交状态和结果在数据库可用时仍可读取。
+
+## 运行诊断
+
+控制台使用管理员 / GM 令牌连接后，展开“管理员工具”，点击“检查运行状态”。诊断将 SQL 存档与队列放在同一个 revision fence 下，冲突重试必须重新授权；另列运行器心跳年龄/阈值、最近报告的 tick/revision、当前失败分类和累计失败次数，以及本 API 进程的审计失败次数。该 GET 使用来源和账户读限流，并以 `operations` 路由写入安全审计，可用 `/admin/audit?route=operations` 筛选。
+
+Worker 状态和 SQL 快照是两个独立观察时点，短暂版本差异不等于数据丢失；一次 ready 不能证明持续推进。按已配置的间隔手动再次读取，对比已保存轮数。页面不轮询或自动保活。计数在进程重启后归零，审计失败计数包含当前请求之前已观察到的失败；当前请求的审计发生在响应之后。诊断不证明备份存在或恢复成功，仍须按 POSTGRES_BACKUP.md 做独立备份与恢复演练。
+
+诊断只返回枚举状态、整数计数、固定故障分类与队列白名单字段；不输出原始异常、token、连接串、配置指纹或 Worker 内部对象。运行器阻塞时仍可读取诊断；数据库不可读时返回安全错误，不能返回上次成功结果。独立 durable API 没有绑定运行器时 `service` 为 null，不能据此标记引擎健康。宿主若接入 `serviceStatus`，须同时指定唯一 `worldId`，回调同步返回安全观察数据；统一 `engine:serve` 自动接入。
+
+遇到心跳超时先查资源和进程；遇到 revision 冲突先确认唯一写入器，再从已提交存档恢复；审计失败不撤销已完成命令，需单独排查数据库审计写入。不得用重发新编号的方式处理不明结果。
 
 ## 停机与故障恢复
 

@@ -18,6 +18,12 @@ function fixture() {
     async getWorldHead(id) { state.headReads++; if (!state.dbReady) throw new Error('secret-database-url'); return id === world.id ? { worldId: id, revision: state.revision, tick: world.tick } : null; },
     async enqueueCommand(input, options) { state.enqueues++; return { ...input, sequence: state.enqueues, status: 'pending', revision: options.expectedWorldRevision }; },
     async getCommand() { return null; }, async close() { state.closes++; } };
+  store.getCommandQueue = async (worldId, options) => {
+    if (options.expectedWorldRevision !== state.revision) throw Object.assign(new Error('revision conflict'), { code: 'WORLD_DB_REVISION_CONFLICT' });
+    return { worldId, revision: state.revision, pending: state.enqueues, pendingIsLowerBound: false,
+      oldestPendingSequence: state.enqueues ? 1 : null, worldCapacityAvailable: state.enqueues < 100,
+      limits: { maxPendingCommands: 100, maxPendingPerPlayer: 20 } };
+  };
   const auditStore = { provider: 'postgres', async append(row) { state.audits.push(row); }, async close() {} };
   return { state, store, auditStore };
 }

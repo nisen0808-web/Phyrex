@@ -28,4 +28,7 @@ summary{cursor:pointer;font-weight:600;color:#315d4d;font-size:13px}
 .notice{position:sticky;top:8px;z-index:2;font-size:13px;box-shadow:0 2px 8px #233c4008}
 section{scroll-margin-top:90px}
 .item-row .muted{font-size:13px}
+.state-warning,.operation-health{padding:16px;border:1px solid #bad4c5;border-radius:8px;background:#eff7f1;margin-bottom:18px}
+.state-warning,.operation-health.warning{border-color:#e7cfad;background:#fff6e9;color:#825127}
+.operation-health h3{font-size:17px;margin:0 0 8px}.operation-health p{font-size:13px}
 @media(max-width:650px){.guide{padding:22px 18px}.guide h2{font-size:21px}.guide-steps{display:grid;gap:10px;margin:18px 0}.guide-footer{gap:14px}.guide-footer button{width:100%}.action-card{padding:10px}.action-card p{font-size:12px}.guide-result{padding:10px 12px}.notice{top:4px}.technical{padding:16px}}

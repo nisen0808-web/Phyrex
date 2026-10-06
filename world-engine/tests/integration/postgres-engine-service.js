@@ -76,6 +76,17 @@ async function main() {
     assert.ok(!JSON.stringify(state.body).includes('secret')); assert.ok(!JSON.stringify(summary.body).includes('accounts'));
     pass('committed views enforce ownership, administrator roles, redaction and one-world binding');
 
+    assert.strictEqual((await request(port, `${base}/admin/operations`)).status, 403);
+    const operations = await request(port, `${base}/admin/operations`, { token: 'admin-secret-token' });
+    assert.strictEqual(operations.status, 200);
+    assert.strictEqual(operations.body.data.service.ready, true);
+    assert.strictEqual(operations.body.data.service.intervalMs, 200);
+    assert.strictEqual(operations.body.data.revision, operations.body.data.queue.revision);
+    assert.ok(operations.body.data.service.runtime.heartbeatAgeMs >= 0);
+    assert.strictEqual(operations.body.data.audit.durable, true);
+    for (const forbidden of [connectionString, 'secret-token', 'tokenHash', 'configHash', 'lastError']) assert.ok(!JSON.stringify(operations.body).includes(forbidden));
+    pass('privileged operations joins revision-fenced SQL queue with safe live worker and audit observations');
+
     const submit = (id, selectedPort = port) => request(selectedPort, `${base}/players/one/commands`, { method: 'POST', body: { id, type: 'wait' } });
     assert.strictEqual((await submit('first')).status, 202);
     const applied = await until(async () => { const row = await store.getCommand(world.id, 'first'); return row?.status === 'applied' ? row : null; }, 'command applied');
@@ -113,12 +124,22 @@ async function main() {
     await raw.query(`ALTER TABLE "${schema}".world_saves RENAME TO unavailable_saves`); renamed = true;
     assert.strictEqual((await request(port, '/health/ready')).status, 503);
     assert.strictEqual((await request(port, '/health/live')).status, 200);
+    const unavailable = await request(port, `${base}/admin/operations`, { token: 'admin-secret-token' });
+    assert.notStrictEqual(unavailable.status, 200, 'database failure cannot return stale successful diagnostics');
+    assert.ok(!JSON.stringify(unavailable.body).includes(connectionString));
     await raw.query(`ALTER TABLE "${schema}".unavailable_saves RENAME TO world_saves`); renamed = false;
     assert.strictEqual((await request(port, '/health/ready')).status, 200);
     const loaded = await store.loadWorld(world.id);
     loaded.world.name = 'External administrative change';
     await store.saveWorld(loaded.world, { expectedRevision: loaded.revision, requestId: 'external-change', metadata: loaded.metadata });
     await until(() => service.summary().runtime.status === 'blocked', 'revision fence blocks stale writer');
+    const blockedStatus = await request(port, `${base}/admin/operations`, { token: 'admin-secret-token' });
+    assert.strictEqual(blockedStatus.status, 200);
+    assert.strictEqual(blockedStatus.body.data.service.ready, false);
+    assert.strictEqual(blockedStatus.body.data.service.runtime.failureKind, 'revision_conflict');
+    const filtered = await request(port, `${base}/admin/audit?route=operations&limit=10`, { token: 'admin-secret-token' });
+    assert.strictEqual(filtered.status, 200);
+    assert.ok(filtered.body.data.records.length > 0 && filtered.body.data.records.every(row => row.route === 'operations'));
     assert.strictEqual((await request(port, '/health/ready')).status, 503);
     assert.strictEqual((await submit('must-not-enter')).status, 503);
     assert.strictEqual(await store.getCommand(world.id, 'must-not-enter'), null);
@@ -129,6 +150,7 @@ async function main() {
     const rows = await audits.list({ worldId: world.id, limit: 1000 });
     assert.ok(rows.some(row => row.route === 'state' && row.statusCode === 200));
     assert.ok(rows.some(row => row.route === 'summary' && row.statusCode === 403));
+    assert.ok(rows.some(row => row.route === 'operations' && row.statusCode === 200));
     assert.ok(rows.some(row => row.commandId === 'must-not-enter' && row.statusCode === 503));
     assert.ok(!JSON.stringify(rows).includes('secret-token'));
     assert.ok(!rows.some(row => row.route === 'health'));

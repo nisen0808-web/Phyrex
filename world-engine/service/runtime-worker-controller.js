@@ -67,7 +67,15 @@ async function createRuntimeWorker(options = {}, createWorker = data => new Work
     })();
     return closePromise;
   }
-  return Object.freeze({ isReady, close, summary: () => ({ status: ended ? 'stopped' : state.status,
-    ready: isReady(), tick: state.tick ?? null, revision: state.revision ?? null }) });
+  function summary() {
+    const age = performance.now() - updated;
+    const failureKind = fault ? 'worker_failed' : !closing && !ended && age > staleMs ? 'heartbeat_stale'
+      : ['WORLD_DB_UNAVAILABLE', 'WORLD_DB_TIMEOUT'].includes(state.lastError) ? 'database_unavailable'
+      : state.lastError === 'WORLD_DB_REVISION_CONFLICT' ? 'revision_conflict' : state.lastError ? 'runtime_failed' : null;
+    return { status: ended ? 'stopped' : state.status, ready: isReady(), tick: state.tick ?? null,
+      revision: state.revision ?? null, heartbeatAgeMs: Number.isFinite(age) ? Math.max(0, Math.floor(age)) : null,
+      heartbeatTimeoutMs: staleMs, failures: state.failures ?? 0, failureKind };
+  }
+  return Object.freeze({ isReady, close, summary });
 }
 module.exports = { createRuntimeWorker, serviceError, duration };
