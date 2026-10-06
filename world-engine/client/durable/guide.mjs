@@ -59,9 +59,10 @@ export function receiptText(receipt, knownType = '') {
   if (type === 'wait') effects.push('现在可以选择工作、休息或训练');
   return `${label}完成${effects.length ? `：${effects.join('；')}` : '。角色状态已更新。'}`;
 }
-export function nextStep(state, { pending, waitingId, completed = new Set() } = {}) {
+export function nextStep(state, { pending, waitingId, stale = false, completed = new Set() } = {}) {
   if (pending) return { title: '先确认上一次操作', text: '刚才的连接没有返回确认。用原编号重试，可以避免重复扣款或重复执行。', label: '确认上一次操作', kind: 'retry', step: 0 };
   if (waitingId) return { title: '行动已收到，等待结算', text: '现在不用再点行动按钮。等待世界推进，再查看这条行动的结果。', label: '查看执行结果', kind: 'refresh', step: 0 };
+  if (stale) return { title: '先重新读取角色状态', text: '上次刷新没有完成，下面保留的是旧数据。先刷新确认当前状态，再选择新的行动。', label: '重新刷新', kind: 'refresh', step: 0 };
   if (!state?.character || state.player?.controlMode !== 'character' || state.character.status !== 'alive') return { title: '当前只能查看世界', text: '你的账号目前没有可以行动的角色。需要管理员绑定或更换角色；本页面暂不支持创建角色。', label: '刷新角色状态', kind: 'refresh', step: 0 };
   const rules = state.actionRules || {}, stats = state.character.stats || {}, inventory = state.inventory || { items: [], shops: [] };
   const action = (title, text, label, type, payload = {}, step = 1) => ({ title, text, label, type, payload, kind: 'command', step });
@@ -76,4 +77,22 @@ export function nextStep(state, { pending, waitingId, completed = new Set() } = 
   if (!choice) return { title: '工作完成，继续探索角色成长', text: '当前商店没有可购买的装备。你可以继续工作、训练，或休息恢复状态。', label: '选择下一步行动', kind: 'actions', step: 2 };
   if ((state.character.resources?.currency ?? 0) < choice.price) return action('再积累一些货币', `${itemName(choice)}需要 ${choice.price} 货币。${actionDescriptions(rules).work}`, '再工作一次', 'work', {}, 2);
   return action('第二步：购买第一件装备', `${itemName(choice)}，${choice.price} 货币。${itemDescription(choice)}。购买完成后，下一步会带你装备它。`, `购买${itemName(choice)} · ${choice.price} 货币`, 'buy_item', { shopId: choice.shopId, definitionId: choice.definitionId, quantity: 1 }, 2);
+}
+
+export function operationalMessage(data) {
+  const service = data?.service, runtime = service?.runtime;
+  if (!service) return { title: '运行器状态尚未接入', text: '只能确认已保存的数据和队列，不能据此判断世界正在推进。', warning: true };
+  if (service.stopping) return { title: '引擎正在停止', text: '等停机完成后由管理员检查；不要同时启动第二个写入器。', warning: true };
+  const problems = {
+    heartbeat_stale: '运行器长时间没有响应。请检查运行日志与资源使用，不要重复提交行动。',
+    worker_failed: '运行器已经异常停止。请核对保存状态和日志后恢复服务。',
+    database_unavailable: '运行器暂时无法确认数据库写入。保留原指令编号，等待恢复后查询结果。',
+    revision_conflict: '存档版本发生冲突，已暂停接收新指令。请确认只有一个写入器，再从已提交存档恢复。',
+    runtime_failed: '运行器遇到错误，已暂停接收新指令。请保留原编号并检查服务日志。',
+  };
+  if (!service.ready || runtime?.failureKind) return { title: '引擎暂不可接收新行动', text: problems[runtime?.failureKind] || '运行器尚未就绪。可读取已保存的状态，稍后手动检查。', warning: true };
+  if (data.audit?.durable !== true) return { title: '世界可运行，审计尚未持久化', text: '当前审计没有写入 PostgreSQL。请由管理员检查服务配置，不能把本次检查作为持久审计正常的证明。', warning: true };
+  if (data.audit?.failures > 0) return { title: '世界可运行，审计需要检查', text: '当前服务进程出现过审计写入失败。已完成的行动不会因此撤销，但部分操作可能缺少审计记录。', warning: true };
+  if (data.queue?.worldCapacityAvailable === false) return { title: '世界可运行，指令队列已满', text: '已有指令仍会结算；等待队列释放后再提交新行动。', warning: true };
+  return { title: '本次检查：引擎可接收行动', text: '数据库读取成功，运行器心跳正常。要确认实际推进，请隔一轮手动再次检查世界轮数和存档版本。', warning: false };
 }

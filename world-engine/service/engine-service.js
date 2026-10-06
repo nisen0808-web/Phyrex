@@ -33,7 +33,8 @@ async function createEngineService(options = {}, factories = {}) {
   try {
     api = await (factories.createApi || createDurableCommandApiServer)({ webConsole: true, ...(options.api || {}),
       env: options.env, database: options.database, worldId: options.worldId,
-      rateLimitNow: wallClockNow, health: isReady, canSubmit: isReady });
+      rateLimitNow: wallClockNow, health: isReady, canSubmit: isReady,
+      serviceStatus: () => ({ stopping, intervalMs: options.intervalMs ?? 1000, runtime: runtime?.summary() }) });
     if (typeof api.store.getWorldHead !== 'function' || !await api.store.getWorldHead(options.worldId)) throw serviceError('MISSING_WORLD');
     // Reserve the listener before starting the writer: port collisions must not
     // evolve the world. Readiness stays false until the worker is ready.

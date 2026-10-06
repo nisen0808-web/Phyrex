@@ -20,10 +20,13 @@ async function main() {
   try {
     await delay(60); // This timer would never run if evolution used the HTTP thread.
     assert.strictEqual(controller.isReady(), false, 'stale worker must close admission');
+    assert.strictEqual(controller.summary().failureKind, 'heartbeat_stale');
+    assert.ok(controller.summary().heartbeatAgeMs >= 30);
     Atomics.store(control, 0, 1);
     for (let i = 0; i < 100 && !controller.isReady(); i++) await delay(10);
     assert.strictEqual(controller.isReady(), true);
     assert.strictEqual(controller.summary().tick, 7);
+    assert.strictEqual(controller.summary().failureKind, null);
     const close = controller.close(); assert.strictEqual(controller.close(), close); await close;
   } finally { Atomics.store(control, 0, 1); await child.terminate(); }
   await assert.rejects(createRuntimeWorker({ startupTimeoutMs: 30 }, () => new Worker('setInterval(() => {}, 1000)', { eval: true })), { code: 'WORLD_SERVICE_STARTUP_TIMEOUT' });
@@ -32,6 +35,7 @@ async function main() {
   let crashWorker;
   const crash = await createRuntimeWorker({}, () => { crashWorker = new Worker(initial + "report('ready'); setInterval(() => {}, 1000);", { eval: true }); return crashWorker; });
   await crashWorker.terminate();
+  assert.strictEqual(crash.summary().failureKind, 'worker_failed');
   assert.strictEqual(crash.isReady(), false); await assert.rejects(crash.close(), { code: 'WORLD_SERVICE_WORKER_EXITED' });
   const unconfirmed = await createRuntimeWorker({}, () => new Worker(initial + "report('ready'); parentPort.on('message', () => { parentPort.postMessage({ type:'stopped', ok:false }); parentPort.close(); });", { eval: true }));
   await assert.rejects(unconfirmed.close(), { code: 'WORLD_SERVICE_WORKER_EXITED' });

@@ -3,10 +3,12 @@ const assert = require('node:assert/strict');
 const { inventoryFixture, grantItem } = require('./helpers/inventory-fixture');
 const { playerStateView } = require('../core/durable-state-view-engine');
 async function main() {
-  const { nextStep, receiptText, itemName, itemDescription, actionDescriptions, displayName, waitingReceiptId } = await import('../client/durable/guide.mjs');
+  const { nextStep, receiptText, itemName, itemDescription, actionDescriptions, displayName, waitingReceiptId, operationalMessage } = await import('../client/durable/guide.mjs');
   const world = inventoryFixture(), hero = world.entities['hero-one'];
   const state = () => playerStateView(world, 1, 'one');
   assert.equal(nextStep(state()).type, 'work');
+  assert.equal(nextStep(state(), { stale: true }).kind, 'refresh', 'do not recommend new actions from a failed refresh');
+  assert.equal(nextStep(state(), { stale: true, pending: { id: 'same-id' } }).kind, 'retry', 'preserve recovery of the original request');
   assert.equal(nextStep(state(), { pending: { id: 'same-id' } }).kind, 'retry');
   assert.equal(nextStep(state(), { waitingId: 'existing-command' }).kind, 'refresh');
   const acknowledged = { id: 'acknowledged-before-refresh-failed', status: 'pending', result: null };
@@ -34,6 +36,18 @@ async function main() {
   assert.equal(itemName({ definitionId: 'wooden_sword', name: '定制长剑' }), '定制长剑');
   assert.match(itemDescription({ type: 'equipment', stats: { energy: 2 } }), /体力上限 \+2/);
   assert.equal(displayName('founder_1'), '旅人 2');
+  assert.equal(operationalMessage({ service: null }).warning, true);
+  const operation = { service: { ready: true, runtime: { failureKind: null } }, audit: { failures: 0, durable: true }, queue: { worldCapacityAvailable: true } };
+  assert.equal(operationalMessage(operation).warning, false);
+  assert.match(operationalMessage(operation).text, /手动再次检查/, 'one healthy observation must not claim sustained progress');
+  operation.audit.durable = false; assert.match(operationalMessage(operation).title, /尚未持久化/); operation.audit.durable = true;
+  operation.audit.failures = 1; assert.match(operationalMessage(operation).title, /审计需要检查/);
+  operation.audit.failures = 0; operation.queue.worldCapacityAvailable = false; assert.match(operationalMessage(operation).title, /队列已满/);
+  operation.service.ready = false;
+  for (const failureKind of ['revision_conflict', 'heartbeat_stale', 'worker_failed', 'database_unavailable', 'runtime_failed']) {
+    operation.service.runtime.failureKind = failureKind; assert.equal(operationalMessage(operation).warning, true);
+  }
+  operation.service.stopping = true; assert.match(operationalMessage(operation).title, /正在停止/);
   console.log('durable console guide passed: real rules, pending/rejected outcomes, affordable equipment, observer and low-energy recovery');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

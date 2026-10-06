@@ -1,5 +1,5 @@
 import { ConsoleSession } from '/console/session.mjs';
-import { actionNames, actionDescriptions, displayName, itemName, itemDescription, receiptType, receiptText, waitingReceiptId, nextStep } from '/console/guide.mjs';
+import { actionNames, actionDescriptions, displayName, itemName, itemDescription, receiptType, receiptText, waitingReceiptId, nextStep, operationalMessage } from '/console/guide.mjs';
 
 const $ = id => document.getElementById(id);
 let storage;
@@ -8,6 +8,7 @@ const session = new ConsoleSession({ storage });
 let epoch = 0, busy = false, state = null, lastReceipt = null, historyCursor = null, auditCursor = null;
 let auditQuery = '', adminLoaded = false;
 let shownReceipt = null, waitingId = null;
+let refreshFailed = false;
 const completed = new Set(), knownTypes = new Map(), viewedReceipts = new Map();
 function remember(map, key, value) { map.set(key, value); if (map.size > 128) map.delete(map.keys().next().value); }
 const errorText = {
@@ -15,6 +16,7 @@ const errorText = {
   player_forbidden: '这个令牌无权查看该玩家，请核对玩家 ID。',
   summary_forbidden: '当前账号没有管理员 / GM 权限。玩家功能仍可使用。',
   audit_forbidden: '当前账号没有审计查询权限。', queue_forbidden: '当前账号没有队列管理权限。',
+  operations_forbidden: '当前账号没有运行诊断权限，请使用管理员 / GM 账号。',
   world_not_found: '此服务没有这个世界，请核对世界 ID。', player_not_found: '找不到该玩家，请核对玩家 ID。',
   connection_unknown: '连接中断或服务正在唤醒，请稍后重试。若有待确认指令，请保留原编号。',
   pending_confirmation: '先按原编号确认上一条指令，再提交新的行动。',
@@ -32,14 +34,16 @@ function node(tag, text, className) { const el = document.createElement(tag); if
 function clearViews() {
   state = null; lastReceipt = null; historyCursor = null; auditCursor = null; adminLoaded = false;
   shownReceipt = null; waitingId = null; completed.clear(); knownTypes.clear(); viewedReceipts.clear();
-  for (const id of ['character-stats', 'inventory-list', 'shop-list', 'history-list', 'audit-list', 'admin-summary', 'receipt-body']) $(id).replaceChildren();
+  refreshFailed = false; $('stale-state').hidden = true;
+  for (const id of ['character-stats', 'inventory-list', 'shop-list', 'history-list', 'audit-list', 'admin-summary', 'operation-stats', 'receipt-body']) $(id).replaceChildren();
+  $('operation-status').textContent = ''; $('operation-advice').textContent = ''; $('operation-checked').textContent = '';
   for (const id of ['scope-label', 'updated-at', 'tick', 'revision', 'currency', 'location', 'player-mode', 'character-name', 'character-status', 'character-note', 'receipt-summary']) $(id).textContent = '';
   $('workspace').hidden = true; $('login-panel').hidden = false; $('receipt').hidden = true; $('admin-content').hidden = true;
   $('connection-status').textContent = '未连接'; $('token').value = ''; $('guide-result').textContent = ''; $('guide-result').hidden = true;
 }
 function canAct() { return state?.character?.status === 'alive' && state?.player?.controlMode === 'character'; }
 function outstandingId() { return waitingId || waitingReceiptId(shownReceipt); }
-function guideStep() { return nextStep(state, { pending: session.pending, waitingId: outstandingId(), completed }); }
+function guideStep() { return nextStep(state, { pending: session.pending, waitingId: outstandingId(), stale: refreshFailed, completed }); }
 function renderGuide() {
   const step = guideStep();
   $('guide-title').textContent = step.title; $('guide-text').textContent = step.text;
@@ -53,10 +57,10 @@ function renderGuide() {
   }
   $('guide-result').hidden = !shownReceipt;
   if (shownReceipt) $('guide-result').textContent = receiptText(shownReceipt, knownTypes.get(shownReceipt.id));
-  $('action-help').textContent = session.pending ? '上一条行动尚未确认收到。请先按原编号重试。' : outstandingId() ? '上一次行动还在等待结算。请在上方查看结果，完成后再做下一步。' : canAct() ? '点选行动后，在上方查看结果。数值来自当前世界规则，以实际结算为准。' : '当前没有可行动角色，按钮暂不可用。请联系管理员绑定或更换角色。';
+  $('action-help').textContent = session.pending ? '上一条行动尚未确认收到。请先按原编号重试。' : outstandingId() ? '上一次行动还在等待结算。请在上方查看结果，完成后再做下一步。' : refreshFailed ? '当前显示旧数据。先成功刷新状态，再选择新的行动。' : canAct() ? '点选行动后，在上方查看结果。数值来自当前世界规则，以实际结算为准。' : '当前没有可行动角色，按钮暂不可用。请联系管理员绑定或更换角色。';
 }
 function updateButtons() {
-  for (const button of document.querySelectorAll('button[data-command]')) button.disabled = busy || !canAct() || Boolean(session.pending) || Boolean(outstandingId()) || Boolean(button.dataset.unavailable);
+  for (const button of document.querySelectorAll('button[data-command]')) button.disabled = busy || refreshFailed || !canAct() || Boolean(session.pending) || Boolean(outstandingId()) || Boolean(button.dataset.unavailable);
   for (const id of ['refresh', 'open-admin', 'history-first', 'audit-first', 'refresh-receipt']) $(id).disabled = busy;
   $('history-next').disabled = busy || !historyCursor; $('audit-next').disabled = busy || !auditCursor;
   $('retry').disabled = busy; $('pending-panel').hidden = !session.pending;
@@ -176,15 +180,25 @@ function renderHistory(page) {
   $('history-list').replaceChildren(...rows); $('history-empty').hidden = rows.length > 0;
 }
 async function refresh() {
-  const history = await session.history();
-  const queued = history.records.find(row => row.status === 'pending');
-  if (queued) lastReceipt = queued.id;
-  if (!lastReceipt && history.records.length) lastReceipt = history.records[0].id;
-  if (lastReceipt) showReceipt(await session.receipt(lastReceipt));
-  waitingId = queued && viewedReceipts.get(queued.id)?.status !== 'applied' ? queued.id : waitingReceiptId(shownReceipt);
-  renderState(await session.state()); renderHistory(history);
+  try {
+    const history = await session.history();
+    const queued = history.records.find(row => row.status === 'pending');
+    if (queued) lastReceipt = queued.id;
+    if (!lastReceipt && history.records.length) lastReceipt = history.records[0].id;
+    if (lastReceipt) showReceipt(await session.receipt(lastReceipt));
+    waitingId = queued && viewedReceipts.get(queued.id)?.status !== 'applied' ? queued.id : waitingReceiptId(shownReceipt);
+    renderState(await session.state()); renderHistory(history);
+    refreshFailed = false; $('stale-state').hidden = true; $('connection-status').textContent = '已连接';
+  } catch (error) {
+    // Keep the last successful state visible, but never present it as a fresh read.
+    if (error.code !== 'session_changed' && session.connected) {
+      refreshFailed = true; $('stale-state').hidden = !state; $('connection-status').textContent = '数据待刷新';
+    }
+    throw error;
+  }
 }
 async function readAudit(before = null) {
+  auditCursor = null;
   const data = await session.request(`/admin/audit?limit=20${auditQuery}${before ? `&beforeSequence=${encodeURIComponent(before)}` : ''}`);
   auditCursor = data.nextBeforeSequence;
   $('audit-list').replaceChildren(...data.records.map(record => {
@@ -193,21 +207,45 @@ async function readAudit(before = null) {
     return row;
   }));
   $('audit-empty').hidden = data.records.length > 0;
+  $('audit-empty').textContent = '当前筛选下没有审计记录。';
 }
 async function admin() {
   // Clear previous privileged data before re-authorizing; never keep an old
   // admin table on screen after access has been revoked.
-  $('admin-content').hidden = true; $('audit-list').replaceChildren(); $('admin-summary').replaceChildren(); adminLoaded = false;
-  const [summary, queue] = await Promise.all([session.request('/admin/summary'), session.request('/admin/queue')]);
+  $('admin-content').hidden = true; $('audit-list').replaceChildren(); $('admin-summary').replaceChildren(); $('operation-stats').replaceChildren(); adminLoaded = false; auditCursor = null;
+  const [summary, operations] = await Promise.all([session.request('/admin/summary'), session.request('/admin/operations')]);
+  const queue = operations.queue, service = operations.service, runtime = service?.runtime, message = operationalMessage(operations);
+  $('operation-status').textContent = message.title; $('operation-advice').textContent = message.text;
+  $('operation-health').classList.toggle('warning', message.warning);
+  $('operation-checked').textContent = `手动检查于 ${new Date().toLocaleTimeString('zh-CN')}；这是本次读取的结果，页面不会后台监测。`;
+  pairs('operation-stats', [['已保存轮数 / 版本', `${operations.tick} / ${operations.revision}`],
+    ['运行器轮数 / 版本', runtime ? `${runtime.tick ?? '—'} / ${runtime.revision ?? '—'}` : '未接入'],
+    ['推进间隔', service?.intervalMs != null ? `${service.intervalMs / 1000} 秒` : '未知'],
+    ['距心跳 / 超时阈值', runtime?.heartbeatAgeMs != null ? `${runtime.heartbeatAgeMs} / ${runtime.heartbeatTimeoutMs} 毫秒` : '未知'],
+    ['运行失败累计（本进程）', runtime?.failures], ['审计失败累计（本进程）', operations.audit.failures],
+    ['审计写入数据库', operations.audit.durable ? '是' : '否'], ['最早待处理编号', queue.oldestPendingSequence]]);
   pairs('admin-summary', [['世界步数', summary.tick], ['存档版本', summary.revision], ['存活角色', summary.counts.alive], ['玩家', summary.counts.players], ['待处理指令', `${queue.pendingIsLowerBound ? '≥ ' : ''}${queue.pending}`], ['队列上限', queue.limits.maxPendingCommands]]);
-  await readAudit(); adminLoaded = true; $('admin-content').hidden = false; notice('管理信息已更新。审计只展示安全字段。');
+  adminLoaded = true; $('admin-content').hidden = false;
+  // Audit listing can fail independently. Keep useful runtime diagnostics visible,
+  // except when authorization itself has been lost.
+  try { await readAudit(); }
+  catch (error) {
+    if ([401, 403].includes(error.status)) { $('admin-content').hidden = true; adminLoaded = false; }
+    else { $('audit-empty').hidden = false; $('audit-empty').textContent = '审计暂时读取失败，可稍后点击“最新审计”重试。'; }
+    throw error;
+  }
+  notice('运行诊断已更新。异常时按提示处理；需要复查时再次点击“检查运行状态”。');
 }
 async function auditAction(before = null) {
   if (!adminLoaded) return;
   // Hide a stale audit page if this re-authorization fails.
   $('audit-list').replaceChildren();
   try { await readAudit(before); }
-  catch (error) { $('admin-content').hidden = true; adminLoaded = false; throw error; }
+  catch (error) {
+    if ([401, 403].includes(error.status)) { $('admin-content').hidden = true; adminLoaded = false; }
+    else { $('audit-empty').hidden = false; $('audit-empty').textContent = '审计暂时读取失败，可稍后点击“最新审计”重试。'; }
+    throw error;
+  }
 }
 $('login-form').addEventListener('submit', event => {
   event.preventDefault();
