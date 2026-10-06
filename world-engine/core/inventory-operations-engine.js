@@ -25,10 +25,16 @@ function itemView(world, item) {
     quantity: item.quantity, equipped: item.equipped === true,
     stats: fields(item.stats, [...STATS, 'health', 'energy']), effects: fields(item.effects, ['health', 'energy']) };
 }
-function shopView(shop) {
+function shopView(shop, world = {}) {
   return { id: shop.id, name: typeof shop.name === 'string' ? shop.name.slice(0, 200) : null,
     locationId: shop.locationId, stock: Object.keys(shop.stock || {}).sort().slice(0, MAX_SHOP_STOCK).map(id => {
-      const s = shop.stock[id]; return { definitionId: id, price: s.price, quantity: s.quantity };
+      const s = shop.stock[id], definition = own(world.items?.definitions, id) || {};
+      const fields = (source, keys) => Object.fromEntries(keys.filter(key => number(source?.[key])).map(key => [key, source[key]]));
+      return { definitionId: id, price: s.price, quantity: s.quantity,
+        name: typeof definition.name === 'string' ? definition.name.slice(0, 200) : null,
+        type: typeof definition.type === 'string' ? definition.type.slice(0, 200) : null,
+        slot: SLOTS.includes(definition.slot) ? definition.slot : null,
+        stats: fields(definition.stats, [...STATS, 'health', 'energy']), effects: fields(definition.effects, ['health', 'energy']) };
     }), stockCount: Object.keys(shop.stock || {}).length };
 }
 function commerceView(world, entity) {
@@ -39,7 +45,7 @@ function commerceView(world, entity) {
   return { items: items.slice(0, MAX_OWNER_ITEMS).map(i => itemView(world, i)), itemCount: items.length,
     equipment: Object.fromEntries(SLOTS.filter(slot => ownedItem(world, entity.id, entity.meta?.equipment?.[slot]))
       .map(slot => [slot, entity.meta.equipment[slot]])),
-    shops: shops.slice(0, 8).map(shopView), shopCount: shops.length };
+    shops: shops.slice(0, 8).map(shop => shopView(shop, world)), shopCount: shops.length };
 }
 function validItem(item) {
   return item && quantity(item.quantity) && item.id && item.definitionId;

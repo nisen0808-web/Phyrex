@@ -9,7 +9,7 @@ async function main() {
   const data = new Map(), storage = { getItem: key => data.get(key), setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
   const client = new ConsoleSession({ storage, fetcher: (url, options) => fetch(base + url, options) });
   try {
-    for (const route of ['/', '/console/style.css', '/console/app.mjs', '/console/session.mjs']) {
+    for (const route of ['/', '/console/style.css', '/console/app.mjs', '/console/session.mjs', '/console/guide.mjs']) {
       const response = await fetch(base + route); assert.strictEqual(response.status, 200);
       assert.match(response.headers.get('Content-Security-Policy'), /frame-ancestors 'none'/);
       assert.match(response.headers.get('Content-Security-Policy'), /form-action 'none'/, 'failed JavaScript must not fall back to native credential submission');
@@ -30,8 +30,13 @@ async function main() {
     for (const route of ['/client/index.html', '/console/../package.json', '/console/%2e%2e%2fpackage.json', '/admin/status', '/accounts', '/save']) assert.strictEqual((await fetch(base + route)).status, 404);
     assert.strictEqual((await fetch(base + '/durable/worlds/console-test/players/one/state')).status, 401, 'public shell cannot authorize world reads');
     client.connect('console-test', 'one', 'console-player-fixture');
+    f.world.items.definitions.wooden_sword.operatorSecret = 'do-not-expose-definition-metadata';
     const before = await client.state();
     assert.strictEqual(before.character.name, '岚');
+    const stock = before.inventory.shops.find(shop => shop.id === 'market').stock.find(item => item.definitionId === 'wooden_sword');
+    assert.strictEqual(stock.name, 'Wooden Sword'); assert.strictEqual(stock.type, 'equipment');
+    assert.deepStrictEqual(stock.stats, { power: 2 });
+    assert.ok(!JSON.stringify(before).includes('do-not-expose-definition-metadata'), 'shop definitions use a public field allowlist');
     await assert.rejects(client.request('/admin/audit'), { status: 403 });
     await assert.rejects(client.request('/players/two/state'), { status: 403 });
     const purchase = await client.submit('buy_item', { shopId: 'market', definitionId: 'wooden_sword', quantity: 1 });

@@ -11,6 +11,7 @@ function createConsoleAssets() {
     ['/console/style.css', 'style.css', 'text/css'],
     ['/console/app.mjs', 'app.mjs', 'text/javascript'],
     ['/console/session.mjs', 'session.mjs', 'text/javascript'],
+    ['/console/guide.mjs', 'guide.mjs', 'text/javascript'],
   ]) assets.set(route, { body: fs.readFileSync(path.join(__dirname, '../client/durable', file)), mime });
   return assets;
 }

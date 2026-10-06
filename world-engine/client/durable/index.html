@@ -9,21 +9,22 @@
 <body>
   <aside class="sidebar">
     <a class="brand" href="/" aria-label="Phyrex 世界引擎首页"><span class="brand-mark">P</span><span>PHYREX<small>世界引擎控制台</small></span></a>
-    <div class="sidebar-label">工作空间</div>
-    <nav aria-label="控制台导航"><a href="#overview">◈　世界与角色</a><a href="#commerce">▤　物品与商店</a><a href="#commands">↗　指令记录</a><a href="#admin">◎　管理与审计</a></nav>
-    <div class="sidebar-note">每个行动都有回执。<br>每次读取来自已保存的世界。</div>
+    <div class="sidebar-label">从第一次行动开始</div>
+    <nav aria-label="控制台导航"><a href="#overview">◈　入门与角色</a><a href="#actions">↗　选择行动</a><a href="#commerce">▤　背包与商店</a><a href="#commands">☷　行动记录</a><a href="#help">？　使用帮助</a></nav>
+    <div class="sidebar-note">工作积累资源，训练提升力量。<br>体力不足时，先休息。<br>每次行动后，都可以查看结果。</div>
     <div class="sidebar-bottom"><span class="dot"></span> DURABLE ENGINE</div>
   </aside>
   <main>
-    <header><div><p class="eyebrow">WORLD OPERATIONS</p><h1>世界引擎</h1><p class="muted">观察世界的变化，提交下一步行动。</p></div><span id="connection-status" class="badge">未连接</span></header>
+    <header><div><p class="eyebrow">PHYREX · 角色体验</p><h1>从一个角色，走进世界</h1><p class="muted">工作、休息、训练和交易。下面的引导会带你完成第一次行动。</p></div><span id="connection-status" class="badge">未连接</span></header>
     <section id="login-panel" class="panel">
-      <div class="section-heading"><div><h2>连接你的角色</h2><p class="muted">使用已有访问令牌。令牌只保留在当前页面内存中。</p></div><span class="step">01 / CONNECT</span></div>
+      <div class="section-heading"><div><h2>先连接你的角色</h2><p class="muted">试运行用户保留下面两个 ID，粘贴玩家令牌即可。连接后会出现操作引导。</p></div></div>
       <form id="login-form" class="login-grid" method="post" action="/">
         <label>世界 ID<input id="world-id" name="world" value="phyrex-trial" maxlength="200" required autocomplete="off"></label>
         <label>玩家 ID<input id="player-id" name="player" value="trial-player" maxlength="200" required autocomplete="off"></label>
         <label class="token-field">访问令牌<input id="token" type="password" required autocomplete="off" spellcheck="false" maxlength="4096" placeholder="粘贴玩家或管理员令牌"></label>
         <button class="primary" type="submit" disabled>连接世界 →</button>
       </form>
+      <p class="login-help">访问令牌相当于登录钥匙，由管理员提供。令牌仅保留在本页；刷新或退出后需重新输入。当前页面操作已有角色，暂不提供注册或创建角色。</p>
       <noscript><p class="notice error">请启用 JavaScript 后连接。访问令牌不会通过原生表单提交。</p></noscript>
     </section>
     <div id="notice" class="notice" role="status" aria-live="polite">首次访问可能需要等待免费服务唤醒。</div>
@@ -31,18 +32,30 @@
       <div class="toolbar"><div><strong id="scope-label"></strong><span id="updated-at" class="muted"></span></div><div class="button-row"><button id="refresh">刷新状态</button><button id="disconnect" class="quiet">退出连接</button></div></div>
       <section id="overview" aria-labelledby="overview-title">
         <h2 id="overview-title" class="sr-only">世界与角色</h2>
-        <div class="metrics"><article><span>世界步数</span><strong id="tick">—</strong><small>已保存的 Tick</small></article><article><span>存档版本</span><strong id="revision">—</strong><small>提交后的 Revision</small></article><article><span>持有货币</span><strong id="currency">—</strong><small>当前角色资源</small></article><article><span>所在地点</span><strong id="location">—</strong><small id="player-mode">—</small></article></div>
+        <section id="guide" class="panel guide" aria-labelledby="guide-title">
+          <p class="eyebrow">不知道做什么？从这里开始</p><h2 id="guide-title" tabindex="-1">第一步：亲手完成一次工作</h2>
+          <p id="guide-context"></p><p id="guide-text"></p>
+          <ol class="guide-steps" aria-label="入门步骤"><li id="guide-step-1"><span>1</span>工作赚取资源</li><li id="guide-step-2"><span>2</span>购买一件装备</li><li id="guide-step-3"><span>3</span>装备并查看变化</li></ol>
+          <div id="guide-result" class="guide-result" role="status" aria-live="polite" hidden></div>
+          <div class="guide-footer"><button id="guide-primary" class="primary" type="button">开始工作</button><a href="#actions">查看所有行动 ↓</a></div>
+          <p id="settlement-help" class="muted"></p>
+        </section>
+        <div class="metrics player-metrics"><article><span>持有货币</span><strong id="currency">—</strong><small>工作赚取，可在商店购买物品</small></article><article><span>所在地点</span><strong id="location">—</strong><small id="player-mode">—</small></article></div>
         <div class="two-columns">
           <section class="panel character"><div class="section-heading"><h2>当前角色</h2><span id="character-status" class="badge">—</span></div><h3 id="character-name">—</h3><dl id="character-stats" class="stats"></dl><p id="character-note" class="muted"></p></section>
-          <section class="panel"><div class="section-heading"><h2>下一步行动</h2><span class="step">02 / ACT</span></div><p class="muted">行动由引擎在后续世界步结算。入队后查看回执，确认实际结果。</p><div id="action-buttons" class="action-grid"></div><div id="pending-panel" class="pending" hidden><strong>这条指令尚未确认</strong><p id="pending-id" class="mono"></p><p>请按原编号重试。刷新页面后重新连接，也会恢复这条待确认指令。</p><button id="retry" class="primary">按原编号重试</button></div></section>
+          <section id="actions" class="panel"><div class="section-heading"><h2>你现在可以做什么</h2><span class="badge">每次先完成一项</span></div><p id="action-help" class="muted">点选行动后，在上方查看结果。下次行动要等本次结算完成。</p><div id="action-buttons" class="action-grid"></div><div id="pending-panel" class="pending" hidden><strong>上一条行动尚未确认收到</strong><p id="pending-id" class="mono"></p><p>请按原编号重试。即使刚才已经执行，也不会再执行一次。</p><button id="retry" class="primary">按原编号重试</button></div></section>
         </div>
       </section>
       <section id="commerce" class="two-columns">
-        <section class="panel"><div class="section-heading"><h2>随身物品</h2><span id="inventory-count" class="badge">0</span></div><div id="inventory-list" class="item-list"></div></section>
+        <section class="panel"><div class="section-heading"><h2>你的背包</h2><span id="inventory-count" class="badge">0</span></div><p class="muted">买到的装备需要点击“装备”才会生效；消耗品点击“使用”后减少 1 件。</p><div id="inventory-list" class="item-list"></div></section>
         <section class="panel"><div class="section-heading"><h2>当地商店</h2><span id="shop-count" class="badge">0</span></div><p class="muted">每次购买 1 件。价格与库存以执行时的世界状态为准。</p><div id="shop-list" class="item-list"></div></section>
       </section>
-      <section id="commands" class="panel"><div class="section-heading"><div><h2>指令与回执</h2><p class="muted">“已处理”表示已经结算入库；点击“查看结果”区分完成与拒绝。</p></div><span class="step">03 / VERIFY</span></div><div id="receipt" class="receipt" hidden><div class="section-heading"><h3>最近查看的回执</h3><button id="refresh-receipt">更新回执</button></div><p id="receipt-summary"></p><details><summary>查看完整回执</summary><pre id="receipt-body"></pre></details></div><div class="table-scroll"><table><thead><tr><th>序号</th><th>指令编号</th><th>入库状态</th><th>操作</th></tr></thead><tbody id="history-list"></tbody></table></div><p id="history-empty" class="empty" hidden>还没有指令。可以从一次等待开始。</p><div class="pagination"><button id="history-first">最新记录</button><button id="history-next" disabled>更早记录 →</button></div></section>
+      <section id="commands" class="panel"><div class="section-heading"><div><h2>行动记录</h2><p class="muted">记录每次操作。显示“等待结算”时先等一会；显示“已结算”后点击查看具体结果。</p></div></div><div id="receipt" class="receipt" hidden><div class="section-heading"><h3>最近查看的行动</h3><button id="refresh-receipt">查看执行结果</button></div><p id="receipt-summary"></p><details><summary>技术详情（指令编号与原始回执）</summary><pre id="receipt-body"></pre></details></div><div class="table-scroll"><table><thead><tr><th>次序</th><th>行动</th><th>当前状态</th><th>操作</th></tr></thead><tbody id="history-list"></tbody></table></div><p id="history-empty" class="empty" hidden>你还没有行动记录。点击上方“开始工作”，体验第一次操作。</p><div class="pagination"><button id="history-first">最新记录</button><button id="history-next" disabled>更早记录 →</button></div></section>
+      <section id="help" class="panel help"><h2>遇到疑问，看这里</h2><details open><summary>点完按钮，为什么没有马上变化？</summary><p>行动需要等世界推进后才会结算。点击上方“查看执行结果”即可刷新，不需要再次提交相同行动。试运行服务通常约每分钟推进一次；刚唤醒或排队时可能更久。</p></details><details><summary>我应该先做什么？</summary><p>跟随顶部引导：先工作一次，查看获得的资源，再购买一件装备并穿戴。之后可以继续训练提升力量；体力不足就休息。</p></details><details><summary>刷新页面后为什么又要令牌？</summary><p>页面不会保存访问令牌，重新连接即可。已被服务器接收的行动仍会保留；断线时未确认的行动会显示“按原编号重试”，请先确认它再做下一步。</p></details><details><summary>角色会自己变化吗？现在能玩到哪里？</summary><p>世界运行时其他角色和规则也会活动，所以当前状态可能受多种因素影响。行动结果会单独说明本次收益。这个版本可体验工作、休息、训练、背包交易和装备；地图探索、剧情任务、战斗操作和角色创建尚未接入这个页面。</p></details></section>
+      <details class="panel technical"><summary>世界运行信息（排查问题时使用）</summary><dl class="stats"><div><dt>世界已推进的轮数</dt><dd id="tick">—</dd></div><div><dt>存档版本</dt><dd id="revision">—</dd></div></dl><p class="muted">每推进一轮，世界会处理行动并保存。这些数字用于核对运行状态，无需手动调整。</p></details>
+      <details class="panel technical"><summary>管理员工具（普通玩家无需操作）</summary>
       <section id="admin" class="panel"><div class="section-heading"><div><h2>管理与审计</h2><p class="muted">管理员 / GM 可读取世界概况、指令队列与安全审计。</p></div><button id="open-admin">读取管理信息</button></div><div id="admin-content" hidden><dl id="admin-summary" class="stats"></dl><form id="audit-form" class="filters"><label>HTTP 状态<input id="audit-status" type="number" min="100" max="599" placeholder="全部"></label><label>路由<select id="audit-route"><option value="">全部</option><option value="submit">提交指令</option><option value="status">指令回执</option><option value="state">角色状态</option><option value="audit">审计查询</option><option value="history">指令历史</option></select></label><label>玩家 ID<input id="audit-player" maxlength="200" placeholder="全部"></label><button type="submit">筛选审计</button></form><div class="table-scroll"><table><thead><tr><th>序号</th><th>时间</th><th>路由</th><th>状态</th><th>账户 / 玩家</th><th>错误码</th></tr></thead><tbody id="audit-list"></tbody></table></div><p id="audit-empty" class="empty" hidden>当前筛选下没有审计记录。</p><div class="pagination"><button id="audit-first">最新审计</button><button id="audit-next" disabled>更早审计 →</button></div></div></section>
+      </details>
     </div>
     <footer>PHYREX ENGINE <span>手动刷新 · 不自动保活 · 退出即清除令牌</span></footer>
   </main>
