@@ -5,6 +5,7 @@ const { MIGRATIONS, checkMigrationHistory } = require('./migrations');
 const { createCommandQueueOperations, readPendingCapacity } = require('./command-queue');
 const { createBackupOperations } = require('./backup');
 const { createMaintenanceOperations } = require('./maintenance');
+const { guardClientLease } = require('./client-lease');
 const { textId, safeInteger, fromSqlInteger, captureCheckpoint, captureEvent, captureInboxCommand, digest,
   canonicalJson, summarizeSave, restoreSave, validateArchivedSave, detachedJson } = require('./codec');
 
@@ -24,7 +25,7 @@ function createPostgresDatabaseStore(options = {}) {
     assertOpen();
     let client, broken = false;
     try {
-      client = await pool.connect();
+      client = guardClientLease(await pool.connect());
       await client.query(readOnly ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
       await client.query("SELECT set_config('statement_timeout', $1, true), set_config('lock_timeout', $2, true)",
         [String(config.statementTimeoutMillis), String(config.lockTimeoutMillis)]);
@@ -330,7 +331,8 @@ function summarizeCommand(row, idempotent = false) {
 function sanitizeError(error) {
   if (typeof error?.code === 'string' && error.code.startsWith('WORLD_DB_')) return error;
   const sqlState = typeof error?.code === 'string' && /^[0-9A-Z]{5}$/.test(error.code) ? error.code : null;
-  const unavailable = /^(08|57P)/.test(sqlState || '') || ['ECONNREFUSED','ECONNRESET','ENOTFOUND','ETIMEDOUT','EPIPE'].includes(error?.code);
+  const unavailable = /^(08|57P)/.test(sqlState || '') || ['ECONNREFUSED','ECONNRESET','ENOTFOUND','ETIMEDOUT','EPIPE'].includes(error?.code)
+    || ['Connection terminated unexpectedly', 'Connection terminated', 'Client has encountered a connection error and is not queryable'].includes(error?.message);
   const code = unavailable ? 'UNAVAILABLE' : ['42P01','3F000'].includes(sqlState) ? 'MIGRATION_REQUIRED'
     : ['57014','55P03'].includes(sqlState) ? 'TIMEOUT' : 'SQL_ERROR';
   const safe = databaseError(code, `PostgreSQL operation failed${sqlState ? ` (${sqlState})` : ''}`);
