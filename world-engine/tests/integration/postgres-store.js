@@ -138,6 +138,18 @@ async function main() {
     if (url.password) assert.ok(!status.stdout.includes(url.password));
     pass('real CLI import, export, status and exclusive output creation');
 
+    let terminated = false;
+    await assert.rejects(a.exportSnapshot(async record => {
+      if (record.type !== 'header') return;
+      const victims = await raw.query("SELECT pid FROM pg_stat_activity WHERE application_name='phyrex-world-engine' AND state='idle in transaction' AND query LIKE $1", [`%${quoted}.schema_migrations%`]);
+      assert.strictEqual(victims.rows.length,1,'Target only this test schema backup connection');
+      await raw.query('SELECT pg_terminate_backend($1)',[victims.rows[0].pid]); terminated = true;
+      await new Promise(resolve => setTimeout(resolve,50));
+    }), e => e.code === 'WORLD_DB_UNAVAILABLE');
+    assert.ok(terminated);
+    assert.strictEqual((await a.loadWorld(world.id)).revision,4);
+    pass('checked-out connection loss between backup queries fails safely and the pool reconnects');
+
     const brokenUrl = new URL(connectionString); brokenUrl.port = '1';
     const offline = createPostgresDatabaseStore({ connectionString: brokenUrl.toString(), schema, connectionTimeoutMillis: 200 });
     try { await assert.rejects(offline.summary(), e => e.code === 'WORLD_DB_UNAVAILABLE'); } finally { await offline.close(); }

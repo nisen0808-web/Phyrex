@@ -5,6 +5,7 @@ const { MIGRATIONS, checkMigrationHistory } = require('./migrations');
 const { textId, safeInteger, fromSqlInteger } = require('./codec');
 const { sanitizeError } = require('./store');
 const { auditDigest, lockAuditRequest } = require('./audit-receipt');
+const { guardClientLease } = require('./client-lease');
 
 function createPostgresCommandApiAuditStore(options = {}) {
   const config = normalizePostgresConfig(options.database || options, options.env || process.env);
@@ -24,7 +25,7 @@ function createPostgresCommandApiAuditStore(options = {}) {
     assertOpen();
     let client, broken = false;
     try {
-      client = await pool.connect();
+      client = guardClientLease(await pool.connect());
       await client.query(readOnly ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
       const result = await work(client);
       await client.query('COMMIT');

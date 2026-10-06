@@ -47,7 +47,7 @@ node world-engine/tests/helpers/console-fixture.js --lose-first-response
 
 最后两个命令输出随机回环地址；世界 `console-test`，玩家 `one`，测试令牌 `console-player-fixture` 或 `console-admin-fixture`。这是无数据库的隔离内存样例，只供本机验收；不是部署命令。按 Ctrl+C 结束。
 
-三个控制台回归脚本覆盖静态文件隔离、CSP/限流、玩家越权、购买/回执/重复提交、分页、提交确认丢失、刷新恢复、旧会话响应隔离、401、429、超时、存储故障、并发提交、新手下一步决策及商品属性脱敏。运行诊断新增独立 API 回归，完整 discovery 为 130 项；真实 PostgreSQL 服务专项扩展为 9 组。真实 PostgreSQL 原有专项仍在 Node 20/22 CI 运行，必须核对日志完成标记和实际分母，保留 bash/pipefail，不能用静态网页或仅健康 200 代替功能验收。
+三个控制台回归脚本覆盖静态文件隔离、CSP/限流、玩家越权、购买/回执/重复提交、分页、提交确认丢失、刷新恢复、旧会话响应隔离、401、429、超时、存储故障、并发提交、新手下一步决策及商品属性脱敏。运行诊断新增独立 API 回归，完整 discovery 为 131 项；真实 PostgreSQL 服务专项扩展为 9 组。真实 PostgreSQL 原有专项仍在 Node 20/22 CI 运行，必须核对日志完成标记和实际分母，保留 bash/pipefail，不能用静态网页或仅健康 200 代替功能验收。
 
 ## 当前边界
 

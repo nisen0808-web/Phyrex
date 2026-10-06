@@ -4,7 +4,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const SQL = Object.freeze([
-  ['postgres-store.js', 'integration', 14], ['postgres-command-inbox.js', 'command inbox', 8],
+  ['postgres-store.js', 'integration', 15], ['postgres-command-inbox.js', 'command inbox', 8],
   ['postgres-durable-runtime.js', 'durable runtime', 11], ['postgres-runtime-commands.js', 'runtime commands', 7],
   ['postgres-command-api.js', 'command api', 9], ['postgres-command-audit.js', 'command audit', 4],
   ['postgres-command-audit-query.js', 'command audit query', 10], ['postgres-backup.js', 'backup', 6],
