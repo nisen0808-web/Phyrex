@@ -10,7 +10,7 @@
   <aside class="sidebar">
     <a class="brand" href="/" aria-label="Phyrex 世界引擎首页"><span class="brand-mark">P</span><span>PHYREX<small>世界引擎控制台</small></span></a>
     <div class="sidebar-label">从第一次行动开始</div>
-    <nav aria-label="控制台导航"><a href="#overview">◈　入门与角色</a><a href="#actions">↗　选择行动</a><a href="#commerce">▤　背包与商店</a><a href="#commands">☷　行动记录</a><a href="#help">？　使用帮助</a></nav>
+    <nav aria-label="控制台导航"><a href="#overview">◈　入门与角色</a><a href="#characters">♧　我的角色</a><a href="#world">⌖　探索地点</a><a href="#actions">↗　选择行动</a><a href="#commerce">▤　背包与商店</a><a href="#commands">☷　行动记录</a><a href="#help">？　使用帮助</a></nav>
     <div class="sidebar-note">工作积累资源，训练提升力量。<br>体力不足时，先休息。<br>每次行动后，都可以查看结果。</div>
     <div class="sidebar-bottom"><span class="dot"></span> DURABLE ENGINE</div>
   </aside>
@@ -24,7 +24,7 @@
         <label class="token-field">访问令牌<input id="token" type="password" required autocomplete="off" spellcheck="false" maxlength="4096" placeholder="粘贴玩家或管理员令牌"></label>
         <button class="primary" type="submit" disabled>连接世界 →</button>
       </form>
-      <p class="login-help">访问令牌相当于登录钥匙，由管理员提供。令牌仅保留在本页；刷新或退出后需重新输入。当前页面操作已有角色，暂不提供注册或创建角色。</p>
+      <p class="login-help">访问令牌相当于登录钥匙，由管理员提供。令牌仅保留在本页；刷新或退出后需重新输入。连接已有玩家账户后，可以创建角色、切换角色和探索相邻地点；账户注册仍由管理员处理。</p>
       <noscript><p class="notice error">请启用 JavaScript 后连接。访问令牌不会通过原生表单提交。</p></noscript>
     </section>
     <div id="notice" class="notice" role="status" aria-live="polite">首次访问可能需要等待免费服务唤醒。</div>
@@ -47,12 +47,28 @@
           <section id="actions" class="panel"><div class="section-heading"><h2>你现在可以做什么</h2><span class="badge">每次先完成一项</span></div><p id="action-help" class="muted">点选行动后，在上方查看结果。下次行动要等本次结算完成。</p><div id="action-buttons" class="action-grid"></div><div id="pending-panel" class="pending" hidden><strong>上一条行动尚未确认收到</strong><p id="pending-id" class="mono"></p><p>请按原编号重试。即使刚才已经执行，也不会再执行一次。</p><button id="retry" class="primary">按原编号重试</button></div></section>
         </div>
       </section>
+      <section id="characters" class="panel" aria-labelledby="characters-title">
+        <div class="section-heading"><div><h2 id="characters-title" tabindex="-1">我的角色</h2><p class="muted">选择一个存活角色继续行动，也可以创建新角色。切换与创建都需要等待结算。</p></div><span id="roster-count" class="badge"></span></div>
+        <div class="two-columns"><div id="roster-list" class="item-list"></div>
+          <form id="create-form" class="creation-form" method="post" action="/">
+            <h3>创建新角色</h3><label>角色名字<input id="create-name" required maxlength="100" autocomplete="off" placeholder="给你的角色起个名字"></label>
+            <label>出生地点<select id="create-location" required></select></label><label>种族<select id="create-species" required></select></label>
+            <p id="creation-help" class="muted"></p><button id="create-character" type="submit" class="primary" data-command="create_character" data-control="true" disabled>创建并控制新角色</button>
+          </form>
+        </div>
+      </section>
+      <section id="world" class="panel" aria-labelledby="world-title">
+        <div class="section-heading"><div><h2 id="world-title">探索地点</h2><p id="world-context" class="muted"></p></div><a href="#commands">查看行动结果 →</a></div>
+        <h3>从这里可以去哪里</h3><div id="neighbor-list" class="item-list"></div>
+        <div class="two-columns local-details"><div><h3>当地人物</h3><ul id="people-list" class="world-list"></ul></div><div><h3>驻地组织</h3><ul id="organization-list" class="world-list"></ul></div></div>
+        <h3>这里最近发生了什么</h3><p class="muted">显示此地最近最多 20 条已结算的移动、工作、休息和采集事件。其他人物也会行动；完整指令结果请看“行动记录”。这里只展示近期保留记录，手动刷新后更新。</p><ol id="event-list" class="event-list"></ol>
+      </section>
       <section id="commerce" class="two-columns">
         <section class="panel"><div class="section-heading"><h2>你的背包</h2><span id="inventory-count" class="badge">0</span></div><p class="muted">买到的装备需要点击“装备”才会生效；消耗品点击“使用”后减少 1 件。</p><div id="inventory-list" class="item-list"></div></section>
         <section class="panel"><div class="section-heading"><h2>当地商店</h2><span id="shop-count" class="badge">0</span></div><p class="muted">每次购买 1 件。价格与库存以执行时的世界状态为准。</p><div id="shop-list" class="item-list"></div></section>
       </section>
       <section id="commands" class="panel"><div class="section-heading"><div><h2>行动记录</h2><p class="muted">记录每次操作。显示“等待结算”时先等一会；显示“已结算”后点击查看具体结果。</p></div></div><div id="receipt" class="receipt" hidden><div class="section-heading"><h3>最近查看的行动</h3><button id="refresh-receipt">查看执行结果</button></div><p id="receipt-summary"></p><details><summary>技术详情（指令编号与原始回执）</summary><pre id="receipt-body"></pre></details></div><div class="table-scroll"><table><thead><tr><th>次序</th><th>行动</th><th>当前状态</th><th>操作</th></tr></thead><tbody id="history-list"></tbody></table></div><p id="history-empty" class="empty" hidden>你还没有行动记录。点击上方“开始工作”，体验第一次操作。</p><div class="pagination"><button id="history-first">最新记录</button><button id="history-next" disabled>更早记录 →</button></div></section>
-      <section id="help" class="panel help"><h2>遇到疑问，看这里</h2><details open><summary>点完按钮，为什么没有马上变化？</summary><p>行动需要等世界推进后才会结算。点击上方“查看执行结果”即可刷新，不需要再次提交相同行动。试运行服务通常约每分钟推进一次；刚唤醒或排队时可能更久。</p></details><details><summary>我应该先做什么？</summary><p>跟随顶部引导：先工作一次，查看获得的资源，再购买一件装备并穿戴。之后可以继续训练提升力量；体力不足就休息。</p></details><details><summary>刷新页面后为什么又要令牌？</summary><p>页面不会保存访问令牌，重新连接即可。已被服务器接收的行动仍会保留；断线时未确认的行动会显示“按原编号重试”，请先确认它再做下一步。</p></details><details><summary>角色会自己变化吗？现在能玩到哪里？</summary><p>世界运行时其他角色和规则也会活动，所以当前状态可能受多种因素影响。行动结果会单独说明本次收益。这个版本可体验工作、休息、训练、背包交易和装备；地图探索、剧情任务、战斗操作和角色创建尚未接入这个页面。</p></details></section>
+      <section id="help" class="panel help"><h2>遇到疑问，看这里</h2><details open><summary>点完按钮，为什么没有马上变化？</summary><p>行动需要等世界推进后才会结算。点击上方“查看执行结果”即可刷新，不需要再次提交相同行动。试运行服务通常约每分钟推进一次；刚唤醒或排队时可能更久。</p></details><details><summary>我应该先做什么？</summary><p>没有角色时先到“我的角色”创建一个；已有角色可以跟随顶部引导工作、购买装备并穿戴。在“探索地点”选择相邻地点，等待移动完成后查看当地人物与商店。</p></details><details><summary>刷新页面后为什么又要令牌？</summary><p>页面不会保存访问令牌，重新连接即可。已被服务器接收的行动仍会保留；断线时未确认的行动会显示“按原编号重试”，请先确认它再做下一步。</p></details><details><summary>切换角色后，旧角色会消失吗？</summary><p>不会。旧角色保留在名单中；存活时可以切换回来。不同角色的位置、资源和背包分别保存。死亡角色保留历史名额，无法切换。创建新角色不会建立新的玩家账户。</p></details><details><summary>角色会自己变化吗？现在能用到哪些功能？</summary><p>世界运行时其他角色和规则也会活动，所以当前状态可能受多种因素影响。行动结果会单独说明本次收益。页面现可创建和切换角色、移动、浏览当地人物与组织、工作、休息、训练和交易装备。剧情任务、战斗操作和世界规则编辑尚未接入页面。</p></details></section>
       <details class="panel technical"><summary>世界运行信息（排查问题时使用）</summary><dl class="stats"><div><dt>世界已推进的轮数</dt><dd id="tick">—</dd></div><div><dt>存档版本</dt><dd id="revision">—</dd></div></dl><p class="muted">每推进一轮，世界会处理行动并保存。这些数字用于核对运行状态，无需手动调整。</p></details>
       <details class="panel technical"><summary>管理员工具（普通玩家无需操作）</summary>
       <section id="admin" class="panel"><div class="section-heading"><div><h2>管理与审计</h2><p class="muted">管理员 / GM 可检查运行状态、指令积压与审计失败，并查看处理建议。</p></div><button id="open-admin">检查运行状态</button></div><div id="admin-content" hidden><section id="operation-health" class="operation-health"><h3 id="operation-status"></h3><p id="operation-advice"></p><p id="operation-checked" class="muted"></p></section><dl id="operation-stats" class="stats"></dl><p class="muted">运行器心跳和存档分别读取，短暂版本差异不等于数据丢失。计数在服务重启后重置；这里只显示安全运行信息，不读取备份文件。</p><dl id="admin-summary" class="stats"></dl><form id="audit-form" class="filters"><label>HTTP 状态<input id="audit-status" type="number" min="100" max="599" placeholder="全部"></label><label>路由<select id="audit-route"><option value="">全部</option><option value="submit">提交指令</option><option value="status">指令回执</option><option value="state">角色状态</option><option value="audit">审计查询</option><option value="history">指令历史</option><option value="operations">运行诊断</option><option value="queue">指令队列</option><option value="summary">世界概况</option></select></label><label>玩家 ID<input id="audit-player" maxlength="200" placeholder="全部"></label><button type="submit">筛选审计</button></form><div class="table-scroll"><table><thead><tr><th>序号</th><th>时间</th><th>路由</th><th>状态</th><th>账户 / 玩家</th><th>错误码</th></tr></thead><tbody id="audit-list"></tbody></table></div><p id="audit-empty" class="empty" hidden>当前筛选下没有审计记录。</p><div class="pagination"><button id="audit-first">最新审计</button><button id="audit-next" disabled>更早审计 →</button></div></div></section>

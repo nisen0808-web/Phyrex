@@ -88,6 +88,33 @@ async function main() {
     assert.strictEqual(characters.getWorld().players.byEntityId.other, 'two');
     assert.strictEqual(characters.getWorld().players.byId.one.activeEntityId, 'character');
     assert.strictEqual((await store.getCommand('characters', 'steal')).result.outcome.reason, 'character_not_owned');
+    api = await createDurableCommandApiServer({ store, auditStore: audits, rateLimitNow: () => 0 });
+    await new Promise(resolve => api.server.listen(0, '127.0.0.1', resolve));
+    const explorationPort = api.server.address().port, explorationPath = '/durable/worlds/characters/players/one';
+    const readExploration = async () => {
+      const response = await request(explorationPort, `${explorationPath}/state`); assert.strictEqual(response.status, 200); return response.body.data;
+    };
+    const roster = await readExploration();
+    assert.deepStrictEqual(roster.characters.map(row => row.id), ['character', 'one_character_2']);
+    assert.deepStrictEqual(roster.surroundings.neighbors.map(row => row.id), ['away']);
+    const switchInput = { id: 'ui-switch', type: 'switch_character', payload: { entityId: 'one_character_2' } };
+    assert.strictEqual((await request(explorationPort, `${explorationPath}/commands`, { method: 'POST', body: switchInput })).status, 202);
+    assert.strictEqual((await readExploration()).character.id, 'character');
+    await characters.step(); assert.strictEqual((await readExploration()).character.id, 'one_character_2');
+    const moveInput = { id: 'ui-move', type: 'move', payload: { locationId: 'away' } };
+    assert.strictEqual((await request(explorationPort, `${explorationPath}/commands`, { method: 'POST', body: moveInput })).status, 202);
+    assert.strictEqual((await readExploration()).location.id, 'home');
+    await characters.close({ flush: false });
+    await cli('characters'); // A separate process consumes the pending movement.
+    const recovered = await readExploration(), movedReceipt = await store.getCommand('characters', 'ui-move');
+    assert.strictEqual(recovered.location.id, 'away'); assert.strictEqual(recovered.character.id, 'one_character_2');
+    assert.ok(recovered.surroundings.events.some(row => row.type === 'entity.moved'));
+    assert.strictEqual((await request(explorationPort, `${explorationPath}/commands`, { method: 'POST', body: moveInput })).body.data.idempotent, true);
+    await cli('characters'); assert.deepStrictEqual(await store.getCommand('characters', 'ui-move'), movedReceipt);
+    assert.strictEqual((await readExploration()).characterCount, 2);
+    assert.strictEqual((await request(explorationPort, '/durable/worlds/characters/players/two/state')).status, 403);
+    assert.ok(!JSON.stringify(recovered).includes('owner-secret-token'));
+    await api.close(); api = null;
     pass('safe character creation and ownership checks survive real checkpoint serialization');
 
     await seed('observer');
