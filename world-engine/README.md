@@ -8,6 +8,8 @@
 
 浏览器操作持久世界、物品交易、指令回执与安全审计，见 [网页控制台](DURABLE_WEB_CONSOLE.md)。
 
+用 JSON 定义自己的地点、道路、人物和组织，检查配置后生成可持久化的新世界，见 [正式世界模板入口](ENGINE_WORLD_TEMPLATES.md)。
+
 人口增长后的运行诊断与已实现的等价性能优化见 [真实运行剖析](RUNTIME_PERFORMANCE.md)。
 
 第二批优化及完整 tick / 单项测量见 [信息传播与状态复制](KNOWLEDGE_SCALE_PERFORMANCE.md)。

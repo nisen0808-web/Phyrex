@@ -10,6 +10,8 @@ module.exports = Object.freeze({
   registerEntity: require('./core/world-engine').registerEntity,
   connectLocations: require('./core/world-engine').connectLocations,
   createSampleWorld: require('./demo/engine-v1-world').createEngineWorld,
+  validateEngineTemplate: require('./core/engine-template-engine').validateEngineTemplate,
+  createEngineWorldFromTemplate: require('./core/engine-template-engine').createEngineWorldFromTemplate,
   createPlayer: require('./core/player-engine').createPlayer,
   createPlayerCharacter: require('./core/player-engine').createPlayerCharacter,
   configurePlayerActionRules: require('./core/player-action-rules-engine').configurePlayerActionRules,

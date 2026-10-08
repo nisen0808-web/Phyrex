@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "packId": "river-valley-pack",
+  "packName": "河谷世界入门配置",
+  "description": "三个相连地点、四位初始人物、两个组织，以及村庄商店。可以修改名称与资源后创建独立的新世界。",
+  "templates": [{
+    "id": "river-valley",
+    "name": "河谷聚落",
+    "version": 1,
+    "seedTicks": 0,
+    "observerLocationId": "river-village",
+    "starterShops": ["river-village"],
+    "playerRules": { "workYield": 12, "gatherYield": 3 },
+    "definition": {
+      "world": { "id": "river-valley-world", "seed": "river-valley-v1" },
+      "locations": [
+        { "id": "river-village", "name": "河畔村庄", "type": "village", "danger": 1, "resources": { "food": 3000, "water": 3000, "wood": 1500, "stone": 800, "knowledge": 200 } },
+        { "id": "pine-forest", "name": "松林", "type": "wilds", "danger": 8, "resources": { "food": 1500, "wood": 4000, "herbs": 500 } },
+        { "id": "stone-pass", "name": "石岭关", "type": "road", "danger": 12, "resources": { "food": 700, "stone": 3000, "metal": 900 } }
+      ],
+      "connections": [["river-village", "pine-forest"], ["river-village", "stone-pass"]],
+      "entities": [
+        { "id": "valley-elder", "name": "村长", "species": "human", "locationId": "river-village", "stats": { "health": 300, "maxHealth": 300 }, "resources": { "currency": 300, "food": 100 }, "demographics": { "age": 48, "sex": "female" } },
+        { "id": "valley-trader", "name": "行商", "species": "human", "locationId": "river-village", "stats": { "health": 300, "maxHealth": 300 }, "resources": { "currency": 400, "food": 100 }, "demographics": { "age": 28, "sex": "male" } },
+        { "id": "forest-scout", "name": "林间向导", "species": "human", "locationId": "pine-forest", "stats": { "health": 300, "maxHealth": 300 }, "resources": { "currency": 200, "food": 100 }, "demographics": { "age": 26, "sex": "female" } },
+        { "id": "pass-miner", "name": "石匠", "species": "human", "locationId": "stone-pass", "stats": { "health": 300, "maxHealth": 300 }, "resources": { "currency": 200, "food": 100 }, "demographics": { "age": 32, "sex": "male" } }
+      ],
+      "organizations": [
+        { "key": "valley-council", "name": "河谷议事会", "type": "state", "leaderId": "valley-elder", "homeLocationId": "river-village", "currency": 2000, "members": ["valley-elder", "forest-scout"] },
+        { "key": "valley-guild", "name": "河谷商会", "type": "guild", "leaderId": "valley-trader", "homeLocationId": "river-village", "currency": 2000, "members": ["valley-trader", "pass-miner"] }
+      ],
+      "organizationRelations": [{ "from": "valley-council", "to": "valley-guild", "type": "ally", "value": 60 }]
+    }
+  }]
+}

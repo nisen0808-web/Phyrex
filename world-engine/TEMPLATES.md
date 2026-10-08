@@ -1,5 +1,7 @@
 # World Templates
 
+For validated PostgreSQL-ready worlds, use [ENGINE_WORLD_TEMPLATES.md](ENGINE_WORLD_TEMPLATES.md), `engine:template` and `engine:init --template-file`. That strict entry point rejects invalid references and unsupported fields, uses deterministic durable initialization and v1 retention, and never resets an existing world. The helpers below remain trusted-host demonstration APIs.
+
 `world-template-engine.js` provides reusable world definitions and lifecycle helpers. It separates world structure from hard-coded demo bootstrapping.
 
 ## Built-in templates
