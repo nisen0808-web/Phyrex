@@ -35,7 +35,8 @@ function clearViews() {
   state = null; lastReceipt = null; historyCursor = null; auditCursor = null; adminLoaded = false;
   shownReceipt = null; waitingId = null; completed.clear(); knownTypes.clear(); viewedReceipts.clear();
   refreshFailed = false; $('stale-state').hidden = true;
-  for (const id of ['character-stats', 'inventory-list', 'shop-list', 'history-list', 'audit-list', 'admin-summary', 'operation-stats', 'receipt-body']) $(id).replaceChildren();
+  for (const id of ['character-stats', 'inventory-list', 'shop-list', 'history-list', 'audit-list', 'admin-summary', 'operation-stats', 'receipt-body', 'roster-list', 'neighbor-list', 'people-list', 'organization-list', 'event-list', 'create-location', 'create-species']) $(id).replaceChildren();
+  $('create-name').value = ''; $('creation-help').textContent = ''; $('world-context').textContent = ''; $('roster-count').textContent = '';
   $('operation-status').textContent = ''; $('operation-advice').textContent = ''; $('operation-checked').textContent = '';
   for (const id of ['scope-label', 'updated-at', 'tick', 'revision', 'currency', 'location', 'player-mode', 'character-name', 'character-status', 'character-note', 'receipt-summary']) $(id).textContent = '';
   $('workspace').hidden = true; $('login-panel').hidden = false; $('receipt').hidden = true; $('admin-content').hidden = true;
@@ -49,7 +50,7 @@ function renderGuide() {
   $('guide-title').textContent = step.title; $('guide-text').textContent = step.text;
   $('guide-primary').textContent = busy ? '正在处理，请稍候…' : step.label;
   $('guide-primary').disabled = busy || !state;
-  $('guide-context').textContent = state ? `你正在操控「${displayName(state.character?.name || state.character?.id)}」，位于${displayName(state.location?.name || state.location?.id)}。` : '';
+  $('guide-context').textContent = state ? canAct() ? `你正在操控「${displayName(state.character?.name || state.character?.id)}」，位于${displayName(state.location?.name || state.location?.id)}。` : `当前没有正在行动的角色。你可以在“我的角色”中创建或选择角色。` : '';
   $('settlement-help').textContent = state?.worldId === 'phyrex-trial' ? '试运行世界约每分钟结算一轮；刚唤醒或排队时可能更久。请点“查看执行结果”，不要重复提交。' : '行动在下一次世界推进时结算。稍后点“查看执行结果”；页面不会自动刷新。';
   for (let n = 1; n <= 3; n++) {
     const el = $(`guide-step-${n}`); el.classList.toggle('current', step.step === n); el.classList.toggle('done', step.step > n);
@@ -57,10 +58,11 @@ function renderGuide() {
   }
   $('guide-result').hidden = !shownReceipt;
   if (shownReceipt) $('guide-result').textContent = receiptText(shownReceipt, knownTypes.get(shownReceipt.id));
-  $('action-help').textContent = session.pending ? '上一条行动尚未确认收到。请先按原编号重试。' : outstandingId() ? '上一次行动还在等待结算。请在上方查看结果，完成后再做下一步。' : refreshFailed ? '当前显示旧数据。先成功刷新状态，再选择新的行动。' : canAct() ? '点选行动后，在上方查看结果。数值来自当前世界规则，以实际结算为准。' : '当前没有可行动角色，按钮暂不可用。请联系管理员绑定或更换角色。';
+  $('action-help').textContent = session.pending ? '上一条行动尚未确认收到。请先按原编号重试。' : outstandingId() ? '上一次行动还在等待结算。请在上方查看结果，完成后再做下一步。' : refreshFailed ? '当前显示旧数据。先成功刷新状态，再选择新的行动。' : canAct() ? '点选行动后，在上方查看结果。数值来自当前世界规则，以实际结算为准。' : '先到“我的角色”创建或切换到存活角色，再选择行动。';
 }
 function updateButtons() {
-  for (const button of document.querySelectorAll('button[data-command]')) button.disabled = busy || refreshFailed || !canAct() || Boolean(session.pending) || Boolean(outstandingId()) || Boolean(button.dataset.unavailable);
+  for (const button of document.querySelectorAll('button[data-command]')) button.disabled = busy || !state || refreshFailed || (!button.dataset.control && !canAct()) || Boolean(session.pending) || Boolean(outstandingId()) || Boolean(button.dataset.unavailable);
+  for (const id of ['create-name', 'create-location', 'create-species']) $(id).disabled = $('create-character').disabled;
   for (const id of ['refresh', 'open-admin', 'history-first', 'audit-first', 'refresh-receipt']) $(id).disabled = busy;
   $('history-next').disabled = busy || !historyCursor; $('audit-next').disabled = busy || !auditCursor;
   $('retry').disabled = busy; $('pending-panel').hidden = !session.pending;
@@ -85,8 +87,9 @@ function pairs(target, data) {
   for (const [key, value] of data) { const row = node('div'); row.append(node('dt', key), node('dd', value ?? '—')); fragment.append(row); }
   $(target).replaceChildren(fragment);
 }
-function commandButton(label, type, payload) {
+function commandButton(label, type, payload, control = false) {
   const button = node('button', label); button.type = 'button'; button.dataset.command = type;
+  if (control) button.dataset.control = 'true';
   button.addEventListener('click', () => run(() => send(type, payload)));
   return button;
 }
@@ -121,7 +124,7 @@ function renderState(data) {
   $('character-status').textContent = data.character?.status === 'alive' ? '存活' : data.character?.status || '观察中';
   const stats = data.character?.stats || {};
   pairs('character-stats', [['生命', `${stats.health ?? '—'} / ${stats.maxHealth ?? '—'}`], ['体力', `${stats.energy ?? '—'} / ${stats.maxEnergy ?? '—'}`], ['力量', stats.power], ['防御', stats.defense], ['累计经验', data.character?.actionState?.experience], ['食物', data.character?.resources?.food]]);
-  $('character-note').textContent = canAct() ? '体力不足时先休息；力量决定攻击能力，防御减少受到的伤害。当前状态也会受到世界运行的影响。' : '当前处于观察模式或角色不可行动。请联系管理员绑定或更换角色。';
+  $('character-note').textContent = canAct() ? '体力不足时先休息；力量决定攻击能力，防御减少受到的伤害。当前状态也会受到世界运行的影响。' : '当前处于观察模式或角色不可行动。到“我的角色”创建或切换到存活角色。';
   const descriptions = actionDescriptions(data.actionRules);
   $('action-buttons').replaceChildren(...['work', 'rest', 'train', 'wait'].map(type => {
     const card = node('div', undefined, 'action-card'), button = commandButton(actionNames[type], type, type === 'wait' ? { ticks: 1 } : {});
@@ -130,7 +133,50 @@ function renderState(data) {
     card.append(button, node('p', descriptions[type] + (button.dataset.unavailable ? ' 请先休息。' : ''))); return card;
   }));
   renderCommerce(data.inventory);
+  renderExploration(data);
   $('updated-at').textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN')}`;
+}
+function optionsFor(id, rows, preferred) {
+  const select = $(id), selected = select.value;
+  select.replaceChildren(...rows.map(row => { const option = node('option', displayName(row.name || row.id)); option.value = row.id; return option; }));
+  if (rows.some(row => row.id === selected)) select.value = selected;
+  else if (rows.some(row => row.id === preferred)) select.value = preferred;
+}
+function renderExploration(data) {
+  const creation = data.characterCreation || { count: 0, limit: 0, locations: [], species: [] };
+  $('roster-count').textContent = `${data.characterCount ?? 0} 个角色`;
+  $('roster-list').replaceChildren(...(data.characters?.length ? data.characters.map(character => {
+    const button = commandButton(character.active ? '正在控制' : character.status === 'alive' ? '切换到此角色' : '已死亡，不能切换', 'switch_character', { entityId: character.id }, true);
+    if (character.active || character.status !== 'alive') button.dataset.unavailable = 'character';
+    return itemRow(displayName(character.name || character.id), `${character.status === 'alive' ? '存活' : '已死亡'} · ${displayName(character.location?.name || character.location?.id)}`, [button]);
+  }) : [node('p', '还没有可控制的角色。填写本区表单，创建第一个角色。', 'empty')]));
+  optionsFor('create-location', creation.locations, data.location?.id);
+  optionsFor('create-species', creation.species, 'human');
+  const full = creation.count >= creation.limit;
+  $('create-character').dataset.unavailable = full || !creation.locations.length || !creation.species.length ? 'creation' : '';
+  $('creation-help').textContent = `${creation.count} / ${creation.limit} 个历史角色名额，死亡角色也占名额。${full ? '已达到上限，不能继续创建。' : '创建后会切换到新角色；旧角色保留。'}` +
+    (creation.locationCount > creation.locations.length || creation.speciesCount > creation.species.length ? ` 当前展示 ${creation.locations.length} / ${creation.locationCount} 个出生地点、${creation.species.length} / ${creation.speciesCount} 个种族。` : '') +
+    (!creation.locations.length || !creation.species.length ? '当前缺少可用的出生地点或种族，请联系管理员配置。' : '');
+  const local = data.surroundings || { neighbors: [], people: [], organizations: [], events: [] };
+  $('world-context').textContent = `当前${data.player.controlMode === 'observer' ? '观察' : '所在'}地点：${displayName(data.location?.name || data.location?.id)}。这里只列出可以直接前往的相邻地点；到达后会更新人物与商店。`;
+  $('neighbor-list').replaceChildren(...(local.neighbors.length ? local.neighbors.map(location => {
+    const button = commandButton(`前往${displayName(location.name || location.id)}`, 'move', { locationId: location.id });
+    const cost = data.actionRules?.moveEnergy, tired = Number.isFinite(cost) && data.character?.stats?.energy < cost;
+    if (tired) { button.dataset.unavailable = 'energy'; button.textContent += '（先休息）'; }
+    return itemRow(displayName(location.name || location.id), `直接相连 · 消耗 ${cost ?? '—'} 体力 · 结算后到达${tired ? '。体力不足，请先休息。' : ''}`, [button]);
+  }) : [node('p', '当前地点没有已连接的道路。可切换角色，或由管理员完善世界地点配置。', 'empty')]));
+  const cap = (target, shown, count, label) => { if (count > shown) $(target).append(node($(target).tagName === 'UL' ? 'li' : 'p', `展示 ${shown} / ${count} ${label}`, 'muted')); };
+  cap('roster-list', data.characters?.length || 0, data.characterCount, '个角色');
+  cap('neighbor-list', local.neighbors.length, local.neighborCount, '个相邻地点');
+  $('people-list').replaceChildren(...(local.people.length ? local.people.map(person => node('li', `${displayName(person.name || person.id)}${person.current ? ' · 当前角色' : ''}`)) : [node('li', '这里暂时没有存活人物。')]));
+  cap('people-list', local.people.length, local.peopleCount, '位人物');
+  $('organization-list').replaceChildren(...(local.organizations.length ? local.organizations.map(org => node('li', `${displayName(org.name || org.id)} · ${org.memberCount} 位成员`)) : [node('li', '这里没有驻地组织。')]));
+  cap('organization-list', local.organizations.length, local.organizationCount, '个组织');
+  const eventNames = { 'entity.moved': '到达这里', 'entity.rested': '休息恢复', 'entity.worked': '完成工作', 'resource.gathered': '采集资源' };
+  $('event-list').replaceChildren(...(local.events.length ? local.events.map(event => {
+    const row = node('li'), actors = event.actors.map(actor => displayName(actor.name || actor.id)).join('、') || '当地人物';
+    row.append(node('span', `第 ${event.tick ?? '—'} 轮`, 'event-time'), node('span', `${actors} · ${eventNames[event.type] || '发生变化'}`)); return row;
+  }) : [node('li', '这里还没有可展示的近期事件。完成移动、工作或休息后，再刷新查看。')]));
 }
 function itemRow(title, detail, buttons = []) {
   const row = node('div', undefined, 'item-row'), text = node('div'), actions = node('div', undefined, 'button-row');
@@ -259,9 +305,17 @@ $('login-form').addEventListener('submit', event => {
 $('disconnect').addEventListener('click', () => { epoch++; session.disconnect(); busy = false; clearViews(); updateButtons(); notice('已退出连接，访问令牌已从页面清除。'); });
 $('refresh').addEventListener('click', () => run(async () => { await refresh(); notice('已读取最新保存的世界状态。'); }));
 $('retry').addEventListener('click', () => run(() => send()));
+$('create-form').addEventListener('submit', event => {
+  event.preventDefault();
+  if ($('create-character').disabled) return;
+  const name = $('create-name').value.trim();
+  if (!name) { notice('请先给新角色填写名字。', true); $('create-name').focus(); return; }
+  run(() => send('create_character', { name, species: $('create-species').value, locationId: $('create-location').value, active: true }));
+});
 $('refresh-receipt').addEventListener('click', () => run(async () => { await refresh(); notice(receiptText(shownReceipt, knownTypes.get(lastReceipt))); }));
 $('guide-primary').addEventListener('click', () => {
   const step = guideStep();
+  if (step.kind === 'characters') { $('characters').scrollIntoView({ behavior: 'smooth' }); $('characters-title').focus({ preventScroll: true }); return; }
   if (step.kind === 'actions') { $('actions').scrollIntoView({ behavior: 'smooth' }); $('action-buttons').querySelector('button')?.focus({ preventScroll: true }); return; }
   run(async () => {
     if (step.kind === 'command') await send(step.type, step.payload);

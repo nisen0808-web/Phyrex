@@ -25,7 +25,10 @@ async function main() {
   const item = grantItem(world, 'entity', hero.id, purchase.payload.definitionId, 1);
   assert.equal(nextStep(state(), { completed }).type, 'equip_item');
   item.equipped = true; assert.equal(nextStep(state(), { completed }).kind, 'actions');
-  world.players.byId.one.controlMode = 'observer'; assert.equal(nextStep(state(), { completed }).kind, 'refresh');
+  world.players.byId.one.controlMode = 'observer'; assert.equal(nextStep(state(), { completed }).kind, 'characters');
+  assert.match(receiptText({ status: 'applied', result: { type: 'create_character', status: 'completed', outcome: { value: { name: '新旅人' } } } }), /新旅人.*已建立/);
+  assert.match(receiptText({ status: 'applied', result: { type: 'move', status: 'rejected', outcome: { reason: 'not_neighbors' } } }), /不相邻/);
+  assert.match(receiptText({ status: 'applied', result: { type: 'switch_character', status: 'rejected', outcome: { reason: 'character_not_owned' } } }), /自己拥有/);
   assert.match(receiptText({ status: 'pending', result: { status: 'completed' } }, 'work'), /等待世界结算/);
   assert.match(receiptText({ status: 'applied', result: { status: 'accepted' } }, 'work'), /尚未确认完成/);
   assert.match(receiptText({ status: 'applied', result: { status: 'rejected', outcome: { reason: 'insufficient_energy' } } }), /先休息/);

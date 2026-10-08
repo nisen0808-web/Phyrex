@@ -1,5 +1,5 @@
 // Presentation only: costs and effects come from the authorized server view.
-export const actionNames = { wait: '等待', work: '工作', rest: '休息', train: '训练', buy_item: '购买物品', sell_item: '出售物品', equip_item: '装备物品', unequip_item: '卸下装备', use_item: '使用物品' };
+export const actionNames = { create_character: '创建角色', switch_character: '切换角色', move: '移动', wait: '等待', work: '工作', rest: '休息', train: '训练', buy_item: '购买物品', sell_item: '出售物品', equip_item: '装备物品', unequip_item: '卸下装备', use_item: '使用物品' };
 const defaults = { wooden_sword: ['Wooden Sword', '木剑'], cloth_robe: ['Cloth Robe', '布衣'], healing_pill: ['Healing Pill', '疗伤丹'], spirit_stone: ['Spirit Stone', '灵石'], forest_herb: ['Forest Herb', '林间草药'] };
 export const statNames = { health: '生命', energy: '体力', power: '力量', defense: '防御', speed: '速度', intelligence: '智力', social: '社交', maxHealth: '生命上限', maxEnergy: '体力上限' };
 export function itemName(item = {}) {
@@ -7,7 +7,7 @@ export function itemName(item = {}) {
   return preset && (!item.name || item.name === preset[0] || item.name === item.definitionId) ? preset[1] : item.name || item.definitionId || '物品';
 }
 export function displayName(value) {
-  const names = { village: '村庄', forest: '森林', town: '城镇', 'Trial Player': '试运行玩家', 'village Market': '村庄杂货铺', 'village Herbalist': '村庄药铺' };
+  const names = { village: '村庄', forest: '森林', town: '城镇', mountain: '山地', Human: '人类', 'Spirit Beast': '灵兽', Demon: '魔族', Dragon: '龙族', 'Trial Player': '试运行玩家', 'village Market': '村庄杂货铺', 'village Herbalist': '村庄药铺' };
   if (Object.hasOwn(names, value)) return names[value];
   if (/^founder_\d+$/.test(value || '')) return `旅人 ${Number(value.slice(8)) + 1}`;
   return value || '未指定';
@@ -29,13 +29,18 @@ export function actionDescriptions(rules = {}) {
     wait: '不主动工作或训练，等待世界处理这条行动。' };
 }
 const reasons = {
+  not_neighbors: '目标地点与当前位置不相邻。请刷新地点列表，再选择相连的道路。', missing_location: '这个地点已不可用，请刷新后重新选择。',
+  character_not_owned: '只能切换到自己拥有的角色，请刷新角色名单。', character_not_alive: '该角色已经死亡，请选择其他存活角色或创建新角色。',
+  missing_character: '找不到这个角色，请刷新名单。', character_limit: '历史角色数量已达到上限，请选择已有的存活角色。',
+  invalid_name: '名字需要 1–100 个字符，且不能包含控制字符或保留名称。请修改后再试。', missing_species: '当前世界已没有这个种族，请刷新创建选项。',
+  character_id_collision: '新角色编号与历史记录冲突，请联系管理员检查；不要连续重复创建。', character_busy: '角色还有未结算行动，请等待完成后刷新。',
   insufficient_energy: '体力不足，先休息恢复后再试。', action_budget_exhausted: '同一轮已执行过行动。等下一轮再试，不要连续提交。',
   insufficient_currency: '货币不足，可以先工作，或选择更便宜的商品。', insufficient_stock: '商店库存不足，请刷新后选择其他商品。',
   out_of_stock: '商品已售罄，请选择其他商品。', inventory_full: '背包已满，可以出售不需要的物品。',
   shop_not_at_location: '角色已不在这家商店所在地点，请刷新商店。', shop_insufficient_currency: '商店的钱不够，暂时无法收购物品。',
   missing_item: '这件物品已不存在，请刷新背包。', item_not_owned: '这件物品不属于当前角色，请刷新背包。',
-  active_character_not_alive: '角色已无法行动，需要管理员处理角色。', actor_not_alive: '角色已无法行动，需要管理员处理角色。',
-  observer_cannot_act: '当前在观察模式，需要绑定可控制的角色后才能行动。', missing_active_character: '当前没有可控制的角色，请联系管理员绑定角色。',
+  active_character_not_alive: '角色已无法行动，到“我的角色”选择其他存活角色或创建新角色。', actor_not_alive: '角色已无法行动，到“我的角色”选择其他存活角色或创建新角色。',
+  observer_cannot_act: '当前在观察模式，到“我的角色”创建或切换角色后再行动。', missing_active_character: '当前没有可控制的角色，到“我的角色”创建或切换角色。',
   training_cap: '训练已达到当前上限，可以尝试其他行动。', invalid_actor_state: '角色状态异常，请联系管理员检查。',
   no_item_effect: '当前生命或体力已满，这件物品现在没有效果，无需消耗。',
 };
@@ -57,13 +62,16 @@ export function receiptText(receipt, knownType = '') {
   if (type === 'equip_item') effects.push('装备已生效，角色属性已更新');
   if (type === 'use_item') effects.push('已使用 1 件物品，角色状态已更新');
   if (type === 'wait') effects.push('现在可以选择工作、休息或训练');
+  if (type === 'create_character') effects.push(`「${value.name || '新角色'}」已建立，请查看角色名单和当前状态`);
+  if (type === 'switch_character') effects.push('已切换，请查看当前角色的位置、资源和背包');
+  if (type === 'move') effects.push('已到达目标地点，请查看“探索地点”和当地商店');
   return `${label}完成${effects.length ? `：${effects.join('；')}` : '。角色状态已更新。'}`;
 }
 export function nextStep(state, { pending, waitingId, stale = false, completed = new Set() } = {}) {
   if (pending) return { title: '先确认上一次操作', text: '刚才的连接没有返回确认。用原编号重试，可以避免重复扣款或重复执行。', label: '确认上一次操作', kind: 'retry', step: 0 };
   if (waitingId) return { title: '行动已收到，等待结算', text: '现在不用再点行动按钮。等待世界推进，再查看这条行动的结果。', label: '查看执行结果', kind: 'refresh', step: 0 };
   if (stale) return { title: '先重新读取角色状态', text: '上次刷新没有完成，下面保留的是旧数据。先刷新确认当前状态，再选择新的行动。', label: '重新刷新', kind: 'refresh', step: 0 };
-  if (!state?.character || state.player?.controlMode !== 'character' || state.character.status !== 'alive') return { title: '当前只能查看世界', text: '你的账号目前没有可以行动的角色。需要管理员绑定或更换角色；本页面暂不支持创建角色。', label: '刷新角色状态', kind: 'refresh', step: 0 };
+  if (!state?.character || state.player?.controlMode !== 'character' || state.character.status !== 'alive') return { title: '先选择一个可以行动的角色', text: '到“我的角色”切换到存活角色；如果还没有角色，可以填写名字、选择出生地点和种族，创建后继续行动。', label: '前往我的角色', kind: 'characters', step: 0 };
   const rules = state.actionRules || {}, stats = state.character.stats || {}, inventory = state.inventory || { items: [], shops: [] };
   const action = (title, text, label, type, payload = {}, step = 1) => ({ title, text, label, type, payload, kind: 'command', step });
   if ((stats.energy ?? 0) < (rules.workEnergy ?? 0)) return action('先恢复体力', `当前体力 ${stats.energy ?? 0}，不足以工作。先休息一次，再继续体验。`, '休息，恢复体力', 'rest');
