@@ -42,7 +42,7 @@ npm --prefix world-engine run database:postgres -- import --input output/my-vall
 | playerRules | 现有行动规则，例如 workYield、gatherYield；见 PLAYER_ACTION_RULES.md |
 | seedTicks | 0–100，默认 0；初始化完成后使用正式确定性运行器预推进 |
 
-ID 为 1–128 位 ASCII 字母、数字、下划线、点或短横线，以字母或数字开头；拒绝原型保留键。名称支持中文。每包最多 16 个模板，输入上限 1 MiB，诊断最多 64 条。数值不接受字符串转换、NaN、Infinity、负资源或生命高于上限。角色初始为存活；demographics 只接受 age、sex、generation，不能伪造已有家族或死亡历史。
+ID 为 1–128 位 ASCII 字母、数字、下划线、点或短横线，以字母或数字开头；拒绝原型保留键。人物不能占用 `observer_character_正整数` 编号空间，以免阻塞内置 observer 玩家创建角色。名称支持中文。每包最多 16 个模板，输入上限 1 MiB，诊断最多 64 条。数值不接受字符串转换、NaN、Infinity、负资源或生命高于上限。角色初始为存活；demographics 只接受 age、sex、generation，不能伪造已有家族或死亡历史。
 
 组织显式 id 优先，否则使用 key 作为实际 id。成员必须存在，首领角色固定为 leader，其他成员只可为 member/student。全部组织编号与别名先校验，再构建索引；不会跳过错误成员或关系。
 

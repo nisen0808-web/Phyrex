@@ -33,6 +33,11 @@ try {
   assert(!result.stdout.includes('secret-invalid-reference'));
   result = cli('engine-init-cli.js',['--output',rejected,'--template-file',invalid]);
   assert.equal(result.status,1); assert(!fs.existsSync(rejected)); assert(!result.stderr.includes('secret-invalid-reference'));
+  const collision = JSON.parse(fs.readFileSync(template,'utf8'));
+  collision.templates[0].definition.entities.push({id:'observer_character_1',locationId:'river-village'});
+  fs.writeFileSync(invalid,JSON.stringify(collision));
+  result = cli('engine-init-cli.js',['--output',rejected,'--template-file',invalid]);
+  assert.equal(result.status,1); assert(JSON.parse(result.stderr).issues.some(i=>i.code==='reserved')); assert(!fs.existsSync(rejected));
   for (const flags of [['--population','4'],['--commerce','starter'],['--player-rules',template],['--template-id','missing']]) {
     assert.equal(cli('engine-init-cli.js',['--output',rejected,'--template-file',template,...flags]).status,1); assert(!fs.existsSync(rejected));
   }

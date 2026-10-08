@@ -20,6 +20,7 @@ const messages = {
   duplicate: '编号、成员或连接重复。', reference: '引用的地点、人物或组织不存在。',
   value: '此字段的值不受支持。', selection: '请明确选择模板包中的一个模板编号。',
   rules: '行动规则不符合引擎现有的服务端约束。',
+  reserved: '此人物编号占用内置观察者创建角色时的保留编号，请使用其他编号。',
 };
 
 // This strict entry point is separate from the historical, trusted-host template
@@ -131,6 +132,7 @@ function inspectEngineTemplate(input, options = {}) {
     const entities = array(d.entities ?? [], `${q}.entities`, 1000), entityIds = uniqueIds(entities, `${q}.entities`);
     entities.forEach((row,i) => { const r = `${q}.entities[${i}]`;
       if (!object(row,r,['id','name','species','locationId','traits','stats','resources','demographics','tags'])) return;
+      if (typeof row.id === 'string' && /^observer_character_[1-9][0-9]*$/.test(row.id)) issue(`${r}.id`,'reserved');
       reference(row.locationId, `${r}.locationId`, locationIds); optional(row.name, `${r}.name`, text);
       if (row.species !== undefined && !Object.hasOwn(DEFAULT_SPECIES,row.species)) issue(`${r}.species`, 'reference');
       optional(row.traits, `${r}.traits`, (v,s) => numbers(v,s,100)); optional(row.resources, `${r}.resources`, numbers);

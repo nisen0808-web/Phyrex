@@ -20,6 +20,14 @@ invalid(t => t.definition.connections.push(['river-village','missing']),'referen
 invalid(t => t.definition.connections.push(['pine-forest','river-village']),'duplicate');
 invalid(t => t.definition.entities[0].locationId = 'missing','reference');
 invalid(t => t.definition.entities[0].species = 'unknown','reference');
+for (const suffix of [1,2,100]) invalid(t => {
+  const previous = t.definition.entities[0].id, reserved = `observer_character_${suffix}`;
+  t.definition.entities[0].id = reserved;
+  for (const org of t.definition.organizations) {
+    if (org.leaderId === previous) org.leaderId = reserved;
+    org.members = org.members.map(id => id === previous ? reserved : id);
+  }
+},'reserved');
 invalid(t => t.definition.entities[0].stats.health = '100','number');
 invalid(t => t.definition.entities[0].stats.maxHealth = 10,'value');
 invalid(t => t.definition.entities[0].resources.food = -1,'number');
