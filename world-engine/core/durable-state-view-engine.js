@@ -48,7 +48,7 @@ function explorationView(world, player, entity, location) {
 }
 function playerStateView(world, revision, playerId) {
   const player = world.players.byId[playerId];
-  const entity = ownedCharacter(world, player, player.activeEntityId);
+  const entity = player.controlMode === 'character' ? ownedCharacter(world, player, player.activeEntityId) : null;
   const location = own(world.locations, player.controlMode === 'observer' ? player.observerLocationId : entity?.locationId);
   return {
     worldId: world.id, revision, tick: world.tick,

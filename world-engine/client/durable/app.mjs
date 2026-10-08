@@ -198,7 +198,7 @@ function renderCommerce(inventory = { items: [], shops: [] }) {
     }
     return itemRow(`${itemName(item)} × ${item.quantity}`, itemDescription(item), buttons);
   });
-  $('inventory-list').replaceChildren(...(items.length ? items : [node('p', '背包还是空的。去旁边商店买一件装备，再回来点击“装备”。', 'empty')]));
+  $('inventory-list').replaceChildren(...(items.length ? items : [node('p', state.character ? '背包还是空的。去旁边商店买一件装备，再回来点击“装备”。' : '先创建或切换角色，再查看它的背包。', 'empty')]));
   if (inventory.itemCount > items.length) $('inventory-list').append(node('p', `展示 ${items.length} / ${inventory.itemCount} 组物品`, 'muted'));
   const shops = [];
   for (const shop of inventory.shops) {
@@ -212,7 +212,7 @@ function renderCommerce(inventory = { items: [], shops: [] }) {
     if (inventory.shopCount > inventory.shops.length) shops.push(node('p', `展示 ${inventory.shops.length} / ${inventory.shopCount} 家商店`, 'muted'));
     if (shop.stockCount > shop.stock.length) shops.push(node('p', `已显示 ${shop.stock.length} / ${shop.stockCount} 种商品`, 'muted'));
   }
-  $('shop-list').replaceChildren(...(shops.length ? shops : [node('p', '当前地点没有商店。', 'empty')]));
+  $('shop-list').replaceChildren(...(shops.length ? shops : [node('p', state.character ? '当前地点没有商店。' : '先创建或切换角色，再查看它所在地点的商店。', 'empty')]));
 }
 function renderHistory(page) {
   historyCursor = page.nextBeforeSequence;

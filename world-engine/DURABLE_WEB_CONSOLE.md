@@ -59,7 +59,7 @@ node world-engine/tests/helpers/console-fixture.js --lose-first-response
 - 创建表单仅提交 name、species、locationId、active；角色属性由已有规则生成。创建后切换到新角色，旧角色保留。名单最多显示 100 个，历史名额上限沿用现有 100 个约束，死亡角色也占名额。
 - `/players/:playerId/state` 在同一个授权 checkpoint 上增加 `characters`、`characterCount`、`characterCreation` 与 `surroundings`。不新增 SQL migration，不改变 runtime v5 或命令规则。
 - 创建选项最多显示 128 个出生地点、32 个种族；相邻地点 128 个、当地存活人物 32 位、驻地组织 16 个，均返回实际总数。地点/人物/组织使用固定安全字段，不暴露其他人物的属性、背包、账户、元数据或私有记忆。
-- 当前观察模式使用 observerLocationId，不能被保留的 activeEntityId 地点覆盖。“探索地点”只列直接相邻道路；移动使用既有 move 指令，入队时不提前改变位置。结算后统一更新地点、人物、商店和事件。
+- 当前观察模式使用 observerLocationId，不能被保留的 activeEntityId 地点覆盖；未控制角色时不展示旧角色的属性、背包和商店，仍能通过名单切换回来。“探索地点”只列直接相邻道路；移动使用既有 move 指令，入队时不提前改变位置。结算后统一更新地点、人物、商店和事件。
 - 地点事件最多 20 条，仅投影当前地点已 resolved 的 entity.moved、entity.rested、entity.worked、resource.gathered。只含编号、类型、轮数和最多 4 位参与者的编号/名称；不发送 payload/result、私有管理事件或异地活动。它是近期保留记录，不是全世界历史或每种行动的完整日志。
 - 创建、切换、移动沿用同一 pending 指令持久化与原编号重试。旧数据、未确认提交和待结算回执都会禁用新操作；角色控制操作不要求已有存活角色。页面所有名称以 textContent 显示。
 

@@ -26,6 +26,9 @@ async function main() {
   player.controlMode = 'observer'; player.observerLocationId = 'away';
   assert.equal(playerStateView(world, 9, 'one').location.id, 'away', 'observer location wins over retained active character');
   assert.equal(playerStateView(world, 9, 'one').characters[0].active, false);
+  assert.equal(playerStateView(world, 9, 'one').character, null, 'observer mode must not present the retained active character as controlled');
+  assert.equal(playerStateView(world, 9, 'one').inventory.shops.length, 0, 'do not mix retained character shops with the observer location');
+  player.controlMode = 'character';
   player.activeEntityId = 'hero-two'; assert.equal(playerStateView(world, 9, 'one').character, null, 'active DTO also requires all ownership indexes');
   player.controlMode = 'character'; player.activeEntityId = 'hero-one';
   for (let i = 0; i < 140; i++) { registerLocation(world, { id: `loc-${i}`, name: 'x'.repeat(500) }); connectLocations(world, 'home', `loc-${i}`); }
