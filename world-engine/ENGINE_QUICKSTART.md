@@ -23,6 +23,8 @@ npm.cmd --prefix world-engine run database:postgres -- migrate
 
 ## 建立世界与账户
 
+创建自己的地点、人物与组织时，可使用严格校验的 JSON 模板入口，见 [用配置创建正式引擎世界](ENGINE_WORLD_TEMPLATES.md)。下方流程继续使用固定样例；模板生成的存档沿用同样的导入、账户与运行步骤。
+
 以下流程假设是空 schema。已有世界请直接恢复，不能重新导入覆盖。
 
 ```powershell

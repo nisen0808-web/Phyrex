@@ -28,6 +28,7 @@
 | `npm --prefix world-engine run account:admin` | `node demo/account-admin-cli.js` |
 | `npm --prefix world-engine run test:engine:scale` | `node tests/integration/engine-scale.js` |
 | `npm --prefix world-engine run engine:init` | `node demo/engine-init-cli.js` |
+| `npm --prefix world-engine run engine:template` | `node demo/engine-template-cli.js` |
 | `npm --prefix world-engine run engine:profile` | `node demo/engine-profile-cli.js` |
 | `npm --prefix world-engine run test:postgres:quickstart` | `node tests/integration/postgres-engine-quickstart.js` |
 | `npm --prefix world-engine run test:postgres:account-admin` | `node tests/integration/postgres-account-admin.js` |
