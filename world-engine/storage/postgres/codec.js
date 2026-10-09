@@ -126,16 +126,49 @@ function validateArchivedSave(row) {
   return true;
 }
 function restoreSave(row) {
+  return restoreEnvelope(row, false);
+}
+// The SQL text is parsed here, so this function exclusively owns the resulting
+// JSON tree. It can repair that tree without a second full stringify/parse copy.
+// Public restoreSave still detaches callers' records before repairing them.
+function restoreReadView(row) {
+  let envelope;
+  try {
+    // SQL NULL is the archived-payload marker; unlike JSON null, the driver
+    // returns it as a JS null rather than a string from envelope::text.
+    if (row.envelope_json === null) envelope = null;
+    else {
+      if (typeof row.envelope_json !== 'string') throw new Error('missing JSON text');
+      envelope = JSON.parse(row.envelope_json);
+    }
+    // PostgreSQL numeric can exceed JS's finite range. JSON.parse alone accepts
+    // 1e400 as Infinity; preserve detachedJson's rejection before any repairs.
+    const pending = [envelope];
+    while (pending.length) {
+      const value = pending.pop();
+      if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('nonfinite');
+      if (value && typeof value === 'object') for (const key of Object.keys(value)) {
+        const child = value[key];
+        if (typeof child === 'number') {
+          if (!Number.isFinite(child)) throw new Error('nonfinite');
+          if (Object.is(child, -0)) value[key] = 0; // same normalization as JSON capture
+        } else if (child && typeof child === 'object') pending.push(child);
+      }
+    }
+  } catch (_) { throw databaseError('CORRUPT_RECORD', 'World checkpoint is not finite JSON'); }
+  return restoreEnvelope({ ...row, envelope }, true);
+}
+function restoreEnvelope(row, ownsEnvelope) {
   const summary = summarizeSave(row);
   if (validateArchivedSave(row)) throw databaseError('CHECKPOINT_ARCHIVED', 'Checkpoint payload was archived; restore its earlier backup to access it');
   if (digest(row.envelope) !== row.payload_digest) throw databaseError('CORRUPT_RECORD', 'World checkpoint checksum mismatch');
   try {
     validateWorldSaveRecord({ recordType: 'world_save', id: row.request_id, sequence: summary.sequence,
       worldId: summary.worldId, tick: summary.tick, schemaVersion: summary.schemaVersion, envelope: row.envelope });
-    const envelope = migrateSaveEnvelope(detachedJson(row.envelope));
+    const envelope = migrateSaveEnvelope(ownsEnvelope ? row.envelope : detachedJson(row.envelope));
     repairLoadedWorld(envelope.world);
     return { ...summary, metadata: envelope.metadata, world: envelope.world };
   } catch (_) { throw databaseError('CORRUPT_RECORD', 'World checkpoint schema or headers are invalid'); }
 }
 module.exports = { textId, safeInteger, fromSqlInteger, detachedJson, canonicalJson, digest,
-  captureCheckpoint, captureEvent, captureCommandInput, captureInboxCommand, captureCommandResult, summarizeSave, restoreSave, validateArchivedSave };
+  captureCheckpoint, captureEvent, captureCommandInput, captureInboxCommand, captureCommandResult, summarizeSave, restoreSave, restoreReadView, validateArchivedSave };
