@@ -73,7 +73,7 @@ async function main() {
     revision: Infinity, tick: -1, heartbeatAgeMs: 'secret', failures: {}, failureKind: 'secret-error' } });
   assert.equal(sanitized.runtime.status, 'unknown'); assert.equal(sanitized.runtime.revision, null);
   assert.equal(sanitized.runtime.tick, null); assert.equal(sanitized.runtime.failureKind, 'runtime_failed');
-  assert.deepStrictEqual(sanitized.admission, { rejected: null, lastRejection: { reason: 'runtime_failed', heartbeatAgeMs: null, revision: null, tick: null } });
+  assert.deepStrictEqual(sanitized.admission, { rejected: null, lastRejection: { reason: 'runtime_failed', authenticated: false, heartbeatAgeMs: null, revision: null, tick: null } });
   assert.ok(!JSON.stringify(sanitized).includes('secret'));
   console.log('durable operations API passed: authorization, revision fence, redaction, blocked worker, audit failures and both rate limits');
 }

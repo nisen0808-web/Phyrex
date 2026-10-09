@@ -12,7 +12,7 @@ PostgreSQL adapter 新增 `loadWorldView(worldId)`，只用于 HTTP 只读投影
 
 ## 暂时不可用诊断
 
-GM/Admin 的 `/admin/operations` 增加 `service.admission`：本进程拒绝提交次数以及最近一次拒绝时的安全原因、heartbeatAgeMs、revision、tick。原因白名单区分数据库不可用、心跳过期、运行器故障和停止状态；不公开错误堆栈、连接串或令牌。健康探针不累计提交拒绝。服务恢复后保留最近拒绝，重启清零。
+GM/Admin 的 `/admin/operations` 增加 `service.admission`：本进程因 503 拒绝提交的次数，以及最近一次的安全原因、是否已完成认证、heartbeatAgeMs、revision、tick。覆盖认证读取失败、运行器拒绝和实际入队失败三个阶段；认证前数据库失败不会被当作已认证用户。原因白名单区分数据库不可用、心跳过期、运行器故障和停止状态；不公开错误堆栈、连接串或令牌。401/403、健康探针不累计提交拒绝。服务恢复后保留最近拒绝，重启清零。
 
 运行器拒绝接收提交时仍返回 503 `service_unavailable`，增加 `Retry-After: 1`。客户端应保留原 command ID，稍后查询或重试；这不是保证一秒后恢复，也不会自动执行一次新意图。原心跳门禁没有放宽。
 

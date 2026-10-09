@@ -25,12 +25,13 @@ async function createEngineService(options = {}, factories = {}) {
   async function isReady() { return (await readiness()) === null; }
   async function canSubmit() {
     const reason = await readiness();
-    if (reason) {
-      rejected++;
-      const state = runtime?.summary();
-      lastRejection = { reason, heartbeatAgeMs: state?.heartbeatAgeMs, revision: state?.revision, tick: state?.tick };
-    }
-    return reason === null;
+    if (reason) throw Object.assign(serviceError('UNAVAILABLE'), { statusCode: 503, apiCode: 'service_unavailable', retryAfterMs: 1000, admissionReason: reason });
+    return true;
+  }
+  function onSubmitUnavailable({ reason, authenticated }) {
+    rejected++;
+    const state = runtime?.summary();
+    lastRejection = { reason, authenticated, heartbeatAgeMs: state?.heartbeatAgeMs, revision: state?.revision, tick: state?.tick };
   }
   function status() {
     return { stopping, intervalMs: options.intervalMs ?? 1000, runtime: runtime?.summary(),
@@ -51,7 +52,7 @@ async function createEngineService(options = {}, factories = {}) {
   try {
     api = await (factories.createApi || createDurableCommandApiServer)({ webConsole: true, ...(options.api || {}),
       env: options.env, database: options.database, worldId: options.worldId,
-      rateLimitNow: wallClockNow, health: isReady, canSubmit, serviceStatus: status });
+      rateLimitNow: wallClockNow, health: isReady, canSubmit, onSubmitUnavailable, serviceStatus: status });
     if (typeof api.store.getWorldHead !== 'function' || !await api.store.getWorldHead(options.worldId)) throw serviceError('MISSING_WORLD');
     // Reserve the listener before starting the writer: port collisions must not
     // evolve the world. Readiness stays false until the worker is ready.

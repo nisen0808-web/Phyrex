@@ -40,6 +40,20 @@ async function main() {
     const operations = await request(port, '/durable/worlds/service-world/admin/operations', { token: 'admin-secret-token' });
     assert.strictEqual(operations.body.data.service.admission.rejected, 2);
     assert.strictEqual(operations.body.data.service.admission.lastRejection.reason, 'database_unavailable');
+    const originalLoad = f.store.loadWorld, originalEnqueue = f.store.enqueueCommand;
+    f.store.loadWorld = async () => { throw Object.assign(new Error('secret'), { code: 'WORLD_DB_UNAVAILABLE' }); };
+    assert.strictEqual((await request(port, command, { method: 'POST', body: { id: 'auth-db-failure', type: 'wait' } })).status, 503);
+    assert.strictEqual(service.summary().admission.rejected, 3);
+    assert.strictEqual(service.summary().admission.lastRejection.authenticated, false);
+    assert.strictEqual((await request(port, command, { token: null, method: 'POST', body: { id: 'anonymous', type: 'wait' } })).status, 401);
+    assert.strictEqual(service.summary().admission.rejected, 3);
+    f.store.loadWorld = originalLoad;
+    f.store.enqueueCommand = async () => { throw Object.assign(new Error('secret'), { code: 'WORLD_DB_TIMEOUT' }); };
+    assert.strictEqual((await request(port, command, { method: 'POST', body: { id: 'enqueue-db-failure', type: 'wait' } })).status, 503);
+    assert.strictEqual(service.summary().admission.rejected, 4);
+    assert.strictEqual(service.summary().admission.lastRejection.authenticated, true);
+    assert.strictEqual(service.summary().admission.lastRejection.reason, 'database_unavailable');
+    f.store.enqueueCommand = originalEnqueue;
     assert.strictEqual(f.state.enqueues, 1, 'rejected requests must never enqueue');
   } finally {
     const close = service.close(); assert.strictEqual(service.close(), close); await close;

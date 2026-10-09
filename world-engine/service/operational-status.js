@@ -17,6 +17,7 @@ function serviceStatusView(value) {
     admission: { rejected: count(value.admission?.rejected),
       lastRejection: value.admission?.lastRejection ? {
         reason: rejections.has(value.admission.lastRejection.reason) ? value.admission.lastRejection.reason : 'runtime_failed',
+        authenticated: value.admission.lastRejection.authenticated === true,
         heartbeatAgeMs: count(value.admission.lastRejection.heartbeatAgeMs),
         revision: count(value.admission.lastRejection.revision), tick: count(value.admission.lastRejection.tick),
       } : null },

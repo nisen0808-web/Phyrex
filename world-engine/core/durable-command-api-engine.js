@@ -53,6 +53,7 @@ async function createDurableCommandApiServer(options = {}) {
   const shutdownTimeoutMs = boundedInteger(options.shutdownTimeoutMs ?? 5000, 10, 60000, 'shutdownTimeoutMs');
   if (options.health !== undefined && typeof options.health !== 'function') throw apiError(500, 'invalid_health');
   if (options.canSubmit !== undefined && typeof options.canSubmit !== 'function') throw apiError(500, 'invalid_admission');
+  if (options.onSubmitUnavailable !== undefined && typeof options.onSubmitUnavailable !== 'function') throw apiError(500, 'invalid_admission');
   if (options.serviceStatus !== undefined && (typeof options.serviceStatus !== 'function' || typeof options.worldId !== 'string' || !options.worldId)) throw apiError(500, 'invalid_service_status');
   const consoleAssets = options.webConsole === true ? createConsoleAssets() : null;
   const ownsStore = !options.store || options.closeStore === true;
@@ -94,6 +95,12 @@ async function createDurableCommandApiServer(options = {}) {
     const task = handleRequest(req, res, store, auditStore, requestOptions, audit)
       .then(() => audit.probe ? null : persistAudit(auditStore, audit, res.statusCode, null), error => {
         const mapped = mapError(error);
+        if (audit.route === 'submit' && mapped.status === 503) {
+          const database = ['WORLD_DB_UNAVAILABLE','WORLD_DB_TIMEOUT','WORLD_DB_MIGRATION_REQUIRED','WORLD_DB_CLOSED'].includes(error?.code);
+          // Record failed authorization reads and post-probe enqueues as well as
+          // worker admission failures. No raw error or bearer token is exposed.
+          try { options.onSubmitUnavailable?.({ reason: database ? 'database_unavailable' : error?.admissionReason || 'runtime_not_ready', authenticated: audit.accountId !== null }); } catch (_) {}
+        }
         writeMappedError(res, error);
         req.resume();
         return audit.probe ? null : persistAudit(auditStore, audit, mapped.status, mapped.code);
