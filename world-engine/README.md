@@ -1,5 +1,7 @@
 # Phyrex 世界引擎 / Universal World Engine
 
+世界工坊：运行正式服务后打开 `/world-builder`，无需令牌即可本地编辑、预览和下载新世界配置。使用说明见 [WORLD_WORKBENCH.md](WORLD_WORKBENCH.md)。
+
 这是一个主题无关、持续运行和演化的世界引擎。
 
 当前 v1 的总能力、编程入口和统一验收见 [引擎 v1 交付](ENGINE_V1_RELEASE.md)，物品/装备/商店的持久流程见 [库存与交易](DURABLE_INVENTORY.md)。

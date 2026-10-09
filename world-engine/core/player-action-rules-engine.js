@@ -5,28 +5,11 @@ const { nextWorldId } = require('./world-id-engine');
 const { TYPES: ITEM_ACTIONS, planInventoryOperation, applyInventoryOperation } = require('./inventory-operations-engine');
 const RULE_VERSION = 1;
 const PRIORITY = Object.freeze({ equip_item: 60, unequip_item: 60, use_item: 65, buy_item: 55, sell_item: 55, give_item: 50, move: 70, gather: 50, work: 55, train: 60, rest: 65, interact: 45, transfer: 50, damage: 80 });
-const DEFAULT_PLAYER_ACTION_RULES = Object.freeze({ version: RULE_VERSION,
-  workResource: 'currency', workYield: 10, workEnergy: 6, gatherYield: 3, gatherEnergy: 4,
-  trainingExperience: 2, trainingEnergy: 8, experiencePerPower: 10, trainingPowerCap: 1000,
-  restHealth: 12, restEnergy: 20, attackEnergy: 8, moveEnergy: 2, transferEnergy: 1,
-  interactEnergy: 2, interactStrength: 3, maxResourceKinds: 128 });
+const { DEFAULT_PLAYER_ACTION_RULES, normalizePlayerActionRules } = require('../shared/template-validation');
 const own = (object, key) => object && Object.hasOwn(object, key) ? object[key] : undefined;
 const record = value => value && typeof value === 'object' && !Array.isArray(value);
 const keyName = value => typeof value === 'string' && value.trim().length > 0 && value.length <= 200
   && !/[\u0000-\u001f]/.test(value) && !Object.hasOwn(Object.prototype, value);
-function normalizePlayerActionRules(input = {}) {
-  if (!record(input) || Object.keys(input).some(key => !Object.hasOwn(DEFAULT_PLAYER_ACTION_RULES, key))) throw invalidRules();
-  const rules = { ...DEFAULT_PLAYER_ACTION_RULES, ...input };
-  if (rules.version !== RULE_VERSION || !keyName(rules.workResource)) throw invalidRules();
-  for (const [key, value] of Object.entries(rules)) {
-    if (['version', 'workResource'].includes(key)) continue;
-    const max = ['trainingPowerCap', 'experiencePerPower'].includes(key) ? 1000000 : key === 'maxResourceKinds' ? 1000 : 100;
-    const min = ['restHealth', 'restEnergy'].includes(key) ? 0 : 1;
-    if (!Number.isSafeInteger(value) || value < min || value > max) throw invalidRules();
-  }
-  return rules;
-}
-function invalidRules() { return Object.assign(new Error('Invalid player action rules'), { code: 'WORLD_RUNTIME_INVALID_ACTION_RULES' }); }
 function getPlayerActionRules(world) { return normalizePlayerActionRules(world.playerActionRules); }
 function configurePlayerActionRules(world, input) {
   const rules = normalizePlayerActionRules(input); world.playerActionRules = rules; return { ...rules };
