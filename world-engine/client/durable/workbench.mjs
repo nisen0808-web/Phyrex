@@ -33,7 +33,7 @@ function renderPreview(t, d, location) {
   const neighbors = (d.connections ?? []).filter(edge => edge.includes(location.id)).map(edge => edge.find(id => id !== location.id));
   $('map').append(el('p', neighbors.length ? '↕ 可以直接前往以下地点' : '暂无道路连接，可以在“连接道路”中添加'));
   for (const id of neighbors) { const button = el('button',labels.get(id) ?? id); button.type = 'button'; button.addEventListener('click', () => { locationId = id; render(); }); $('map').append(button); }
-  $('preview-context').textContent = `${t.observerLocationId === location.id ? '观察者起点 · ' : ''}${t.starterShops?.includes(location.id) ? '有初始商店 · ' : ''}危险程度 ${location.danger ?? 0} / 100${t.seedTicks ? ` · 配置另有 ${t.seedTicks} 轮预推进` : ''}`;
+  $('preview-context').textContent = `${(t.observerLocationId ?? d.locations[0].id) === location.id ? '观察者起点 · ' : ''}${t.starterShops?.includes(location.id) ? '有初始商店 · ' : ''}危险程度 ${location.danger ?? 0} / 100${t.seedTicks ? ` · 配置另有 ${t.seedTicks} 轮预推进` : ''}`;
   for (const [target, rows] of [['preview-people',(d.entities ?? []).filter(e => e.locationId === location.id).map(e => `${e.name || e.id} · ${speciesNames[e.species ?? 'human'] ?? e.species}`)],['preview-organizations',(d.organizations ?? []).filter(o => o.homeLocationId === location.id).map(o => o.name || o.id || o.key)]]) {
     $(target).replaceChildren(...(rows.length ? rows : ['暂无']).map(name => el('li',name)));
   }

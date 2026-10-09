@@ -36,6 +36,12 @@ async function main() {
   assert.equal(nextId([{id:'place-1'},{id:'place-3'}],'place'),'place-2');
   assert(locationReferences(sample.templates[0],'river-village') > 0); assert(entityReferences(sample.templates[0],'valley-elder') > 0);
   assert.equal(locationReferences(sample.templates[0],'missing'),0);
+  const blank = { id:'blank', name:'空白', definition:{ locations:[{id:'home'},{id:'away'}] } };
+  assert.equal(locationReferences(blank,'home'),1,'implicit observer start is a protected reference');
+  assert.equal(engine.createEngineWorldFromTemplate(blank).players.byId.observer.observerLocationId,'home');
+  blank.observerLocationId = 'away';
+  assert.equal(locationReferences(blank,'home'),0,'old start can be removed after choosing another start');
+  assert.equal(locationReferences(blank,'away'),1);
   const source = fs.readFileSync(path.join(__dirname,'../shared/template-validation.js'),'utf8');
   const context = vm.createContext({TextEncoder}); vm.runInContext(source,context);
   const cases = [sample,duplicate,null,JSON.parse('{"__proto__":{}}'),{id:'bad',name:'坏配置',definition:{locations:[{id:'constructor'}]}},clone(sample)];

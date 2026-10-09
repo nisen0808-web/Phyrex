@@ -57,7 +57,7 @@ export function locationReferences(template, id) {
     + (d.organizations ?? []).filter(o => o.homeLocationId === id).length
     + (d.connections ?? []).filter(edge => edge.includes(id)).length
     + (template.starterShops ?? []).filter(value => value === id).length
-    + (template.observerLocationId === id ? 1 : 0);
+    + ((template.observerLocationId ?? d.locations[0]?.id) === id ? 1 : 0);
 }
 export function entityReferences(template, id) {
   return (template.definition.organizations ?? []).filter(o => o.leaderId === id || o.members?.includes(id) || Object.hasOwn(o.roles ?? {}, id)).length;
