@@ -8,7 +8,8 @@ const { fixture, request } = require('../helpers/service-fixture');
 const { digest } = require('../../storage/postgres/codec');
 const { playerStateView } = require('../../core/durable-state-view-engine');
 const { revokeSession } = require('../../core/account-session-engine');
-function controlledReader(connectionString, schema, target = 4, failOnce = false) {
+const { listenForFetch } = require('../helpers/listen-for-fetch');
+function controlledReader(connectionString, schema, target = 4, failOnce = false, options = {}) {
   let release, reached, heads = 0, payloads = 0;
   const hold = new Promise(resolve => { release = resolve; });
   const ready = new Promise(resolve => { reached = resolve; });
@@ -36,7 +37,7 @@ function controlledReader(connectionString, schema, target = 4, failOnce = false
       return client;
     }
   }
-  const store = createPostgresDatabaseStore({ connectionString, schema, max: 8, Pool: ObservedPool });
+  const store = createPostgresDatabaseStore({ connectionString, schema, maxConnections: 8, ...options, Pool: ObservedPool });
   return { store, release, counts: () => ({ heads, payloads }), wait: async () => {
     let timer;
     try { await Promise.race([ready, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('cold-read barrier timed out')), 10000); })]); }
@@ -48,9 +49,9 @@ async function main() {
   assert(connectionString && /_(ci|test)$/.test(new URL(connectionString).pathname), 'Isolated _ci/_test database required; never skip');
   const schema = 'test_read_view_' + crypto.randomBytes(8).toString('hex'), q = `"${schema}"`;
   const store = createPostgresDatabaseStore({ connectionString, schema });
-  const raw = new Pool({ connectionString, max: 2 }); let api, renamed = false, groups = 0;
+  const raw = new Pool({ connectionString, max: 2 }); let api, limitedApi, renamed = false, groups = 0;
   const readers = [];
-  const reader = (target = 4, failOnce = false) => { const value = controlledReader(connectionString, schema, target, failOnce); readers.push(value); return value; };
+  const reader = (target = 4, failOnce = false, options = {}) => { const value = controlledReader(connectionString, schema, target, failOnce, options); readers.push(value); return value; };
   const pass = name => { groups++; console.log('PASS ' + name); };
   const world = fixture().state.world, base = '/durable/worlds/' + world.id;
   try {
@@ -144,13 +145,27 @@ async function main() {
     await assert.rejects(closing.store.loadWorldView(world.id), { code: 'WORLD_DB_CLOSED' });
     pass('close drains pending shared payload work and denies all subsequent reads');
 
+    const limited = reader(1, false, { maxConnections: 1, connectionTimeoutMillis: 500 });
+    await limited.store.getWorldHead(world.id);
+    limitedApi = await createDurableCommandApiServer({ store: limited.store, rateLimitNow: () => 0 });
+    const limitedPort = await listenForFetch(limitedApi.server);
+    const held = limited.store.loadWorldView(world.id); await limited.wait();
+    const unavailable = await request(limitedPort, base + '/players/one/state');
+    assert.equal(unavailable.status, 503); assert.equal(unavailable.body.error, 'service_unavailable');
+    assert(!JSON.stringify(unavailable.body).includes('timeout'));
+    limited.release(); await held;
+    assert.equal((await limited.store.loadWorldView(world.id)).revision, 4);
+    await limitedApi.close(); limitedApi = null;
+    pass('a real exhausted pool returns a safe temporary 503 and recovers after the active reader finishes');
+
     await api.close(); api = null; await store.close();
     await assert.rejects(store.loadWorldView(world.id), { code: 'WORLD_DB_CLOSED' });
     pass('closing the adapter clears its retained view and denies further reads');
-    assert.equal(groups, 12);
-    console.log('postgres read view completed 12 scenario groups: 12 passed, 0 failed');
+    assert.equal(groups, 13);
+    console.log('postgres read view completed 13 scenario groups: 13 passed, 0 failed');
   } finally {
     for (const value of readers) value.release();
+    if (limitedApi) await limitedApi.close();
     await Promise.all(readers.map(value => value.store.close()));
     if (api) await api.close(); await store.close();
     if (renamed) await raw.query(`ALTER TABLE ${q}.unavailable_saves RENAME TO world_saves`);

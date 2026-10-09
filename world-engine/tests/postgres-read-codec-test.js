@@ -2,6 +2,8 @@
 const assert = require('assert');
 const { captureCheckpoint, restoreSave, restoreReadView, digest } = require('../storage/postgres/codec');
 const { fixture } = require('./helpers/service-fixture');
+const { sanitizeError } = require('../storage/postgres/store');
+const { mapError } = require('../core/durable-command-api-engine');
 
 function record(world) {
   const captured = captureCheckpoint(world, { requestId: 'read-codec', expectedRevision: 0 });
@@ -48,4 +50,10 @@ const negativeZero = structuredClone(row); negativeZero.envelope.metadata.zero =
 negativeZero.payload_digest = digest(negativeZero.envelope);
 const zeroSql = textRow(negativeZero); zeroSql.envelope_json = zeroSql.envelope_json.replace('"zero":0','"zero":-1e-400');
 assert.deepStrictEqual(restoreReadView(zeroSql), restoreSave(negativeZero));
+for (const message of ['timeout exceeded when trying to connect', 'Connection terminated due to connection timeout', 'timeout expired']) {
+  const safe = sanitizeError(new Error(message, { cause: new Error('private-database-connection') }));
+  assert.equal(safe.code, 'WORLD_DB_TIMEOUT'); assert.equal(mapError(safe).status, 503);
+  assert(!JSON.stringify(safe).includes('private')); assert.equal(safe.cause, undefined);
+}
+assert.equal(sanitizeError(new Error('not a known timeout message')).code, 'WORLD_DB_SQL_ERROR');
 console.log('PostgreSQL read codec passed: exact legacy results, private ownership, headers, checksums, finite JSON and archived receipts');

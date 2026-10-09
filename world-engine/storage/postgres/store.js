@@ -379,8 +379,12 @@ function sanitizeError(error) {
   const sqlState = typeof error?.code === 'string' && /^[0-9A-Z]{5}$/.test(error.code) ? error.code : null;
   const unavailable = /^(08|57P)/.test(sqlState || '') || ['ECONNREFUSED','ECONNRESET','ENOTFOUND','ETIMEDOUT','EPIPE'].includes(error?.code)
     || ['Connection terminated unexpectedly', 'Connection terminated', 'Client has encountered a connection error and is not queryable'].includes(error?.message);
+  // pg/pg-pool connection deadlines have no SQLSTATE. Classify their exact
+  // driver messages as temporary timeouts, never expose the underlying cause.
+  const connectionTimeout = !sqlState && ['timeout exceeded when trying to connect',
+    'Connection terminated due to connection timeout', 'timeout expired'].includes(error?.message);
   const code = unavailable ? 'UNAVAILABLE' : ['42P01','3F000'].includes(sqlState) ? 'MIGRATION_REQUIRED'
-    : ['57014','55P03'].includes(sqlState) ? 'TIMEOUT' : 'SQL_ERROR';
+    : connectionTimeout || ['57014','55P03'].includes(sqlState) ? 'TIMEOUT' : 'SQL_ERROR';
   const safe = databaseError(code, `PostgreSQL operation failed${sqlState ? ` (${sqlState})` : ''}`);
   if (sqlState) safe.sqlState = sqlState;
   return safe;
