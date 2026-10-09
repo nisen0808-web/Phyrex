@@ -181,7 +181,7 @@ async function handleRequest(req, res, store, auditStore, options, audit) {
     const row = await withFreshPlayerAuthorization(store, route.worldId, route.playerId, token,
       options.authorizationAttempts, options.rateLimiters.submit, audit,
       async context => {
-        if (options.canSubmit && !await options.canSubmit()) throw apiError(503, 'service_unavailable');
+        if (options.canSubmit && !await options.canSubmit()) throw apiError(503, 'service_unavailable', { retryAfterMs: 1000 });
         return store.enqueueCommand({ worldId: route.worldId, id: body.id, playerId: route.playerId, input: body },
           { expectedWorldRevision: context.revision });
       });
@@ -361,9 +361,13 @@ async function withFreshCommandAuthorization(store, worldId, commandId, token, a
 
 async function authenticateWorld(store, worldId, token, audit) {
   if (!token) throw apiError(401, 'auth_required');
-  const loaded = await store.loadWorld(worldId);
+  const loaded = await (typeof store.loadWorldView === 'function' ? store.loadWorldView(worldId) : store.loadWorld(worldId));
   if (!loaded) throw apiError(404, 'world_not_found');
-  const auth = requireSession(validateSession(loaded.world, token));
+  // Session validation repairs legacy account indexes and marks expiry locally.
+  // Keep those mutations private to this request, never in a shared checkpoint.
+  const authWorld = { tick: loaded.world.tick, accounts: loaded.world.accounts === undefined
+    ? undefined : JSON.parse(JSON.stringify(loaded.world.accounts)) };
+  const auth = requireSession(validateSession(authWorld, token));
   audit.accountId = auth.account.id;
   return { world: loaded.world, revision: loaded.revision, auth };
 }
@@ -433,7 +437,7 @@ function writeMappedError(res, error) {
   if (res.writableEnded || res.destroyed) return;
   const mapped = mapError(error);
   if (mapped.status === 401) res.setHeader('WWW-Authenticate', 'Bearer');
-  if (mapped.status === 429) res.setHeader('Retry-After', String(Math.max(1, Math.ceil(Number(mapped.retryAfterMs || 1000) / 1000))));
+  if (mapped.status === 429 || (mapped.status === 503 && mapped.retryAfterMs !== undefined)) res.setHeader('Retry-After', String(Math.max(1, Math.ceil(Number(mapped.retryAfterMs || 1000) / 1000))));
   writeJson(res, mapped.status, { ok: false, error: mapped.code });
 }
 function mapError(error) {

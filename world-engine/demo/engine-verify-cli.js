@@ -7,6 +7,7 @@ const SQL = Object.freeze([
   ['postgres-store.js', 'integration', 15], ['postgres-command-inbox.js', 'command inbox', 8],
   ['postgres-durable-runtime.js', 'durable runtime', 11], ['postgres-runtime-commands.js', 'runtime commands', 7],
   ['postgres-command-api.js', 'command api', 9], ['postgres-command-audit.js', 'command audit', 4],
+  ['postgres-read-view.js', 'read view', 8],
   ['postgres-command-audit-query.js', 'command audit query', 10], ['postgres-backup.js', 'backup', 6],
   ['postgres-maintenance.js', 'maintenance', 8], ['postgres-account-admin.js', 'account admin', 8],
   ['postgres-engine-quickstart.js', 'quickstart', 8], ['postgres-engine-service.js', 'service', 9],
