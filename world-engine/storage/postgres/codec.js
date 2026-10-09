@@ -134,8 +134,13 @@ function restoreSave(row) {
 function restoreReadView(row) {
   let envelope;
   try {
-    if (typeof row.envelope_json !== 'string') throw new Error('missing JSON text');
-    envelope = JSON.parse(row.envelope_json);
+    // SQL NULL is the archived-payload marker; unlike JSON null, the driver
+    // returns it as a JS null rather than a string from envelope::text.
+    if (row.envelope_json === null) envelope = null;
+    else {
+      if (typeof row.envelope_json !== 'string') throw new Error('missing JSON text');
+      envelope = JSON.parse(row.envelope_json);
+    }
     // PostgreSQL numeric can exceed JS's finite range. JSON.parse alone accepts
     // 1e400 as Infinity; preserve detachedJson's rejection before any repairs.
     const pending = [envelope];

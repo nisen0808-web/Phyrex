@@ -44,8 +44,10 @@ for (const literal of ['1e400','-1e400']) {
   const envelope_json = JSON.stringify({ ...overflow.envelope, metadata: { ...overflow.envelope.metadata, bad: '__number__' } }).replace('"__number__"',literal);
   assert.throws(() => restoreReadView({ ...sql, envelope_json, payload_digest: digest(overflow.envelope) }), { code: 'WORLD_DB_CORRUPT_RECORD' });
 }
-const archived = { ...sql, envelope_json: 'null', archived_at: '2026-10-10T00:00:00Z', archived_metadata: {} };
+const archived = { ...sql, envelope_json: null, archived_at: '2026-10-10T00:00:00Z', archived_metadata: {} };
 assert.throws(() => restoreReadView(archived), { code: 'WORLD_DB_CHECKPOINT_ARCHIVED' });
+assert.throws(() => restoreReadView({ ...archived, envelope_json: 'null' }), { code: 'WORLD_DB_CHECKPOINT_ARCHIVED' });
+assert.throws(() => restoreReadView({ ...archived, archived_metadata: null }), { code: 'WORLD_DB_CORRUPT_RECORD' });
 const negativeZero = structuredClone(row); negativeZero.envelope.metadata.zero = -0;
 negativeZero.payload_digest = digest(negativeZero.envelope);
 const zeroSql = textRow(negativeZero); zeroSql.envelope_json = zeroSql.envelope_json.replace('"zero":0','"zero":-1e-400');

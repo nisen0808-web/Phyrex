@@ -5,7 +5,7 @@ const { Pool } = require('pg');
 const { createPostgresDatabaseStore } = require('../../storage/postgres/store');
 const { createDurableCommandApiServer } = require('../../core/durable-command-api-engine');
 const { fixture, request } = require('../helpers/service-fixture');
-const { digest } = require('../../storage/postgres/codec');
+const { digest, restoreReadView } = require('../../storage/postgres/codec');
 const { playerStateView } = require('../../core/durable-state-view-engine');
 const { revokeSession } = require('../../core/account-session-engine');
 const { listenForFetch } = require('../helpers/listen-for-fetch');
@@ -109,6 +109,13 @@ async function main() {
     assert.equal(digest(immutable.world), before);
     pass('session expiry is checked on each request without mutating shared account state');
 
+    await raw.query(`UPDATE ${q}.world_saves SET envelope=NULL, archived_at=clock_timestamp(), archived_metadata='{}'::jsonb WHERE world_id=$1 AND revision=1`, [world.id]);
+    const archived = await raw.query(`SELECT *, envelope::text AS envelope_json FROM ${q}.world_saves WHERE world_id=$1 AND revision=1`, [world.id]);
+    assert.strictEqual(archived.rows[0].envelope_json, null);
+    assert.throws(() => restoreReadView(archived.rows[0]), { code: 'WORLD_DB_CHECKPOINT_ARCHIVED' });
+    await assert.rejects(store.loadWorld(world.id, { revision: 1 }), { code: 'WORLD_DB_CHECKPOINT_ARCHIVED' });
+    pass('real SQL NULL in an archived payload preserves the archived-checkpoint result of normal restoration');
+
     const cold = reader();
     const concurrent = Promise.all(Array.from({ length: 4 }, () => cold.store.loadWorldView(world.id)));
     await cold.wait(); cold.release();
@@ -161,8 +168,8 @@ async function main() {
     await api.close(); api = null; await store.close();
     await assert.rejects(store.loadWorldView(world.id), { code: 'WORLD_DB_CLOSED' });
     pass('closing the adapter clears its retained view and denies further reads');
-    assert.equal(groups, 13);
-    console.log('postgres read view completed 13 scenario groups: 13 passed, 0 failed');
+    assert.equal(groups, 14);
+    console.log('postgres read view completed 14 scenario groups: 14 passed, 0 failed');
   } finally {
     for (const value of readers) value.release();
     if (limitedApi) await limitedApi.close();

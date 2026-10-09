@@ -1,6 +1,6 @@
 # Engine Development Progress
 
-当前开发层：首次读取与并发读取优化。SQL 文本独占解析减少一份完整存档复制，同一行的并发冷读共用一次完整处理；保留逐请求版本检查、有限数值、checksum、schema、权限和 revision fence。修复连接池超时被归入通用 500；新增读取恢复回归，普通测试 137 项，真实 SQL read-view 13 组，全部 SQL 17 专项共 158 组。设计和本地测量见 COMMITTED_READ_PERFORMANCE.md；合并与线上通过状态以最终交付证据为准。
+当前开发层：首次读取与并发读取优化。SQL 文本独占解析减少一份完整存档复制，同一行的并发冷读共用一次完整处理；保留逐请求版本检查、有限数值、checksum、schema、权限和 revision fence。修复连接池超时被归入通用 500；新增读取恢复回归，普通测试 137 项，真实 SQL read-view 14 组，全部 SQL 17 专项共 159 组。设计和本地测量见 COMMITTED_READ_PERFORMANCE.md；合并与线上通过状态以最终交付证据为准。
 
 当前开发层：已提交世界读取优化。HTTP 复用经过验证的只读 checkpoint，每次仍向 SQL 验证当前行版本；新增即时撤权、损坏行与故障回归，以及管理员提交拒绝诊断。普通回归 136 项，真实 SQL 增为 17 专项共 153 组；详情见 COMMITTED_READ_PERFORMANCE.md，发布通过状态以最终 CI 与线上证据为准。
 

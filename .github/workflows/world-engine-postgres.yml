@@ -89,7 +89,7 @@ jobs:
         run: |
           mkdir -p world-engine/output/ci
           npm --prefix world-engine run test:postgres:read-view 2>&1 | tee world-engine/output/ci/postgres-read-view.log
-          grep -F 'postgres read view completed 13 scenario groups: 13 passed, 0 failed' world-engine/output/ci/postgres-read-view.log
+          grep -F 'postgres read view completed 14 scenario groups: 14 passed, 0 failed' world-engine/output/ci/postgres-read-view.log
       - name: Run real PostgreSQL durable command audit tests
         env:
           WORLD_ENGINE_TEST_DATABASE_URL: postgresql://world_engine:ci-only-ephemeral-password@127.0.0.1:${{ job.services.postgres.ports[5432] }}/world_engine_ci
