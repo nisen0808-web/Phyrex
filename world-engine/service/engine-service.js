@@ -10,13 +10,32 @@ async function createEngineService(options = {}, factories = {}) {
   const port = options.port ?? 8791, host = options.host ?? '127.0.0.1';
   if (!Number.isInteger(port) || port < 0 || port > 65535 || typeof host !== 'string' || !host.trim()) throw serviceError('INVALID_LISTENER');
   let runtime, api, stopping = false, closePromise, probe;
-  async function isReady() {
-    if (stopping || !runtime?.isReady()) return false;
+  let rejected = 0, lastRejection = null;
+  async function readiness() {
+    if (stopping) return 'service_stopping';
+    if (!runtime?.isReady()) return runtime?.summary().failureKind || 'runtime_not_ready';
     // Coalesce simultaneous probes; each completed probe is discarded, so a
     // database outage cannot be hidden behind a cached successful result.
     if (!probe) probe = api.store.getWorldHead(options.worldId).then(head => Boolean(head), () => false).finally(() => { probe = null; });
     const available = await probe;
-    return available && !stopping && runtime.isReady();
+    if (!available) return 'database_unavailable';
+    if (stopping) return 'service_stopping';
+    return runtime.isReady() ? null : runtime.summary().failureKind || 'runtime_not_ready';
+  }
+  async function isReady() { return (await readiness()) === null; }
+  async function canSubmit() {
+    const reason = await readiness();
+    if (reason) throw Object.assign(serviceError('UNAVAILABLE'), { statusCode: 503, apiCode: 'service_unavailable', retryAfterMs: 1000, admissionReason: reason });
+    return true;
+  }
+  function onSubmitUnavailable({ reason, authenticated }) {
+    rejected++;
+    const state = runtime?.summary();
+    lastRejection = { reason, authenticated, heartbeatAgeMs: state?.heartbeatAgeMs, revision: state?.revision, tick: state?.tick };
+  }
+  function status() {
+    return { stopping, intervalMs: options.intervalMs ?? 1000, runtime: runtime?.summary(),
+      admission: { rejected, lastRejection } };
   }
   function close() {
     if (closePromise) return closePromise;
@@ -33,8 +52,7 @@ async function createEngineService(options = {}, factories = {}) {
   try {
     api = await (factories.createApi || createDurableCommandApiServer)({ webConsole: true, ...(options.api || {}),
       env: options.env, database: options.database, worldId: options.worldId,
-      rateLimitNow: wallClockNow, health: isReady, canSubmit: isReady,
-      serviceStatus: () => ({ stopping, intervalMs: options.intervalMs ?? 1000, runtime: runtime?.summary() }) });
+      rateLimitNow: wallClockNow, health: isReady, canSubmit, onSubmitUnavailable, serviceStatus: status });
     if (typeof api.store.getWorldHead !== 'function' || !await api.store.getWorldHead(options.worldId)) throw serviceError('MISSING_WORLD');
     // Reserve the listener before starting the writer: port collisions must not
     // evolve the world. Readiness stays false until the worker is ready.
@@ -48,6 +66,6 @@ async function createEngineService(options = {}, factories = {}) {
     throw error;
   }
   return Object.freeze({ address: () => api.server.address(), isReady, close,
-    summary: () => ({ worldId: options.worldId, stopping, runtime: runtime.summary(), audit: api.auditStats() }) });
+    summary: () => ({ worldId: options.worldId, ...status(), audit: api.auditStats() }) });
 }
 module.exports = { createEngineService };

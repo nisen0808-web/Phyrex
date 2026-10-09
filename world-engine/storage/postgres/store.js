@@ -18,7 +18,7 @@ function createPostgresDatabaseStore(options = {}) {
     connectionTimeoutMillis: config.connectionTimeoutMillis, idleTimeoutMillis: config.idleTimeoutMillis,
     application_name: 'phyrex-world-engine', statement_timeout: config.statementTimeoutMillis, lock_timeout: config.lockTimeoutMillis });
   const schema = `"${config.schema}"`;
-  let ready = null, closing = false, closePromise = null, poolErrors = 0;
+  let ready = null, closing = false, closePromise = null, poolErrors = 0, readView = null;
   pool.on('error', () => { poolErrors += 1; });
   function assertOpen() { if (closing) throw databaseError('CLOSED', 'PostgreSQL store is closed'); }
   async function transaction(work, readOnly = false) {
@@ -147,6 +147,30 @@ function createPostgresDatabaseStore(options = {}) {
       const row = result.rows[0];
       return row ? { worldId: row.world_id, revision: fromSqlInteger(row.revision), tick: fromSqlInteger(row.tick) } : null;
     }, true);
+  }
+  // One immutable checkpoint per store, for HTTP projections only. Every call
+  // still opens a fresh SQL snapshot; there is no time-based authorization cache.
+  async function loadWorldView(worldId) {
+    textId(worldId, 'worldId');
+    try {
+      await ensureReady();
+      return await transaction(async client => {
+        const selected = await client.query(`SELECT s.sequence, s.world_id, s.revision, s.payload_digest,
+          s.xmin::text AS row_version, s.ctid::text AS row_location FROM ${schema}.worlds w
+          JOIN ${schema}.world_saves s ON s.world_id=w.world_id AND s.sequence=w.latest_sequence WHERE w.world_id=$1`, [worldId]);
+        const row = selected.rows[0];
+        if (!row) { readView = null; return null; }
+        // xmin/ctid also invalidate a changed SQL row even if its revision and
+        // digest were left unchanged. Restores and corruption cannot reuse it.
+        const key = JSON.stringify(row);
+        if (readView?.key === key) return readView.value;
+        const result = await client.query(`SELECT * FROM ${schema}.world_saves WHERE world_id=$1 AND sequence=$2`, [worldId, row.sequence]);
+        if (result.rows.length !== 1) throw databaseError('CORRUPT_RECORD', 'Missing current checkpoint');
+        const value = freezeReadView(restoreSave(result.rows[0]));
+        if (!closing) readView = { key, value };
+        return value;
+      }, true);
+    } catch (error) { readView = null; throw error; }
   }
   async function listWorlds(listOptions = {}) {
     const limit = integer(listOptions.limit, 100, 1, 1000, 'world limit');
@@ -303,7 +327,7 @@ function createPostgresDatabaseStore(options = {}) {
     }, true);
   }
   function close() {
-    if (!closePromise) { closing = true; closePromise = pool.end(); }
+    if (!closePromise) { closing = true; readView = null; closePromise = pool.end(); }
     return closePromise;
   }
   return Object.freeze({ version: 2, provider: 'postgres', config: Object.freeze(safePostgresConfig(config)),
@@ -311,8 +335,18 @@ function createPostgresDatabaseStore(options = {}) {
     ...createBackupOperations({ transaction, readSchema, ensureReady, schema }),
     ...createMaintenanceOperations({ transaction, ensureReady, schema }),
     getCheckpointRequest,
-    migrate, saveWorld, loadWorld, getWorldHead, listWorlds, enqueueCommand, getCommand, listCommands, listPendingCommands,
+    migrate, saveWorld, loadWorld, loadWorldView, getWorldHead, listWorlds, enqueueCommand, getCommand, listCommands, listPendingCommands,
     appendEvent, listEvents, summary, close });
+}
+function freezeReadView(value) {
+  const pending = [value], seen = new Set();
+  while (pending.length) {
+    const item = pending.pop();
+    if (!item || typeof item !== 'object' || seen.has(item)) continue;
+    seen.add(item); Object.freeze(item);
+    for (const child of Object.values(item)) if (child && typeof child === 'object') pending.push(child);
+  }
+  return value;
 }
 function summarizeEvent(row) {
   return { provider: 'postgres', id: row.event_id, worldId: row.world_id,

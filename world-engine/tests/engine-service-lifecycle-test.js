@@ -9,7 +9,7 @@ async function main() {
   const f = fixture(); let ready = true, runtimeCloses = 0;
   const factories = {
     createApi: options => createDurableCommandApiServer({ ...options, ...f, closeStore: true }),
-    createRuntime: async () => ({ isReady: () => ready, summary: () => ({ ready }), async close() {
+    createRuntime: async () => ({ isReady: () => ready, summary: () => ({ ready, failureKind: ready ? null : 'heartbeat_stale', heartbeatAgeMs: ready ? 0 : 31000 }), async close() {
       assert.strictEqual(f.state.closes, 1, 'drain HTTP/audit first'); runtimeCloses++;
     } }),
   };
@@ -22,15 +22,39 @@ async function main() {
     assert.strictEqual((await request(port, command, { method: 'POST', body: { id: 'first', type: 'wait' } })).status, 202);
     ready = false;
     assert.strictEqual((await request(port, '/health/ready')).status, 503);
-    assert.strictEqual((await request(port, command, { method: 'POST', body: { id: 'blocked', type: 'wait' } })).status, 503);
+    const denied = await request(port, command, { method: 'POST', body: { id: 'blocked', type: 'wait' } });
+    assert.strictEqual(denied.status, 503); assert.strictEqual(denied.headers.get('retry-after'), '1');
+    assert.strictEqual(service.summary().admission.rejected, 1);
+    assert.strictEqual(service.summary().admission.lastRejection.reason, 'heartbeat_stale');
     assert.strictEqual(f.state.enqueues, 1);
     assert.strictEqual((await request(port, '/durable/worlds/other/players/one/state')).status, 404);
     assert.strictEqual((await request(port, '/durable/worlds/service-world/players/one/state')).status, 200, 'committed reads remain available when writer blocked');
     ready = true; f.state.dbReady = false;
     assert.strictEqual((await request(port, '/health/ready')).status, 503);
     assert.strictEqual((await request(port, '/health/live')).status, 200);
+    assert.strictEqual((await request(port, command, { method: 'POST', body: { id: 'db-blocked', type: 'wait' } })).status, 503);
+    assert.strictEqual(service.summary().admission.rejected, 2);
+    assert.strictEqual(service.summary().admission.lastRejection.reason, 'database_unavailable');
     f.state.dbReady = true;
     assert.strictEqual((await request(port, '/health/ready')).status, 200);
+    const operations = await request(port, '/durable/worlds/service-world/admin/operations', { token: 'admin-secret-token' });
+    assert.strictEqual(operations.body.data.service.admission.rejected, 2);
+    assert.strictEqual(operations.body.data.service.admission.lastRejection.reason, 'database_unavailable');
+    const originalLoad = f.store.loadWorld, originalEnqueue = f.store.enqueueCommand;
+    f.store.loadWorld = async () => { throw Object.assign(new Error('secret'), { code: 'WORLD_DB_UNAVAILABLE' }); };
+    assert.strictEqual((await request(port, command, { method: 'POST', body: { id: 'auth-db-failure', type: 'wait' } })).status, 503);
+    assert.strictEqual(service.summary().admission.rejected, 3);
+    assert.strictEqual(service.summary().admission.lastRejection.authenticated, false);
+    assert.strictEqual((await request(port, command, { token: null, method: 'POST', body: { id: 'anonymous', type: 'wait' } })).status, 401);
+    assert.strictEqual(service.summary().admission.rejected, 3);
+    f.store.loadWorld = originalLoad;
+    f.store.enqueueCommand = async () => { throw Object.assign(new Error('secret'), { code: 'WORLD_DB_TIMEOUT' }); };
+    assert.strictEqual((await request(port, command, { method: 'POST', body: { id: 'enqueue-db-failure', type: 'wait' } })).status, 503);
+    assert.strictEqual(service.summary().admission.rejected, 4);
+    assert.strictEqual(service.summary().admission.lastRejection.authenticated, true);
+    assert.strictEqual(service.summary().admission.lastRejection.reason, 'database_unavailable');
+    f.store.enqueueCommand = originalEnqueue;
+    assert.strictEqual(f.state.enqueues, 1, 'rejected requests must never enqueue');
   } finally {
     const close = service.close(); assert.strictEqual(service.close(), close); await close;
     assert.strictEqual(runtimeCloses, 1); assert.strictEqual(await service.isReady(), false);

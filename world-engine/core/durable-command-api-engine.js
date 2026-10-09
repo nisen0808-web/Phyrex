@@ -53,6 +53,7 @@ async function createDurableCommandApiServer(options = {}) {
   const shutdownTimeoutMs = boundedInteger(options.shutdownTimeoutMs ?? 5000, 10, 60000, 'shutdownTimeoutMs');
   if (options.health !== undefined && typeof options.health !== 'function') throw apiError(500, 'invalid_health');
   if (options.canSubmit !== undefined && typeof options.canSubmit !== 'function') throw apiError(500, 'invalid_admission');
+  if (options.onSubmitUnavailable !== undefined && typeof options.onSubmitUnavailable !== 'function') throw apiError(500, 'invalid_admission');
   if (options.serviceStatus !== undefined && (typeof options.serviceStatus !== 'function' || typeof options.worldId !== 'string' || !options.worldId)) throw apiError(500, 'invalid_service_status');
   const consoleAssets = options.webConsole === true ? createConsoleAssets() : null;
   const ownsStore = !options.store || options.closeStore === true;
@@ -94,6 +95,12 @@ async function createDurableCommandApiServer(options = {}) {
     const task = handleRequest(req, res, store, auditStore, requestOptions, audit)
       .then(() => audit.probe ? null : persistAudit(auditStore, audit, res.statusCode, null), error => {
         const mapped = mapError(error);
+        if (audit.route === 'submit' && mapped.status === 503) {
+          const database = ['WORLD_DB_UNAVAILABLE','WORLD_DB_TIMEOUT','WORLD_DB_MIGRATION_REQUIRED','WORLD_DB_CLOSED'].includes(error?.code);
+          // Record failed authorization reads and post-probe enqueues as well as
+          // worker admission failures. No raw error or bearer token is exposed.
+          try { options.onSubmitUnavailable?.({ reason: database ? 'database_unavailable' : error?.admissionReason || 'runtime_not_ready', authenticated: audit.accountId !== null }); } catch (_) {}
+        }
         writeMappedError(res, error);
         req.resume();
         return audit.probe ? null : persistAudit(auditStore, audit, mapped.status, mapped.code);
@@ -181,7 +188,7 @@ async function handleRequest(req, res, store, auditStore, options, audit) {
     const row = await withFreshPlayerAuthorization(store, route.worldId, route.playerId, token,
       options.authorizationAttempts, options.rateLimiters.submit, audit,
       async context => {
-        if (options.canSubmit && !await options.canSubmit()) throw apiError(503, 'service_unavailable');
+        if (options.canSubmit && !await options.canSubmit()) throw apiError(503, 'service_unavailable', { retryAfterMs: 1000 });
         return store.enqueueCommand({ worldId: route.worldId, id: body.id, playerId: route.playerId, input: body },
           { expectedWorldRevision: context.revision });
       });
@@ -361,9 +368,13 @@ async function withFreshCommandAuthorization(store, worldId, commandId, token, a
 
 async function authenticateWorld(store, worldId, token, audit) {
   if (!token) throw apiError(401, 'auth_required');
-  const loaded = await store.loadWorld(worldId);
+  const loaded = await (typeof store.loadWorldView === 'function' ? store.loadWorldView(worldId) : store.loadWorld(worldId));
   if (!loaded) throw apiError(404, 'world_not_found');
-  const auth = requireSession(validateSession(loaded.world, token));
+  // Session validation repairs legacy account indexes and marks expiry locally.
+  // Keep those mutations private to this request, never in a shared checkpoint.
+  const authWorld = { tick: loaded.world.tick, accounts: loaded.world.accounts === undefined
+    ? undefined : JSON.parse(JSON.stringify(loaded.world.accounts)) };
+  const auth = requireSession(validateSession(authWorld, token));
   audit.accountId = auth.account.id;
   return { world: loaded.world, revision: loaded.revision, auth };
 }
@@ -433,7 +444,7 @@ function writeMappedError(res, error) {
   if (res.writableEnded || res.destroyed) return;
   const mapped = mapError(error);
   if (mapped.status === 401) res.setHeader('WWW-Authenticate', 'Bearer');
-  if (mapped.status === 429) res.setHeader('Retry-After', String(Math.max(1, Math.ceil(Number(mapped.retryAfterMs || 1000) / 1000))));
+  if (mapped.status === 429 || (mapped.status === 503 && mapped.retryAfterMs !== undefined)) res.setHeader('Retry-After', String(Math.max(1, Math.ceil(Number(mapped.retryAfterMs || 1000) / 1000))));
   writeJson(res, mapped.status, { ok: false, error: mapped.code });
 }
 function mapError(error) {

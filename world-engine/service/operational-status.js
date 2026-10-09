@@ -2,6 +2,7 @@
 
 const statuses = new Set(['starting', 'running', 'busy', 'retrying', 'blocked', 'idle', 'closing', 'closed', 'stopped']);
 const failures = new Set(['heartbeat_stale', 'worker_failed', 'database_unavailable', 'revision_conflict', 'runtime_failed']);
+const rejections = new Set([...failures, 'runtime_not_ready', 'service_stopping']);
 const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
 
 // Host telemetry is an independent observation, not the authorized SQL snapshot.
@@ -13,6 +14,13 @@ function serviceStatusView(value) {
     stopping: value.stopping === true,
     ready: value.stopping !== true && runtime.ready === true,
     intervalMs: count(value.intervalMs),
+    admission: { rejected: count(value.admission?.rejected),
+      lastRejection: value.admission?.lastRejection ? {
+        reason: rejections.has(value.admission.lastRejection.reason) ? value.admission.lastRejection.reason : 'runtime_failed',
+        authenticated: value.admission.lastRejection.authenticated === true,
+        heartbeatAgeMs: count(value.admission.lastRejection.heartbeatAgeMs),
+        revision: count(value.admission.lastRejection.revision), tick: count(value.admission.lastRejection.tick),
+      } : null },
     runtime: {
       status: statuses.has(runtime.status) ? runtime.status : 'unknown',
       ready: runtime.ready === true,

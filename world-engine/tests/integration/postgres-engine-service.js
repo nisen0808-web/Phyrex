@@ -127,6 +127,10 @@ async function main() {
     const unavailable = await request(port, `${base}/admin/operations`, { token: 'admin-secret-token' });
     assert.notStrictEqual(unavailable.status, 200, 'database failure cannot return stale successful diagnostics');
     assert.ok(!JSON.stringify(unavailable.body).includes(connectionString));
+    assert.strictEqual((await request(port, `${base}/players/one/commands`, { method: 'POST', body: { id: 'offline', type: 'wait' } })).status, 503);
+    assert.strictEqual(service.summary().admission.rejected, 1);
+    assert.strictEqual(service.summary().admission.lastRejection.reason, 'database_unavailable');
+    assert.strictEqual(service.summary().admission.lastRejection.authenticated, false);
     await raw.query(`ALTER TABLE "${schema}".unavailable_saves RENAME TO world_saves`); renamed = false;
     assert.strictEqual((await request(port, '/health/ready')).status, 200);
     const loaded = await store.loadWorld(world.id);
