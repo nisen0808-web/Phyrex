@@ -1,4 +1,5 @@
 'use strict';
+const { listenForFetch } = require('./listen-for-fetch');
 // Browser/API fixture only. No SQL connection, live world or production token.
 const { inventoryFixture, grantItem } = require('./inventory-fixture');
 const { createAccount, createSession } = require('../../core/account-session-engine');
@@ -44,7 +45,7 @@ async function consoleFixture() {
   const api = await createDurableCommandApiServer({ store, auditStore, rateLimitNow: () => Date.now(), worldId: world.id, webConsole: true, health: async () => true,
     serviceStatus: () => ({ stopping: false, intervalMs: 1000, runtime: { status: 'running', ready: true,
       revision, tick: world.tick, heartbeatAgeMs: 0, heartbeatTimeoutMs: 30000, failures: 0, failureKind: null } }) });
-  await new Promise(resolve => api.server.listen(0, '127.0.0.1', resolve));
+  await listenForFetch(api.server);
   return { api, world, rows, audits, step, port: api.server.address().port };
 }
 if (require.main === module) consoleFixture().then(f => {

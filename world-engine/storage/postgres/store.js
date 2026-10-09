@@ -7,7 +7,7 @@ const { createBackupOperations } = require('./backup');
 const { createMaintenanceOperations } = require('./maintenance');
 const { guardClientLease } = require('./client-lease');
 const { textId, safeInteger, fromSqlInteger, captureCheckpoint, captureEvent, captureInboxCommand, digest,
-  canonicalJson, summarizeSave, restoreSave, validateArchivedSave, detachedJson } = require('./codec');
+  canonicalJson, summarizeSave, restoreSave, restoreReadView, validateArchivedSave, detachedJson } = require('./codec');
 
 function createPostgresDatabaseStore(options = {}) {
   const config = normalizePostgresConfig(options.database || options, options.env || process.env);
@@ -18,7 +18,7 @@ function createPostgresDatabaseStore(options = {}) {
     connectionTimeoutMillis: config.connectionTimeoutMillis, idleTimeoutMillis: config.idleTimeoutMillis,
     application_name: 'phyrex-world-engine', statement_timeout: config.statementTimeoutMillis, lock_timeout: config.lockTimeoutMillis });
   const schema = `"${config.schema}"`;
-  let ready = null, closing = false, closePromise = null, poolErrors = 0, readView = null;
+  let ready = null, closing = false, closePromise = null, poolErrors = 0, readView = null, readViewLoad = null;
   pool.on('error', () => { poolErrors += 1; });
   function assertOpen() { if (closing) throw databaseError('CLOSED', 'PostgreSQL store is closed'); }
   async function transaction(work, readOnly = false) {
@@ -164,11 +164,23 @@ function createPostgresDatabaseStore(options = {}) {
         // digest were left unchanged. Restores and corruption cannot reuse it.
         const key = JSON.stringify(row);
         if (readView?.key === key) return readView.value;
-        const result = await client.query(`SELECT * FROM ${schema}.world_saves WHERE world_id=$1 AND sequence=$2`, [worldId, row.sequence]);
-        if (result.rows.length !== 1) throw databaseError('CORRUPT_RECORD', 'Missing current checkpoint');
-        const value = freezeReadView(restoreSave(result.rows[0]));
-        if (!closing) readView = { key, value };
-        return value;
+        // Each reader has already checked the row in its own SQL snapshot.
+        // Equal physical row identities may share payload work, never an auth
+        // result or a different revision. Keep only one pending entry per store.
+        if (readViewLoad?.key === key) return readViewLoad.promise;
+        const entry = { key, promise: null };
+        entry.promise = (async () => {
+          const result = await client.query(`SELECT sequence, world_id, revision, tick, save_schema, request_id,
+            request_hash, payload_digest, saved_at, archived_at, archived_metadata, envelope::text AS envelope_json
+            FROM ${schema}.world_saves WHERE world_id=$1 AND sequence=$2`, [worldId, row.sequence]);
+          if (result.rows.length !== 1) throw databaseError('CORRUPT_RECORD', 'Missing current checkpoint');
+          const value = freezeReadView(restoreReadView(result.rows[0]));
+          if (!closing) readView = { key, value };
+          return value;
+        })();
+        readViewLoad = entry;
+        try { return await entry.promise; }
+        finally { if (readViewLoad === entry) readViewLoad = null; }
       }, true);
     } catch (error) { readView = null; throw error; }
   }
@@ -327,7 +339,7 @@ function createPostgresDatabaseStore(options = {}) {
     }, true);
   }
   function close() {
-    if (!closePromise) { closing = true; readView = null; closePromise = pool.end(); }
+    if (!closePromise) { closing = true; readView = null; readViewLoad = null; closePromise = pool.end(); }
     return closePromise;
   }
   return Object.freeze({ version: 2, provider: 'postgres', config: Object.freeze(safePostgresConfig(config)),

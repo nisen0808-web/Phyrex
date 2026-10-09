@@ -3,6 +3,7 @@ const assert = require('assert');
 const { consoleFixture } = require('./helpers/console-fixture');
 const { fixture } = require('./helpers/service-fixture');
 const { createDurableCommandApiServer } = require('../core/durable-command-api-engine');
+const { listenForFetch } = require('./helpers/listen-for-fetch');
 async function main() {
   const f = await consoleFixture(), base = `http://127.0.0.1:${f.port}`;
   const { ConsoleSession } = await import('../client/durable/session.mjs');
@@ -54,11 +55,11 @@ async function main() {
     assert.strictEqual((await client.request(`/admin/audit?limit=2&beforeSequence=${audit.nextBeforeSequence}`)).records.length, 2);
   } finally { client.disconnect(); await f.api.close(); }
   const disabled = await createDurableCommandApiServer({ ...fixture(), rateLimitNow: () => 0 });
-  try { await new Promise(resolve => disabled.server.listen(0, '127.0.0.1', resolve)); assert.strictEqual((await fetch(`http://127.0.0.1:${disabled.server.address().port}/`)).status, 404); }
+  try { await listenForFetch(disabled.server); assert.strictEqual((await fetch(`http://127.0.0.1:${disabled.server.address().port}/`)).status, 404); }
   finally { await disabled.close(); }
   const limited = await createDurableCommandApiServer({ ...fixture(), rateLimitNow: () => 0, webConsole: true, sourceRateLimit: 1 });
   try {
-    await new Promise(resolve => limited.server.listen(0, '127.0.0.1', resolve)); const url = `http://127.0.0.1:${limited.server.address().port}/`;
+    await listenForFetch(limited.server); const url = `http://127.0.0.1:${limited.server.address().port}/`;
     assert.strictEqual((await fetch(url)).status, 200); assert.strictEqual((await fetch(url)).status, 429);
   } finally { await limited.close(); }
   console.log('durable console HTTP, authorization, commerce and replay checks passed');
