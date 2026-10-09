@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light">
+  <title>世界工坊 · Phyrex</title><link rel="stylesheet" href="/console/workbench.css">
+  <script src="/console/template-validation.js"></script><script type="module" src="/console/workbench.mjs"></script>
+</head>
+<body>
+  <header><a class="brand" href="/">P <span>PHYREX <small>世界工坊</small></span></a><a href="/">返回角色控制台 ↗</a></header>
+  <main>
+    <div class="hero"><div><p class="eyebrow">把你的设想，变成一个世界</p><h1>从一座村庄开始</h1><p>改地点、连道路、放入人物，再下载属于你的世界配置。</p></div><span class="local-badge">本地编辑 · 无需令牌</span></div>
+    <ol class="steps"><li><b>1</b>编辑世界</li><li><b>2</b>查看预览与检查</li><li><b>3</b>下载配置</li><li><b>4</b>在引擎中创建新世界</li></ol>
+    <p class="boundary">这里编辑的是新世界的配置，预览展示初始内容。不会推进模拟、上传配置或改变正在运行的试用世界。刷新前请下载保存。</p>
+    <div id="notice" class="notice" role="status" aria-live="polite">正在准备河谷样例…</div>
+    <noscript><p class="notice error">世界工坊需要启用 JavaScript。配置不会通过表单提交。</p></noscript>
+    <div id="editor" hidden>
+      <div class="toolbar"><div class="buttons"><button id="sample">载入河谷样例</button><button id="blank">从空白开始</button><label class="file-button">打开配置<input id="import-file" type="file" accept=".json,application/json"></label><button id="undo" disabled>撤销修改</button></div><span id="save-state">尚未修改</span></div>
+      <div id="import-choice" class="panel" hidden><label>这个文件有多个世界，请选择要编辑的模板<select id="import-selection"></select></label><button id="confirm-import">确认打开</button><button id="cancel-import">取消</button></div>
+      <div class="layout">
+        <div class="editing">
+          <section class="panel"><div class="heading"><h2>世界设定</h2><span>先起一个名字</span></div>
+            <label id="template-select-label" hidden>当前编辑的模板<select id="template-select"></select></label>
+            <div class="fields"><label>世界名称<input id="world-name" maxlength="256"></label><label>新世界编号<input id="world-id" maxlength="128" spellcheck="false"></label><label>生成种子<input id="world-seed" maxlength="256" spellcheck="false"></label><label>观察者起点<select id="observer-location"></select></label></div>
+            <p class="hint">种子决定初始随机结果。相同配置与种子生成相同内容。新世界编号请与已有世界区分。</p>
+          </section>
+          <section class="panel"><div class="heading"><h2>地点与商店</h2><button id="add-location">＋ 添加地点</button></div>
+            <label>选择地点<select id="location-select"></select></label><div id="location-fields" class="fields"></div><div class="buttons"><button id="remove-location" class="danger">删除这个地点</button></div><p id="location-note" class="hint"></p>
+          </section>
+          <section class="panel"><div class="heading"><h2>连接道路</h2><span>道路可以双向通行</span></div><div class="road-input"><label>起点<select id="road-from"></select></label><label>终点<select id="road-to"></select></label><button id="add-road">连接两地</button></div><ul id="road-list" class="rows"></ul></section>
+          <section class="panel"><div class="heading"><h2>初始人物</h2><button id="add-person">＋ 添加人物</button></div><label>选择人物<select id="person-select"></select></label><div id="person-fields" class="fields"></div><button id="remove-person" class="danger">删除这个人物</button><p id="person-note" class="hint"></p></section>
+          <section class="panel"><div class="heading"><h2>行动规则</h2><span>决定每次行动的消耗和收益</span></div><div id="rule-fields" class="fields"></div><p class="hint">工作和采集收益为 1–100；休息恢复可为 0。没有改动的其他规则保留原配置。</p></section>
+          <details class="panel"><summary>完整配置与组织设置</summary><p class="hint">组织、成员、资源种类等完整字段可在下方编辑。点击“应用完整配置”后才会更新表单；格式错误时保留原配置。多模板包中的其他模板也会一起保存。</p><label>完整 JSON 配置<textarea id="advanced-json" rows="16" spellcheck="false"></textarea></label><div class="buttons"><button id="apply-json">应用完整配置</button><button id="refresh-json">用当前表单重新填入</button></div></details>
+        </div>
+        <aside class="preview">
+          <section class="panel"><div class="heading"><h2>初始世界预览</h2><span id="preview-name"></span></div><div id="counts" class="counts"></div><p id="preview-context" class="hint"></p><div id="map" class="map" aria-label="当前地点与相邻地点"></div><h3>这个地点的人物</h3><ul id="preview-people" class="plain-list"></ul><h3>驻地组织</h3><ul id="preview-organizations" class="plain-list"></ul><p class="hint">在左侧切换地点查看连接。地图只展示选中地点的一跳道路，人物按配置的初始位置显示；预推进后的状态以引擎实际生成结果为准。</p></section>
+          <section class="panel" aria-labelledby="validation-title"><div class="heading"><h2 id="validation-title">配置检查</h2><span id="validation-badge"></span></div><p id="validation-summary"></p><ul id="validation-errors" class="issues" aria-live="polite"></ul><div class="buttons"><button id="download" class="primary" disabled>下载可用配置</button><button id="download-draft">保存草稿</button></div><p class="hint">可用配置通过与引擎相同的检查。草稿可能含错误，不能直接创建世界。</p></section>
+          <section class="panel next"><h2>下载后怎么用</h2><p>把配置交给引擎的创建工具，生成一个独立的新世界存档。此页面不会直接启动或替换线上世界。</p><ol><li>在引擎目录建立 <code>output</code> 文件夹。</li><li>将下载的配置放在引擎目录。</li><li>执行下方命令，生成新文件。</li></ol><pre>npm run engine:init -- --template-file world-template.json --template-id TEMPLATE_ID --output output/my-world.json</pre><p id="selected-template-hint" class="hint"></p><p class="hint">然后按 ENGINE_QUICKSTART.md 将存档导入专用数据库、建立账户并启动。首次导入使用 expected-revision 0；遇到已有世界时停止。</p></section>
+        </aside>
+      </div>
+    </div>
+    <footer>PHYREX ENGINE <span>配置仅保留在此页内存 · 下载后由你保管</span></footer>
+  </main>
+</body>
+</html>

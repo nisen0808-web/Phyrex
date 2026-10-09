@@ -1,5 +1,7 @@
 # Engine Development Progress
 
+当前开发层：世界工坊 `/world-builder`。浏览器本地编辑地点、道路、人物、资源与行动规则，预览、导入、撤销并下载配置；与 SDK 共用严格校验器。新增两项回归，discovery 共 136 项；SQL 16 专项共 145 组保持。功能范围见 WORLD_WORKBENCH.md，验收结果以本提交 CI 与交付证据为准。
+
 当前开发层：正式世界模板入口。`engine:template` 提供配置校验与中文安全诊断，`engine:init --template-file` 生成可导入 PostgreSQL 的独立世界；SDK 增加校验/构建入口及中文河谷样例。新增两项回归，完整 discovery 134 项；真实 SQL quickstart 从 6 组扩为 8 组，16 个 SQL 专项共 145 组。下述 126/125 等为历史功能层基线；本层是否通过以当前提交的 CI 与交付证据为准。实现范围见 ENGINE_WORLD_TEMPLATES.md。
 
 上一层 PR #80 已合并至 main beb7125，角色创建/切换、地点探索与安全公开事件视图已上线。该层 Node 20/22 回归各 132/132，14 个 CI 作业与 12 项线上验收通过。

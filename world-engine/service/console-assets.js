@@ -12,7 +12,16 @@ function createConsoleAssets() {
     ['/console/app.mjs', 'app.mjs', 'text/javascript'],
     ['/console/session.mjs', 'session.mjs', 'text/javascript'],
     ['/console/guide.mjs', 'guide.mjs', 'text/javascript'],
+    ['/world-builder', 'workbench.html', 'text/html'],
+    ['/console/workbench.css', 'workbench.css', 'text/css'],
+    ['/console/workbench.mjs', 'workbench.mjs', 'text/javascript'],
+    ['/console/workbench-model.mjs', 'workbench-model.mjs', 'text/javascript'],
   ]) assets.set(route, { body: fs.readFileSync(path.join(__dirname, '../client/durable', file)), mime });
+  assets.set('/console/template-validation.js', { body: fs.readFileSync(path.join(__dirname, '../shared/template-validation.js')), mime: 'text/javascript' });
+  assets.set('/console/template-catalog.json', { body: Buffer.from(JSON.stringify({
+    species: Object.values(require('../core/species-engine').DEFAULT_SPECIES).map(({ id, name }) => ({ id, name })),
+    sample: require('../templates/river-valley.json'),
+  })), mime: 'application/json' });
   return assets;
 }
 function serveConsoleAsset(req, res, asset) {
