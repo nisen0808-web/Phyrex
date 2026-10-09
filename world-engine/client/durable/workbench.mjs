@@ -100,7 +100,7 @@ function renderDerived() {
   $('selected-template-hint').textContent = `请将命令中的 TEMPLATE_ID 替换为：${snapshot.selected}。Windows 可使用 npm.cmd。`;
   if (!rawDirty) $('advanced-json').value = model.serialize(false);
 }
-function replacementAllowed() { return !(model.snapshot().dirty || rawDirty || fieldDirty) || window.confirm('打开其他配置会替换当前编辑内容。未下载的修改可以暂时用“撤销修改”找回。继续打开吗？'); }
+function replacementAllowed() { return !(model.snapshot().dirty || rawDirty || fieldDirty) || window.confirm('打开其他配置会替换当前内容。尚未应用的 JSON 文本无法通过撤销找回，请先保存需要保留的草稿。继续打开吗？'); }
 function applyImport(text, templateId) {
   const result = model.inspectText(text,templateId);
   if (result.needsSelection) {
