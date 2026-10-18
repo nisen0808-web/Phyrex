@@ -35,6 +35,10 @@ async function main() {
   for (const g of gatesFor('all')) assert.ok(fs.existsSync(path.join(__dirname, '..', g.script)), g.script);
   const sqlFiles = new Set(gatesFor('postgres').map(g => `node ${g.script}`));
   assert.deepStrictEqual(sqlFiles, new Set(Object.entries(scripts).filter(([k]) => /^test:postgres($|:)/.test(k) && k !== 'test:postgres:endurance').map(([, v]) => v)));
+  const postgresWorkflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/world-engine-postgres.yml'), 'utf8');
+  for (const g of gatesFor('postgres')) {
+    assert.ok(postgresWorkflow.includes("grep -F '" + g.marker + "'"), 'CLI and mandatory SQL workflow completion markers differ: ' + g.name);
+  }
   const gates = gatesFor('stress');
   assert.strictEqual((await verify(gates, async () => ({ exitCode: 1, stdout: gates[0].marker }))).ok, false);
   assert.strictEqual((await verify(gates, async () => ({ exitCode: 0, stdout: 'echo ' + gates[0].marker }))).ok, false);

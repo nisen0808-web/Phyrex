@@ -21,6 +21,7 @@ const DEFAULT_DURABLE_COMMAND_API_OPTIONS = Object.freeze({
   rateLimitWindowMs: 60 * 1000,
   maxTrackedSources: 5000,
   maxTrackedAccounts: 10000,
+  maxInFlightRequests: 256,
 });
 
 function apiError(statusCode, code, details = {}) {
@@ -40,6 +41,7 @@ async function createDurableCommandApiServer(options = {}) {
   const rateLimitWindowMs = boundedInteger(options.rateLimitWindowMs ?? DEFAULT_DURABLE_COMMAND_API_OPTIONS.rateLimitWindowMs, 10, 24 * 60 * 60 * 1000, 'rateLimitWindowMs');
   const maxTrackedSources = boundedInteger(options.maxTrackedSources ?? DEFAULT_DURABLE_COMMAND_API_OPTIONS.maxTrackedSources, 10, 1000000, 'maxTrackedSources');
   const maxTrackedAccounts = boundedInteger(options.maxTrackedAccounts ?? DEFAULT_DURABLE_COMMAND_API_OPTIONS.maxTrackedAccounts, 10, 1000000, 'maxTrackedAccounts');
+  const maxInFlightRequests = boundedInteger(options.maxInFlightRequests ?? DEFAULT_DURABLE_COMMAND_API_OPTIONS.maxInFlightRequests, 1, 10000, 'maxInFlightRequests');
   if (typeof options.rateLimitNow !== 'function') throw apiError(500, 'rate_limit_clock_required');
   const requestIdFactory = options.requestIdFactory || (() => crypto.randomUUID());
   if (typeof requestIdFactory !== 'function') throw apiError(500, 'request_id_factory_required');
@@ -80,11 +82,11 @@ async function createDurableCommandApiServer(options = {}) {
   }
 
   let closePromise = null, closing = false;
-  let auditFailures = 0;
+  let auditFailures = 0, capacityRejections = 0;
   const pendingAudits = new Set();
   const requestOptions = Object.freeze({ maxBodyBytes, authorizationAttempts, rateLimiters,
     worldId: options.worldId, health: options.health, canSubmit: options.canSubmit, consoleAssets,
-    serviceStatus: options.serviceStatus, auditStats });
+    serviceStatus: options.serviceStatus, auditStats, requestStats });
   const server = http.createServer((req, res) => {
     setSafeHeaders(res);
     if (closing) { req.resume(); res.setHeader('Connection', 'close'); return writeMappedError(res, apiError(503, 'service_unavailable')); }
@@ -92,6 +94,17 @@ async function createDurableCommandApiServer(options = {}) {
     try { audit = createRequestAudit(req, requestIdFactory); }
     catch (error) { auditFailures++; req.resume(); return writeMappedError(res, error); }
     res.setHeader('X-Request-Id', audit.requestId);
+    // This exact probe does no SQL or audit work. Keep liveness available while
+    // normal requests (including response-aftercare) occupy every capacity slot.
+    const liveness = Boolean(options.health) && req.method === 'GET' && req.url === '/health/live';
+    if (!liveness && pendingAudits.size >= maxInFlightRequests) {
+      req.resume(); res.setHeader('Connection', 'close');
+      try {
+        enforceRateLimit(rateLimiters.source.consume(requestSourceKey(req)));
+        capacityRejections++;
+        return writeMappedError(res, apiError(503, 'service_unavailable', { retryAfterMs: 1000 }));
+      } catch (error) { return writeMappedError(res, error); }
+    }
     const task = handleRequest(req, res, store, auditStore, requestOptions, audit)
       .then(() => audit.probe ? null : persistAudit(auditStore, audit, res.statusCode, null), error => {
         const mapped = mapError(error);
@@ -106,8 +119,10 @@ async function createDurableCommandApiServer(options = {}) {
         return audit.probe ? null : persistAudit(auditStore, audit, mapped.status, mapped.code);
       })
       .catch(() => { auditFailures += 1; });
-    pendingAudits.add(task);
-    task.finally(() => pendingAudits.delete(task));
+    if (!liveness) {
+      pendingAudits.add(task);
+      task.finally(() => pendingAudits.delete(task));
+    }
   });
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
@@ -137,11 +152,12 @@ async function createDurableCommandApiServer(options = {}) {
     return { trackedSources: rateLimiters.source.size(), trackedSubmitAccounts: rateLimiters.submit.size(), trackedReadAccounts: rateLimiters.read.size() };
   }
   function auditStats() { return { failures: auditFailures, durable: auditStore.provider === 'postgres' }; }
+  function requestStats() { return { inFlight: pendingAudits.size, limit: maxInFlightRequests, rejected: capacityRejections }; }
 
   return Object.freeze({
-    server, store, auditStore, close, rateLimitStats, auditStats,
+    server, store, auditStore, close, rateLimitStats, auditStats, requestStats,
     options: Object.freeze({ maxBodyBytes, authorizationAttempts, sourceRateLimit, accountSubmitRateLimit,
-      accountReadRateLimit, rateLimitWindowMs, maxTrackedSources, maxTrackedAccounts }),
+      accountReadRateLimit, rateLimitWindowMs, maxTrackedSources, maxTrackedAccounts, maxInFlightRequests }),
   });
 }
 
@@ -221,7 +237,7 @@ async function handleRequest(req, res, store, auditStore, options, audit) {
           const service = serviceStatusView(options.serviceStatus?.());
           return writeJson(res, 200, { ok: true, data: {
             worldId: route.worldId, revision: context.revision, tick: context.world.tick,
-            service, queue: commandQueueView(queue), audit: options.auditStats(),
+            service, queue: commandQueueView(queue), audit: options.auditStats(), requests: options.requestStats(),
           } });
         }
         return writeJson(res, 200, { ok: true, data: commandQueueView(queue) });
