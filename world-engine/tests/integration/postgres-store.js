@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const net = require('net');
 const { spawn } = require('child_process');
 const { Pool } = require('pg');
 const { createWorld } = require('../../core/world-engine');
@@ -13,6 +14,7 @@ const { createDatabaseStore } = require('../../core/database-engine');
 const { randomFloat } = require('../../core/random-engine');
 const { nextWorldId } = require('../../core/world-id-engine');
 const { MIGRATIONS } = require('../../storage/postgres/migrations');
+const { createPostgresCommandApiAuditStore } = require('../../storage/postgres/command-api-audit-store');
 function child(file, args, env = {}) {
   return new Promise((resolve, reject) => {
     const proc = spawn(process.execPath, [file, ...args], { env: { ...process.env, ...env }, stdio: ['ignore','pipe','pipe'] });
@@ -149,6 +151,92 @@ async function main() {
     assert.ok(terminated);
     assert.strictEqual((await a.loadWorld(world.id)).revision,4);
     pass('checked-out connection loss between backup queries fails safely and the pool reconnects');
+
+    // Real established PostgreSQL traffic, blackholed after a successful warmup.
+    // No server timeout or fake query promise is involved in this first case.
+    let blackhole = false;
+    const sockets = new Set();
+    const proxy = net.createServer(socket => {
+      const upstream = net.connect({ host: url.hostname, port: Number(url.port || 5432) });
+      sockets.add(socket); sockets.add(upstream);
+      socket.on('data', data => upstream.write(data));
+      upstream.on('data', data => { if (!blackhole) socket.write(data); });
+      socket.on('error', () => upstream.destroy());
+      upstream.on('error', () => socket.destroy());
+      socket.on('close', () => { sockets.delete(socket); upstream.destroy(); });
+      upstream.on('close', () => { sockets.delete(upstream); socket.destroy(); });
+    });
+    await new Promise((resolve, reject) => { proxy.once('error', reject); proxy.listen(0, '127.0.0.1', resolve); });
+    const proxyUrl = new URL(connectionString); proxyUrl.hostname = '127.0.0.1'; proxyUrl.port = String(proxy.address().port);
+    const deadlines = { schema, maxConnections: 1, queryTimeoutMillis: 300,
+      transactionTimeoutMillis: 3000, lockTimeoutMillis: 5000, statementTimeoutMillis: 5000 };
+    const throughProxy = createPostgresDatabaseStore({ ...deadlines, connectionString: proxyUrl.toString() });
+    const locked = createPostgresDatabaseStore({ ...deadlines, connectionString });
+    let blocker;
+    try {
+      await throughProxy.summary();
+      blackhole = true;
+      let started = performance.now();
+      await assert.rejects(throughProxy.summary(), { code: 'WORLD_DB_UNAVAILABLE' });
+      assert.ok(performance.now() - started < 2500, 'local query deadline bounds established TCP blackhole');
+      blackhole = false;
+      assert.strictEqual((await throughProxy.summary()).ready, true, 'a fresh connection recovers');
+      await locked.summary();
+      blocker = await raw.connect();
+      await blocker.query('BEGIN');
+      await blocker.query(`LOCK TABLE ${quoted}.world_commands IN ACCESS EXCLUSIVE MODE`);
+      started = performance.now();
+      await assert.rejects(locked.listPendingCommands(world.id), { code: 'WORLD_DB_UNAVAILABLE' });
+      assert.ok(performance.now() - started < 2500, 'client deadline precedes the 5s server lock timeout');
+      await blocker.query('ROLLBACK'); blocker.release(); blocker = null;
+      assert.ok(Array.isArray(await locked.listPendingCommands(world.id)), 'pool remains usable after destroying a timed-out lease');
+    } finally {
+      if (blocker) { await blocker.query('ROLLBACK'); blocker.release(); }
+      await Promise.all([throughProxy.close(), locked.close()]);
+      for (const socket of sockets) socket.destroy();
+      await new Promise(resolve => proxy.close(resolve));
+    }
+    pass('local deadlines bound established TCP blackholes and real SQL locks, then reconnect');
+
+    // Fault injection is at the driver acknowledgement boundary: PostgreSQL
+    // really commits, but the resolved COMMIT reply is withheld from the store.
+    let withholdCommit = false;
+    class LostCommitPool extends Pool {
+      async connect() {
+        const client = await super.connect();
+        const query = client.query.bind(client), release = client.release;
+        client.query = (sql, ...args) => {
+          const result = query(sql, ...args);
+          if (sql === 'COMMIT' && withholdCommit) {
+            withholdCommit = false;
+            return result.then(() => new Promise(() => {}));
+          }
+          return result;
+        };
+        client.release = (...args) => { client.query = query; client.release = release; return release.apply(client, args); };
+        return client;
+      }
+    }
+    const uncertain = createPostgresDatabaseStore({ ...deadlines, connectionString, Pool: LostCommitPool });
+    const uncertainAudit = createPostgresCommandApiAuditStore({ ...deadlines, connectionString, Pool: LostCommitPool });
+    try {
+      await uncertain.summary(); await uncertainAudit.summary();
+      const candidate = createWorld({ id: 'ambiguous-deadline-world', seed: 'commit-ack' });
+      const retryOptions = { expectedRevision: 0, requestId: 'ambiguous-deadline-save' };
+      withholdCommit = true;
+      await assert.rejects(uncertain.saveWorld(candidate, retryOptions), { code: 'WORLD_DB_UNAVAILABLE' });
+      assert.strictEqual((await a.loadWorld(candidate.id)).revision, 1, 'COMMIT succeeded despite lost response');
+      const recovered = await uncertain.saveWorld(candidate, retryOptions);
+      assert.strictEqual(recovered.idempotent, true); assert.strictEqual(recovered.revision, 1);
+      assert.strictEqual((await raw.query(`SELECT count(*)::int AS n FROM ${quoted}.world_saves WHERE world_id=$1`, [candidate.id])).rows[0].n, 1);
+      const auditInput = { requestId: 'ambiguous-deadline-audit', method: 'POST', route: 'durable.commands.submit', statusCode: 202 };
+      withholdCommit = true;
+      await assert.rejects(uncertainAudit.append(auditInput), { code: 'WORLD_DB_UNAVAILABLE' });
+      const auditRecovered = await uncertainAudit.append(auditInput);
+      assert.strictEqual(auditRecovered.idempotent, true);
+      assert.strictEqual((await raw.query(`SELECT count(*)::int AS n FROM ${quoted}.command_api_audit WHERE request_id=$1`, [auditInput.requestId])).rows[0].n, 1);
+    } finally { await Promise.all([uncertain.close(), uncertainAudit.close()]); }
+    pass('real committed checkpoint and audit with lost replies recover once by the same request ID');
 
     const brokenUrl = new URL(connectionString); brokenUrl.port = '1';
     const offline = createPostgresDatabaseStore({ connectionString: brokenUrl.toString(), schema, connectionTimeoutMillis: 200 });

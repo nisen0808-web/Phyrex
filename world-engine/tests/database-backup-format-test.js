@@ -7,6 +7,15 @@ const { header, TABLES, SEQUENCED, exportBackupFile, readBackupFile, verifyBacku
 
 async function main() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'phyrex-backup-format-'));
+  const nativeOpen = fs.promises.open;
+  if (process.platform === 'win32') {
+    // This suite tests file format/cleanup with real files. Native Windows
+    // cannot fsync directories: model that operation explicitly here. The
+    // separate durability suite tests the default native fail-closed policy.
+    fs.promises.open = async (file, ...args) => path.resolve(file) === directory
+      ? { sync: async () => {}, close: async () => {} }
+      : nativeOpen(file, ...args);
+  }
   const counts = Object.fromEntries(Object.keys(TABLES).map(table => [table, table === 'worlds' ? 1 : 0]));
   const records = [header(), { type: 'row', table: 'worlds', values: {
     world_id: '中文世界😀', revision: 0, latest_sequence: null, updated_at: '2026-10-02T00:00:00.123456+00:00' } },
@@ -40,7 +49,8 @@ async function main() {
       await write(header()); throw new Error('injected source failure');
     } }, path.join(directory, 'failed')));
     assert.ok(!fs.readdirSync(directory).some(name => name.endsWith('.tmp')));
-    console.log('database backup format passed: UTF-8, checksums, truncation, no overwrite, bounded lines and failed-write cleanup');
-  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+    console.log('database backup format passed: UTF-8, checksums, truncation, no overwrite, bounded lines and failed-write cleanup'
+      + (process.platform === 'win32' ? ' (directory fsync modeled; native durability policy tested separately)' : ''));
+  } finally { fs.promises.open = nativeOpen; fs.rmSync(directory, { recursive: true, force: true }); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

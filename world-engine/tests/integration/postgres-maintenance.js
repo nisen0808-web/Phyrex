@@ -8,7 +8,7 @@ const { Pool } = require('pg');
 const { createWorld } = require('../../core/world-engine');
 const { createPostgresDatabaseStore } = require('../../storage/postgres/store');
 const { createPostgresCommandApiAuditStore } = require('../../storage/postgres/command-api-audit-store');
-const { exportBackupFile, readBackupFile } = require('../../storage/postgres/backup');
+const { exportBackupFile, readBackupFile, verifyBackupFile } = require('../../storage/postgres/backup');
 const { detachedJson, digest } = require('../../storage/postgres/codec');
 const { main: maintain } = require('../../demo/database-maintenance-cli');
 
@@ -87,6 +87,40 @@ async function main() {
 
     const input = { requestId: 'retire-me', worldId: world.id, method: 'GET', route: 'durable.audit.list', statusCode: 200 };
     const first = await audit.append(input);
+    // A real complete SQL snapshot and file publication must not authorize any
+    // checkpoint/audit deletion when the post-link directory flush fails.
+    const checkpointsBeforeSyncFailure = (await raw.query(`SELECT to_jsonb(t) AS data FROM ${q}.world_saves t ORDER BY sequence`)).rows;
+    const auditBeforeSyncFailure = await auditRows();
+    const receiptsBeforeSyncFailure = (await raw.query(`SELECT to_jsonb(t) AS data FROM ${q}.command_api_audit_receipts t ORDER BY sequence`)).rows;
+    for (const operation of ['checkpoints', 'audit']) {
+      const originalOpen = fs.promises.open;
+      let directoryOpens = 0, failedDirectoryClosed = false;
+      fs.promises.open = async (target, ...args) => {
+        const handle = await originalOpen(target, ...args);
+        if (path.resolve(target) !== directory) return handle;
+        const n = ++directoryOpens;
+        return {
+          async sync() { if (n === 2) throw Object.assign(new Error('injected private backup path'), { code: 'EIO' }); await handle.sync(); },
+          async close() { await handle.close(); if (n === 2) failedDirectoryClosed = true; },
+        };
+      };
+      const publishedFile = file(`directory-sync-failed-${operation}`);
+      try {
+        const args = operation === 'checkpoints'
+          ? ['checkpoints', '--world-id', world.id, '--keep', '1', '--expected-revision', '6', '--apply', '--backup', publishedFile]
+          : ['audit', '--before-sequence', '9999', '--apply', '--backup', publishedFile];
+        await assert.rejects(maintain(args, env), error => error.code === 'WORLD_DB_BACKUP_DIRECTORY_SYNC_FAILED' && !error.message.includes('private'));
+        assert.strictEqual(directoryOpens, 2); assert.strictEqual(failedDirectoryClosed, true);
+      } finally { fs.promises.open = originalOpen; }
+      assert.deepStrictEqual((await raw.query(`SELECT to_jsonb(t) AS data FROM ${q}.world_saves t ORDER BY sequence`)).rows, checkpointsBeforeSyncFailure);
+      assert.deepStrictEqual(await auditRows(), auditBeforeSyncFailure);
+      assert.deepStrictEqual((await raw.query(`SELECT to_jsonb(t) AS data FROM ${q}.command_api_audit_receipts t ORDER BY sequence`)).rows, receiptsBeforeSyncFailure);
+      assert.strictEqual((await verifyBackupFile(publishedFile)).valid, true, 'retain the published file while reporting uncertain directory durability');
+      const publishedBytes = fs.readFileSync(publishedFile);
+      await assert.rejects(exportBackupFile(store, publishedFile), error => error.code === 'EEXIST');
+      assert.deepStrictEqual(fs.readFileSync(publishedFile), publishedBytes);
+    }
+    pass('post-publication directory sync failure preserves real SQL checkpoint payloads, audit rows and receipts for both maintenance modes');
     held = await raw.connect(); await held.query('BEGIN');
     await held.query(`INSERT INTO ${q}.command_api_audit(request_id,world_id,method,route,status_code) VALUES ('late-commit',$1,'GET','durable.audit.list',200)`, [world.id]);
     const captured = [];

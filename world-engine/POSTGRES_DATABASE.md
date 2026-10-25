@@ -32,6 +32,36 @@ file is an example, not an automatically loaded configuration file. Never check
 real secrets into source control. Optional settings are
 `WORLD_ENGINE_DB_SCHEMA` and `WORLD_ENGINE_DB_POOL_SIZE`.
 
+Local deadlines also bound a checked-out connection when PostgreSQL stops
+replying. These apply to the world store and the separate command audit store:
+
+| Adapter option | Environment variable | Default | Range (milliseconds) |
+| --- | --- | --- | --- |
+| `queryTimeoutMillis` | `WORLD_ENGINE_DB_QUERY_TIMEOUT_MILLIS` | 30000 | 1–3600000 |
+| `transactionTimeoutMillis` | `WORLD_ENGINE_DB_TRANSACTION_TIMEOUT_MILLIS` | 300000 | 1–3600000 |
+| `closeTimeoutMillis` | `WORLD_ENGINE_DB_CLOSE_TIMEOUT_MILLIS` | 5000 | 1–120000 |
+
+The total transaction budget starts before pool acquisition, does not reset
+between SQL statements, and includes asynchronous backup writers/readers. Each
+query (including BEGIN, COMMIT and ROLLBACK) has its own local limit. Server
+statement/lock timeouts remain in force. Large exports/imports must fit the total
+budget; increase it explicitly for a measured maintenance workload.
+
+Expiry reports the safe, retryable `WORLD_DB_UNAVAILABLE` and destroys the
+lease with `client.release(true)` instead of returning an unresolved query to
+the pool. A connection arriving after acquisition expiry is also destroyed.
+Closing the store interrupts active leases and pending acquisitions; waiting
+for the pool to end is separately bounded. Late driver outcomes are consumed.
+These limits bound asynchronous waits while the event loop can run; they cannot
+preempt synchronous JavaScript or a stalled operating system.
+
+A timed-out COMMIT can already have succeeded. Retry the identical frozen
+checkpoint/command/audit with the **same** request ID and expected revision.
+The existing receipt and revision fence reconcile that result; a new ID could
+duplicate work. The durable runtime retains its frozen candidate and publishes
+only after a confirmed receipt. No migration or runtime format changes here.
+See [pg pooled client destruction](https://node-postgres.com/apis/pool).
+
 Remote hosts default to verified TLS (`verify-full`). Local loopback hosts default
 to `disable`. Supply `WORLD_ENGINE_DB_SSL_CA` when a private CA is required.
 The adapter rejects URL SSL parameters that could override its TLS policy.

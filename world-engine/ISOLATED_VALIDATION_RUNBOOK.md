@@ -14,7 +14,7 @@ npm --prefix world-engine run engine:verify -- --suite all --list
 npm --prefix world-engine run engine:verify -- --suite all --report output/isolated-verification-new.json
 ```
 
-报告文件必须不存在。all 顺序执行 22 个门禁，第一项失败立即停止；子进程退出码和实际完成标记必须同时通过，数据库不可用不跳过。Node 20/22 的正式 CI 将这些门禁分成 14 个作业并包含 root/nested 的重复入口校验；下载实际日志核验 checkout tree、完成标记和 pipefail。
+报告文件必须不存在。all 顺序执行 23 个门禁，第一项失败立即停止；子进程退出码和实际完成标记必须同时通过，数据库不可用不跳过。Node 20/22 的正式 CI 将这些门禁分成 14 个作业并包含 root/nested 的重复入口校验；下载实际日志核验 checkout tree、完成标记和 pipefail。新增 P1 验收纳入原门禁：真实已建 TCP 连接的返回流黑洞、SQL 锁等待本地截止时间、真实 COMMIT 后注入回应丢失并以原 request ID 恢复，以及备份发布后目录同步故障的两种维护保护。仍未进行主机断电实验。
 
 Windows 可以运行普通回归；完整 SIGTERM 进程关机专项必须在 Linux。无需在用户本机安装或启动数据库，就能审查本包附带的真实 CI 日志；不能将此表述成本机已运行 PostgreSQL 或 Docker。
 

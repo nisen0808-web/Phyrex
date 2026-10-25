@@ -5,7 +5,7 @@ const { MIGRATIONS, checkMigrationHistory } = require('./migrations');
 const { textId, safeInteger, fromSqlInteger } = require('./codec');
 const { sanitizeError } = require('./store');
 const { auditDigest, lockAuditRequest } = require('./audit-receipt');
-const { guardClientLease } = require('./client-lease');
+const { createClientLeaseManager } = require('./client-lease');
 
 function createPostgresCommandApiAuditStore(options = {}) {
   const config = normalizePostgresConfig(options.database || options, options.env || process.env);
@@ -19,21 +19,26 @@ function createPostgresCommandApiAuditStore(options = {}) {
   const schema = `"${config.schema}"`;
   let ready = null, closing = false, closePromise = null;
   pool.on('error', () => {});
+  const leases = createClientLeaseManager(pool, config);
 
   function assertOpen() { if (closing) throw databaseError('CLOSED', 'PostgreSQL audit store is closed'); }
   async function transaction(work, readOnly = false) {
     assertOpen();
-    let client, broken = false;
     try {
-      client = guardClientLease(await pool.connect());
-      await client.query(readOnly ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
-      const result = await work(client);
-      await client.query('COMMIT');
-      return result;
+      return await leases.withClient(async client => {
+        try {
+          await client.query(readOnly ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
+          const result = await work(client);
+          await client.query('COMMIT');
+          return result;
+        } catch (error) {
+          try { await client.query('ROLLBACK'); } catch (_) { client.destroy(); }
+          throw error;
+        }
+      });
     } catch (error) {
-      if (client) { try { await client.query('ROLLBACK'); } catch (_) { broken = true; } }
       throw sanitizeError(error);
-    } finally { if (client) client.release(broken); }
+    }
   }
   function ensureReady() {
     assertOpen();
@@ -120,7 +125,7 @@ function createPostgresCommandApiAuditStore(options = {}) {
   }
 
   function close() {
-    if (!closePromise) { closing = true; closePromise = pool.end(); }
+    if (!closePromise) { closing = true; closePromise = leases.close().catch(error => { throw sanitizeError(error); }); }
     return closePromise;
   }
 

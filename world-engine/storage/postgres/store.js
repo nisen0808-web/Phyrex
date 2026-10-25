@@ -5,7 +5,7 @@ const { MIGRATIONS, checkMigrationHistory } = require('./migrations');
 const { createCommandQueueOperations, readPendingCapacity } = require('./command-queue');
 const { createBackupOperations } = require('./backup');
 const { createMaintenanceOperations } = require('./maintenance');
-const { guardClientLease } = require('./client-lease');
+const { createClientLeaseManager } = require('./client-lease');
 const { textId, safeInteger, fromSqlInteger, captureCheckpoint, captureEvent, captureInboxCommand, digest,
   canonicalJson, summarizeSave, restoreSave, restoreReadView, validateArchivedSave, detachedJson } = require('./codec');
 
@@ -20,22 +20,27 @@ function createPostgresDatabaseStore(options = {}) {
   const schema = `"${config.schema}"`;
   let ready = null, closing = false, closePromise = null, poolErrors = 0, readView = null, readViewLoad = null;
   pool.on('error', () => { poolErrors += 1; });
+  const leases = createClientLeaseManager(pool, config);
   function assertOpen() { if (closing) throw databaseError('CLOSED', 'PostgreSQL store is closed'); }
   async function transaction(work, readOnly = false) {
     assertOpen();
-    let client, broken = false;
     try {
-      client = guardClientLease(await pool.connect());
-      await client.query(readOnly ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
-      await client.query("SELECT set_config('statement_timeout', $1, true), set_config('lock_timeout', $2, true)",
-        [String(config.statementTimeoutMillis), String(config.lockTimeoutMillis)]);
-      const result = await work(client);
-      await client.query('COMMIT');
-      return result;
+      return await leases.withClient(async client => {
+        try {
+          await client.query(readOnly ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
+          await client.query("SELECT set_config('statement_timeout', $1, true), set_config('lock_timeout', $2, true)",
+            [String(config.statementTimeoutMillis), String(config.lockTimeoutMillis)]);
+          const result = await work(client);
+          await client.query('COMMIT');
+          return result;
+        } catch (error) {
+          try { await client.query('ROLLBACK'); } catch (_) { client.destroy(); }
+          throw error;
+        }
+      });
     } catch (error) {
-      if (client) { try { await client.query('ROLLBACK'); } catch (_) { broken = true; } }
       throw sanitizeError(error);
-    } finally { if (client) client.release(broken); }
+    }
   }
   async function readSchema(client, requireCurrent = true) {
     const result = await client.query(`SELECT version, name, checksum FROM ${schema}.schema_migrations ORDER BY version`);
@@ -339,7 +344,7 @@ function createPostgresDatabaseStore(options = {}) {
     }, true);
   }
   function close() {
-    if (!closePromise) { closing = true; readView = null; readViewLoad = null; closePromise = pool.end(); }
+    if (!closePromise) { closing = true; readView = null; readViewLoad = null; closePromise = leases.close().catch(error => { throw sanitizeError(error); }); }
     return closePromise;
   }
   return Object.freeze({ version: 2, provider: 'postgres', config: Object.freeze(safePostgresConfig(config)),
