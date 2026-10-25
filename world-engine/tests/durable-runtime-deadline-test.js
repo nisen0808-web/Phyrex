@@ -102,4 +102,5 @@ async function main() {
   }
   console.log('durable runtime local deadline passed: hung read leaves busy, lost commit reply preserves frozen candidate and publishes once (controlled ledger)');
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });
+const watchdog = setTimeout(() => { console.error('durable runtime deadline test did not complete'); process.exit(1); }, 10000);
+main().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => clearTimeout(watchdog));

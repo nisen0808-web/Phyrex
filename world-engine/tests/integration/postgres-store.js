@@ -191,10 +191,15 @@ async function main() {
       await blocker.query('ROLLBACK'); blocker.release(); blocker = null;
       assert.ok(Array.isArray(await locked.listPendingCommands(world.id)), 'pool remains usable after destroying a timed-out lease');
     } finally {
-      if (blocker) { await blocker.query('ROLLBACK'); blocker.release(); }
-      await Promise.all([throughProxy.close(), locked.close()]);
-      for (const socket of sockets) socket.destroy();
-      await new Promise(resolve => proxy.close(resolve));
+      try {
+        if (blocker) { try { await blocker.query('ROLLBACK'); } finally { blocker.release(); } }
+      } finally {
+        try { await Promise.all([throughProxy.close(), locked.close()]); }
+        finally {
+          for (const socket of sockets) socket.destroy();
+          await new Promise(resolve => proxy.close(resolve));
+        }
+      }
     }
     pass('local deadlines bound established TCP blackholes and real SQL locks, then reconnect');
 
@@ -250,4 +255,5 @@ async function main() {
     fs.rmSync(directory, { recursive: true, force: true });
   }
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });
+const watchdog = setTimeout(() => { console.error('postgres integration test did not complete'); process.exit(1); }, 120000);
+main().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => clearTimeout(watchdog));

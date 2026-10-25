@@ -98,7 +98,7 @@ async function acquisitionExpiryDestroysLateClient() {
   await manager.close();
 }
 
-async function closeInterruptsAcquisitionAndQuery() {
+async function closeCancelsAcquisitionAndBoundsHungQuery() {
   const pending = deferred(), raw = fakeClient();
   const manager = createClientLeaseManager({ connect: () => pending.promise, end: async () => {} },
     { ...short, connectionTimeoutMillis: 500, transactionTimeoutMillis: 1000 });
@@ -112,8 +112,46 @@ async function closeInterruptsAcquisitionAndQuery() {
   const hung = deferred(), active = fakeClient(() => hung.promise), second = createClientLeaseManager(poolFor(active),
     { ...short, queryTimeoutMillis: 500, transactionTimeoutMillis: 1000 });
   const running = unavailable(second.withClient(client => client.query('SELECT 1')));
-  await delay(1); await second.close(); await running;
+  await delay(1); await Promise.all([unavailable(second.close()), running]);
   assert.deepEqual(active.releases, [true]); hung.reject(new Error('private late close rejection')); await delay(1);
+}
+
+async function closeGracefullyDrainsLeasedWork() {
+  const reply = deferred(), raw = fakeClient(sql => sql === 'SELECT 1' ? reply.promise : Promise.resolve({ rows: [] }));
+  let ends = 0;
+  const manager = createClientLeaseManager({ connect: async () => raw, end: async () => { ends++; } },
+    { ...short, queryTimeoutMillis: 500, transactionTimeoutMillis: 1000, closeTimeoutMillis: 200 });
+  const work = manager.withClient(async client => {
+    await client.query('SELECT 1'); await client.query('COMMIT'); return 'drained';
+  });
+  await delay(1);
+  const closed = manager.close();
+  await assert.rejects(manager.withClient(() => {}), { code: 'WORLD_DB_CLOSED' });
+  assert.equal(ends, 0, 'pool.end must wait even if a fake driver resolves it immediately');
+  reply.resolve({ rows: [] });
+  assert.equal(await work, 'drained'); await closed;
+  assert.equal(ends, 1); assert.deepEqual(raw.releases, [false]);
+  assert.equal(raw.listenerCount('error'), 0);
+}
+
+async function closeBoundsNonSqlWorkAndFencesLateCommit() {
+  for (const delayedTimer of [false, true]) {
+    const sink = deferred(), raw = fakeClient();
+    const manager = createClientLeaseManager(poolFor(raw),
+      { ...short, queryTimeoutMillis: 500, transactionTimeoutMillis: 1000, closeTimeoutMillis: 10 });
+    const work = unavailable(manager.withClient(async client => {
+      await client.query('BEGIN'); await sink.promise; await client.query('COMMIT');
+    }));
+    await delay(1);
+    const closed = unavailable(manager.close());
+    if (delayedTimer) {
+      const until = performance.now() + 20; while (performance.now() < until) {}
+      sink.resolve();
+    }
+    await Promise.all([work, closed]);
+    sink.resolve(); await delay(1);
+    assert.deepEqual(raw.calls, ['BEGIN']); assert.deepEqual(raw.releases, [true]);
+  }
 }
 
 async function closeItselfIsBounded() {
@@ -214,11 +252,12 @@ async function main() {
   const watchdog = setTimeout(() => { console.error('postgres deadline test did not complete'); process.exit(1); }, 10000);
   try {
     for (const test of [configContracts, queryExpiryAndLateOutcomes, totalBudgetIncludesNonSqlAwait,
-      totalBudgetDoesNotResetPerQuery, acquisitionExpiryDestroysLateClient, closeInterruptsAcquisitionAndQuery,
+      totalBudgetDoesNotResetPerQuery, acquisitionExpiryDestroysLateClient, closeCancelsAcquisitionAndBoundsHungQuery,
+      closeGracefullyDrainsLeasedWork, closeBoundsNonSqlWorkAndFencesLateCommit,
       closeItselfIsBounded, deadlinesSurviveDelayedTimerCallbacks, storesBoundRollbackAndClose, storesRecoverAmbiguousAuditCommit]) {
       await test(); console.log(`PASS ${test.name}`);
     }
-    console.log('postgres deadline test passed (10 scenario groups)');
+    console.log('postgres deadline test passed (12 scenario groups)');
   } finally { clearTimeout(watchdog); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

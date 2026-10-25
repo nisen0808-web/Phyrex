@@ -80,6 +80,27 @@ function destroyLateClient(client) {
 function createClientLeaseManager(pool, config) {
   const operations = new Set();
   let closing = false, closePromise = null;
+  let closeDeadline = Infinity, closeTimer, closeSettled = false, endStarted = false;
+  let resolveClose, rejectClose;
+
+  function finishClose(error, value) {
+    if (closeSettled) return;
+    closeSettled = true; clearTimeout(closeTimer);
+    if (error) rejectClose(error); else resolveClose(value);
+  }
+  function endWhenDrained() {
+    if (!closing || operations.size || endStarted) return;
+    endStarted = true;
+    Promise.resolve().then(() => pool.end()).then(value => {
+      finishClose(performance.now() >= closeDeadline ? unavailable('close deadline') : null, value);
+    }, error => finishClose(error));
+  }
+  function expireClose() {
+    if (closeSettled) return;
+    for (const operation of [...operations]) operation.cancel(unavailable('close deadline'));
+    endWhenDrained();
+    finishClose(unavailable('close deadline'));
+  }
 
   function withClient(work) {
     if (closing) return Promise.reject(databaseError('CLOSED', 'PostgreSQL store is closed'));
@@ -87,7 +108,7 @@ function createClientLeaseManager(pool, config) {
     const deadline = performance.now() + config.transactionTimeoutMillis;
     let resolveResult, rejectResult;
     const result = new Promise((resolve, reject) => { resolveResult = resolve; rejectResult = reject; });
-    const operation = { cancel(error) {
+    const operation = { hasLease: () => !!lease, cancel(error) {
       if (settled) return;
       failure = error;
       cancelAcquire?.(error);
@@ -97,9 +118,11 @@ function createClientLeaseManager(pool, config) {
     function finish(error, value) {
       if (settled) return;
       if (!error && performance.now() >= deadline) { operation.cancel(unavailable('transaction deadline')); return; }
+      if (!error && closing && performance.now() >= closeDeadline) { expireClose(); return; }
       settled = true; clearTimeout(timer); operations.delete(operation);
       try { lease?.release(); } catch (_) { error ||= unavailable('lease release'); }
       if (error) rejectResult(error); else resolveResult(value);
+      endWhenDrained();
     }
     function acquire() {
       return new Promise((resolve, reject) => {
@@ -131,6 +154,7 @@ function createClientLeaseManager(pool, config) {
       const client = await acquire();
       if (failure || closing) { destroyLateClient(client); throw failure || unavailable('close'); }
       lease = guardClientLease(client, { ...config, checkDeadline: () => {
+        if (closing && performance.now() >= closeDeadline) expireClose();
         if (!failure && performance.now() >= deadline) operation.cancel(unavailable('transaction deadline'));
         return failure;
       } });
@@ -142,19 +166,16 @@ function createClientLeaseManager(pool, config) {
   function close() {
     if (closePromise) return closePromise;
     closing = true;
-    // Interrupt active SQL and pending acquisition immediately. Late outcomes
-    // are consumed and cannot issue another query or resume a transaction.
-    for (const operation of [...operations]) operation.cancel(unavailable('close'));
-    closePromise = new Promise((resolve, reject) => {
-      const deadline = performance.now() + config.closeTimeoutMillis;
-      const timer = setTimeout(() => reject(unavailable('close deadline')), config.closeTimeoutMillis);
-      Promise.resolve().then(() => pool.end()).then(value => {
-        clearTimeout(timer);
-        if (performance.now() >= deadline) reject(unavailable('close deadline')); else resolve(value);
-      }, error => {
-        clearTimeout(timer); reject(error);
-      });
-    });
+    closeDeadline = performance.now() + config.closeTimeoutMillis;
+    closePromise = new Promise((resolve, reject) => { resolveClose = resolve; rejectClose = reject; });
+    closeTimer = setTimeout(expireClose, config.closeTimeoutMillis);
+    // Deny new work and cancel acquisitions, but preserve the existing close
+    // contract: checked-out work may finish within this one total close budget.
+    // On expiry all remaining leases are destroyed, including non-query awaits.
+    for (const operation of [...operations]) {
+      if (!operation.hasLease()) operation.cancel(unavailable('close'));
+    }
+    endWhenDrained();
     return closePromise;
   }
   return { withClient, close };

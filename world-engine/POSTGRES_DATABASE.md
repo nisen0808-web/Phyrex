@@ -50,8 +50,10 @@ budget; increase it explicitly for a measured maintenance workload.
 Expiry reports the safe, retryable `WORLD_DB_UNAVAILABLE` and destroys the
 lease with `client.release(true)` instead of returning an unresolved query to
 the pool. A connection arriving after acquisition expiry is also destroyed.
-Closing the store interrupts active leases and pending acquisitions; waiting
-for the pool to end is separately bounded. Late driver outcomes are consumed.
+Closing the store rejects new work and cancels pending acquisitions. Already
+leased work may drain within the close budget; expiry destroys remaining leases
+and reports failure. Drain and pool shutdown share that one bounded budget.
+Late driver outcomes are consumed.
 These limits bound asynchronous waits while the event loop can run; they cannot
 preempt synchronous JavaScript or a stalled operating system.
 
