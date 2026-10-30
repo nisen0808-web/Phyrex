@@ -10,6 +10,7 @@ const { createAccount, createSession } = require('../../core/account-session-eng
 const { createPostgresDatabaseStore } = require('../../storage/postgres/store');
 const { createDurableWorldRuntime } = require('../../runtime/durable-world-runtime');
 const { createDurableCommandApiServer } = require('../../core/durable-command-api-engine');
+const { createPostgresCommandApiAuditStore } = require('../../storage/postgres/command-api-audit-store');
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
@@ -52,7 +53,7 @@ async function main() {
   const quoted = `"${schema}"`;
   const store = createPostgresDatabaseStore({ connectionString, schema });
   const raw = new Pool({ connectionString, max: 2, connectionTimeoutMillis: 5000 });
-  let api = null, raceApi = null, runtime = null;
+  let api = null, raceApi = null, runtime = null, capacityApi = null, auditStore = null, blocker = null;
   let groups = 0;
   const pass = name => { groups += 1; console.log(`PASS ${name}`); };
   try {
@@ -179,8 +180,50 @@ async function main() {
     assert.ok(!JSON.stringify(response.body).includes(connectionString));
     pass('HTTP validation and error responses remain bounded and redact database connection details');
 
+    auditStore = createPostgresCommandApiAuditStore({ connectionString, schema });
+    capacityApi = await createDurableCommandApiServer({ store, auditStore, maxInFlightRequests: 1,
+      rateLimitNow: () => 0, health: async () => true });
+    const capacityPort = await listen(capacityApi.server);
+    blocker = await raw.connect();
+    await blocker.query('BEGIN');
+    await blocker.query(`LOCK TABLE ${quoted}.command_api_audit IN ACCESS EXCLUSIVE MODE`);
+    const capacityPath = '/durable/worlds/command_api_world/players/player-2/commands';
+    const capacityBody = { id: 'capacity-command', type: 'wait', ticks: 1 };
+    const accepted = await request(capacityPort, 'POST', capacityPath, { token: 'sql-token-two', body: capacityBody });
+    assert.strictEqual(accepted.status, 202);
+    let lockObserved = false;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const waiting = await raw.query("SELECT 1 FROM pg_stat_activity WHERE application_name='phyrex-world-command-audit' AND wait_event_type='Lock' AND query LIKE $1", ['%' + schema + '%']);
+      if (waiting.rows.length) { lockObserved = true; break; }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.ok(lockObserved, 'audit must actually wait on the PostgreSQL table lock');
+    const full = await request(capacityPort, 'POST', capacityPath, { token: 'sql-token-two', body: capacityBody });
+    assert.strictEqual(full.status, 503); assert.strictEqual(full.headers['retry-after'], '1');
+    assert.deepStrictEqual(capacityApi.requestStats(), { inFlight: 1, limit: 1, rejected: 1 });
+    assert.strictEqual((await request(capacityPort, 'GET', '/health/live')).status, 200);
+    assert.strictEqual((await request(capacityPort, 'GET', '/health/ready')).status, 503);
+    const single = await raw.query(`SELECT count(*) FROM ${quoted}.world_commands WHERE world_id=$1 AND command_id=$2`, ['command_api_world', capacityBody.id]);
+    assert.strictEqual(Number(single.rows[0].count), 1);
+    pass('real PostgreSQL audit lock retains request capacity after response and rejects overload before another inbox write');
+
+    await blocker.query('COMMIT'); blocker.release(); blocker = null;
+    for (let attempt = 0; attempt < 200 && capacityApi.requestStats().inFlight; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.strictEqual(capacityApi.requestStats().inFlight, 0);
+    const recovered = await request(capacityPort, 'POST', capacityPath, { token: 'sql-token-two', body: capacityBody });
+    assert.strictEqual(recovered.status, 202); assert.strictEqual(recovered.body.data.idempotent, true);
+    assert.strictEqual(recovered.body.data.sequence, accepted.body.data.sequence);
+    await capacityApi.close(); capacityApi = null;
+    const auditRows = await auditStore.list({ worldId: 'command_api_world', commandId: capacityBody.id });
+    assert.strictEqual(auditRows.length, 2, 'only accepted original/retry create SQL audits');
+    assert.ok(auditRows.every(row => row.statusCode === 202));
+    pass('audit lock release restores capacity and same-ID retry returns one durable command without replay');
+
     console.log(`postgres command api completed ${groups} scenario groups: ${groups} passed, 0 failed`);
   } finally {
+    if (blocker) { await blocker.query('ROLLBACK').catch(() => {}); blocker.release(); }
+    if (capacityApi) await capacityApi.close().catch(() => {});
+    if (auditStore) await auditStore.close().catch(() => {});
     if (raceApi) await raceApi.close().catch(() => {});
     if (api) await api.close().catch(() => {});
     if (runtime) await runtime.close({ flush: false }).catch(() => {});

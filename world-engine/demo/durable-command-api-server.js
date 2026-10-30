@@ -58,6 +58,7 @@ function commandApiOptions(args = {}, env = process.env) {
   copyNumericEnv(apiOptions, env, 'rateLimitWindowMs', 'WORLD_ENGINE_COMMAND_API_RATE_LIMIT_WINDOW_MS');
   copyNumericEnv(apiOptions, env, 'maxTrackedSources', 'WORLD_ENGINE_COMMAND_API_MAX_TRACKED_SOURCES');
   copyNumericEnv(apiOptions, env, 'maxTrackedAccounts', 'WORLD_ENGINE_COMMAND_API_MAX_TRACKED_ACCOUNTS');
+  copyNumericEnv(apiOptions, env, 'maxInFlightRequests', 'WORLD_ENGINE_COMMAND_API_MAX_IN_FLIGHT_REQUESTS');
   return apiOptions;
 }
 
