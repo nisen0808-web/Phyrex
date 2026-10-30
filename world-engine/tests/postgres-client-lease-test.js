@@ -19,9 +19,12 @@ async function main() {
   const before = queries;
   await assert.rejects(between.query('COMMIT'), e => e.code === 'WORLD_DB_UNAVAILABLE' && !e.message.includes('secret'));
   assert.equal(queries,before); between.release(false); assert.equal(released,true);
-  assert.equal(client.listenerCount('error'),0);
-  const during = guardClientLease(client);
-  client.query = async () => { client.emit('error',new Error('secret')); return { rows:['unconfirmed'] }; };
+  // A destroyed lease remains protected until the driver confirms its end.
+  client.emit('error',new Error('late private error'));
+  client.emit('end'); assert.equal(client.listenerCount('error'),0);
+  const nextClient = new EventEmitter(); nextClient.release = broken => { released = broken; };
+  const during = guardClientLease(nextClient);
+  nextClient.query = async () => { nextClient.emit('error',new Error('secret')); return { rows:['unconfirmed'] }; };
   await assert.rejects(during.query('COMMIT'), { code:'WORLD_DB_UNAVAILABLE' }); during.release(false);
   assert.equal(released,true);
   for (const message of ['Connection terminated unexpectedly','Connection terminated','Client has encountered a connection error and is not queryable']) {
@@ -42,7 +45,11 @@ async function main() {
       async end() {}
     }
     const store = create({ connectionString:'postgres://test:secret@127.0.0.1/world_engine_test',Pool });
-    try { await assert.rejects(store.summary(),{ code:'WORLD_DB_UNAVAILABLE' }); assert.equal(leaseClient.listenerCount('error'),0); }
+    try {
+      await assert.rejects(store.summary(),{ code:'WORLD_DB_UNAVAILABLE' });
+      leaseClient.emit('error',new Error('late private error'));
+      leaseClient.emit('end'); assert.equal(leaseClient.listenerCount('error'),0);
+    }
     finally { await store.close(); }
   }
   console.log('postgres client lease test passed: between-query loss, ambiguous commit, both stores, redaction and listener cleanup');

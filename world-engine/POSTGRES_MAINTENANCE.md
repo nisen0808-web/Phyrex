@@ -26,4 +26,6 @@ npm --prefix world-engine run database:maintain -- audit --before-sequence 10000
 
 这些是容量管理工具，不代表数据库总容量有固定上限。checkpoint receipts、command inbox、world events 和 audit receipts 仍保留以维护幂等、命令结果和引用关系；world metadata 也由调用者控制大小。完整备份文件会持续占用磁盘，需要按恢复需求转存和保管。PostgreSQL 更新/删除后的磁盘回收依赖正常 VACUUM 运维，文件大小不保证立即缩小。直接存储 API `compactCheckpoints` / `retireAuditRecords` 是可信维护层，调用者需先建立备份；面向操作员的 CLI 强制先完成备份。
 
-真实 PostgreSQL 验收：`WORLD_ENGINE_TEST_DATABASE_URL` 指向 `_ci` 或 `_test` 结尾的隔离测试数据库，再执行 `npm --prefix world-engine run test:postgres:maintenance`。覆盖备份、批次上限、版本冲突、损坏回滚、晚提交审计、并发幂等及归档后恢复。CI 使用 `bash -e -o pipefail` 和明确的 8/8 完成标记，数据库不可用时禁止静默跳过。
+CLI 必须等待备份文件和发布后的父目录同步全部成功，才调用 compact/retire。目录能力预检或发布后同步失败时，checkpoint envelope、审计明细和 receipts 保持原样。原生 Windows/不支持目录 fsync 的文件系统拒绝 `--apply`，只读预览不受此限制；同步失败后已发布的文件不得覆盖，详见 [备份平台政策](POSTGRES_BACKUP.md)。直接维护 API 的可信调用者仍须自行建立已确认持久化的备份，CLI 门禁没有改变该 API 边界。
+
+真实 PostgreSQL 验收：`WORLD_ENGINE_TEST_DATABASE_URL` 指向 `_ci` 或 `_test` 结尾的隔离测试数据库，再执行 `npm --prefix world-engine run test:postgres:maintenance`。覆盖备份、批次上限、版本冲突、损坏回滚、晚提交审计、并发幂等、两种维护在发布后目录同步失败时保留完整 SQL 行，以及归档后恢复。CI 使用 `bash -e -o pipefail` 和明确的 9/9 完成标记，数据库不可用时禁止静默跳过。

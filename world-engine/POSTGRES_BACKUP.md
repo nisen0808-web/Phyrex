@@ -13,10 +13,14 @@ npm --prefix world-engine run database:backup -- restore output/world-engine.ndj
 
 导出采用 PostgreSQL REPEATABLE READ 只读事务和游标，逐条写出 checkpoint，避免把全部数据库加载到内存。序列不是 MVCC 数据；导出结束时记录高水位，允许保留并发/失败事务产生的间隙，恢复后不能重用已分配位置。SQL 机制见 [事务隔离](https://www.postgresql.org/docs/18/transaction-iso.html) 和 [ALTER SEQUENCE](https://www.postgresql.org/docs/18/sql-altersequence.html)。
 
-文件格式为 UTF-8 NDJSON，包含固定版本头、白名单表/列数据、序列状态和 SHA-256 尾记录。导出先写同目录临时文件并 fsync，完成后通过不覆盖目标的原子链接发布。目录需预先存在；已有文件不覆盖。备份中含私有世界数据、账户凭据哈希和命令输入，须限制文件目录访问；校验和用于发现损坏，不是加密或来源签名。文件权限在支持的平台设置为 0600，Windows 使用目录 ACL。
+文件格式为 UTF-8 NDJSON，包含固定版本头、白名单表/列数据、序列状态和 SHA-256 尾记录。导出先预检父目录能否打开、同步和关闭，再写同目录临时文件并 fsync，关闭文件后通过不覆盖目标的原子链接发布，最后重新打开、fsync 并关闭父目录，全部成功才返回。文件 fsync 本身不保证新目录项持久化，见 [Linux fsync](https://man7.org/linux/man-pages/man2/fsync.2.html)。目录需预先存在；已有或并发发布的文件不覆盖。
+
+目录 open、sync 或 close 失败统一返回 `WORLD_DB_BACKUP_DIRECTORY_SYNC_FAILED`，不把平台路径放入该错误。原生 Windows 或不支持目录 fsync 的文件系统明确拒绝导出及依赖导出的破坏性维护，不静默跳过目录同步；备份读取和校验仍可使用。能力预检失败时尚未读库或创建临时/正式文件。发布后的同步失败则保留已经链接的文件，其持久性仍未确认；保留它并用新的目标路径重试，不能覆盖原路径或把校验和通过当作目录持久化成功。
+
+备份中含私有世界数据、账户凭据哈希和命令输入，须限制文件目录访问；校验和用于发现损坏，不是加密或来源签名。文件权限在支持的平台设置为 0600，Windows 对已有备份的访问使用目录 ACL。
 
 恢复前验证文件，再在一个 SQL 事务中重新校验并导入。目标表必须为空；锁定目标表后检查，防止并发写入破坏恢复。固定表名和列名、参数化值、checkpoint 摘要与 command input 摘要、外键和唯一约束共同验证内容。损坏、截断、尾随数据、未知列或 SQL 失败均回滚。序列使用事务性 ALTER RESTART，避免非事务 setval 导致失败后序列被改写。
 
-默认每行最多 64 MiB；库 API 可显式配置 maxLineBytes，最大 1 GiB。导出、恢复受数据库语句超时及存储 IO 能力约束；长期导出会保持 MVCC snapshot，生产大库应在合适窗口操作。无需 pg_dump 外部二进制或额外 npm 依赖。
+默认每行最多 64 MiB；库 API 可显式配置 maxLineBytes，最大 1 GiB。导出、恢复受数据库语句超时、本地查询/事务总截止时间及存储 IO 能力约束；长期导出会保持 MVCC snapshot，生产大库应在合适窗口操作，并按 [数据库配置](POSTGRES_DATABASE.md) 显式设置足够的总预算。无需 pg_dump 外部二进制或额外 npm 依赖。
 
 验证门禁包含多世界、完整行值与时间精度、并发导出隔离、命令幂等、sequence gaps、session 哈希、pending 消费、恢复续跑、非空目标拒绝、损坏回滚和 SQL 故障后重试。具体通过状态以当前提交 CI 日志为准。

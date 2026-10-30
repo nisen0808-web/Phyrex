@@ -4,12 +4,12 @@ const path = require('path');
 const { spawn } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const SQL = Object.freeze([
-  ['postgres-store.js', 'integration', 15], ['postgres-command-inbox.js', 'command inbox', 8],
+  ['postgres-store.js', 'integration', 17], ['postgres-command-inbox.js', 'command inbox', 8],
   ['postgres-durable-runtime.js', 'durable runtime', 11], ['postgres-runtime-commands.js', 'runtime commands', 7],
   ['postgres-command-api.js', 'command api', 11], ['postgres-command-audit.js', 'command audit', 4],
   ['postgres-read-view.js', 'read view', 14],
   ['postgres-command-audit-query.js', 'command audit query', 10], ['postgres-backup.js', 'backup', 6],
-  ['postgres-maintenance.js', 'maintenance', 8], ['postgres-account-admin.js', 'account admin', 8],
+  ['postgres-maintenance.js', 'maintenance', 9], ['postgres-account-admin.js', 'account admin', 8],
   ['postgres-engine-quickstart.js', 'quickstart', 8], ['postgres-engine-service.js', 'service', 9],
   ['postgres-command-queue.js', 'command queue', 10], ['postgres-player-contract.js', 'player contract', 10],
   ['postgres-player-actions.js', 'player actions', 10], ['postgres-inventory.js', 'inventory', 12],

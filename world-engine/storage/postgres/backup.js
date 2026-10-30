@@ -134,10 +134,29 @@ function createBackupOperations({ transaction, readSchema, ensureReady, schema }
   return { exportSnapshot, restoreSnapshot };
 }
 
+async function syncBackupDirectory(directory) {
+  let handle, failed = false;
+  try {
+    handle = await fs.promises.open(directory, 'r');
+    await handle.sync();
+  } catch (_) { failed = true; }
+  finally {
+    if (handle) {
+      try { await handle.close(); } catch (_) { failed = true; }
+    }
+  }
+  // Never expose platform errors containing paths or claim a durable backup on
+  // a filesystem that cannot flush directory entries (including native Windows).
+  if (failed) throw databaseError('BACKUP_DIRECTORY_SYNC_FAILED', 'Backup publication durability could not be confirmed');
+}
+
 async function exportBackupFile(store, file, options = {}) {
   const destination = path.resolve(file);
   const temporary = `${destination}.${crypto.randomBytes(8).toString('hex')}.tmp`;
   const maxLineBytes = lineLimit(options.maxLineBytes);
+  // Detect unsupported directory fsync before creating a file or reading the
+  // database. This check does not replace the post-publication flush below.
+  await syncBackupDirectory(path.dirname(destination));
   let handle;
   try {
     handle = await fs.promises.open(temporary, 'wx', 0o600);
@@ -155,6 +174,9 @@ async function exportBackupFile(store, file, options = {}) {
     await handle.close(); handle = null;
     // Publish without replacing an existing backup, even under concurrent writers.
     await fs.promises.link(temporary, destination);
+    // File fsync alone does not persist the new name. On failure retain the
+    // published file, report failure, and do not authorize destructive upkeep.
+    await syncBackupDirectory(path.dirname(destination));
     return { ...result, checksum, file: destination };
   } finally {
     if (handle) await handle.close().catch(() => {});
