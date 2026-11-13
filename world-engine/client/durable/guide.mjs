@@ -104,3 +104,27 @@ export function operationalMessage(data) {
   if (data.queue?.worldCapacityAvailable === false) return { title: '世界可运行，指令队列已满', text: '已有指令仍会结算；等待队列释放后再提交新行动。', warning: true };
   return { title: '本次检查：引擎可接收行动', text: '数据库读取成功，运行器心跳正常。要确认实际推进，请隔一轮手动再次检查世界轮数和存档版本。', warning: false };
 }
+
+export function readDiagnosticsRows(reads) {
+  if (!reads) return [['读取诊断', '未接入']];
+  const number = value => Number.isFinite(value) && value >= 0 ? value : null;
+  const count = value => Number.isSafeInteger(value) && value >= 0 ? String(value) : '—';
+  const ms = value => number(value) === null ? '—' : `${Math.round(value)} 毫秒`;
+  const failures = { timeout: '数据库超时', unavailable: '数据库连接不可用', migration_required: '数据库结构需检查',
+    closed: '读取器已关闭', corrupt_checkpoint: '存档校验失败', archived_checkpoint: '当前存档已归档',
+    invalid_input: '读取参数无效', database_error: '数据库查询失败', unknown: '未分类错误' };
+  const phases = { ready: '准备连接', head: '查询最新存档', cache: '复用存档', shared: '等待共用读取', payload: '下载存档', restore: '校验并恢复存档', commit: '确认读取事务' };
+  const last = reads.lastFailure, payload = reads.lastPayload;
+  const failure = last ? `${Object.hasOwn(failures, last.kind) ? failures[last.kind] : failures.unknown} / ${Object.hasOwn(phases, last.phase) ? phases[last.phase] : '未知阶段'}${number(last.ageMs) === null ? '' : `（约 ${Math.floor(last.ageMs / 1000)} 秒前）`}` : '本进程尚无读取失败';
+  return [
+    ['读取总数 / 成功 / 失败', `${count(reads.requests)} / ${count(reads.completed)} / ${count(reads.failed)}`],
+    ['正在读取 / 并发峰值', `${count(reads.active)} / ${count(reads.peakActive)}`],
+    ['缓存复用 / 共用在途读取', `${count(reads.cacheHits)} / ${count(reads.sharedLoads)}`],
+    ['完整存档读取次数', count(reads.payloadLoads)],
+    ['最近 / 最长读取耗时', `${ms(reads.duration?.lastMs)} / ${ms(reads.duration?.maxMs)}`],
+    ['平均读取耗时', reads.requests - reads.active > 0 && number(reads.duration?.totalMs) !== null ? ms(reads.duration.totalMs / (reads.requests - reads.active)) : '—'],
+    ['最近完整存档大小', number(payload?.bytes) === null ? '—' : `${(payload.bytes / 1024 / 1024).toFixed(2)} MB`],
+    ['最近下载 / 校验恢复耗时', `${ms(payload?.fetchMs)} / ${ms(payload?.restoreMs)}`],
+    ['最近一次读取故障（历史）', failure],
+  ];
+}
