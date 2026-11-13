@@ -62,6 +62,11 @@ async function main() {
     assert.throws(() => { first.world.entities.character.stats.health = -1; }, TypeError);
     const mutable = await store.loadWorld(world.id); mutable.world.entities.character.name = 'private mutation';
     assert.notStrictEqual(first.world.entities.character.name, mutable.world.entities.character.name);
+    const warmStats = store.readViewStats();
+    assert.deepStrictEqual([warmStats.requests, warmStats.completed, warmStats.failed, warmStats.cacheHits, warmStats.payloadLoads], [2, 2, 0, 1, 1]);
+    assert(warmStats.lastPayload.bytes > 0); assert(warmStats.lastPayload.fetchMs >= 0); assert(warmStats.lastPayload.restoreMs >= 0);
+    assert(warmStats.duration.totalMs >= warmStats.duration.lastMs);
+    warmStats.lastPayload.bytes = -1; assert(store.readViewStats().lastPayload.bytes > 0);
     pass('warm reads reuse a deeply immutable view; normal runtime loads stay detached and mutable');
 
     api = await createDurableCommandApiServer({ store, rateLimitNow: () => 0 });
@@ -71,6 +76,9 @@ async function main() {
     for (const response of views) { assert.equal(response.status, 200); assert.deepStrictEqual(response.body.data, playerStateView(first.world, first.revision, 'one')); }
     assert.equal((await request(port, base + '/players/two/state')).status, 403);
     assert.equal((await request(port, base + '/admin/summary')).status, 403);
+    const adminDiagnostics = await request(port, base + '/admin/operations', { token: 'admin-secret-token' });
+    assert.equal(adminDiagnostics.status, 200); assert(adminDiagnostics.body.data.reads.cacheHits >= 1);
+    assert(!JSON.stringify(adminDiagnostics.body.data.reads).includes('secret'));
     assert.equal(digest(first.world), originalDigest);
     pass('concurrent HTTP views preserve projection, ownership, roles and cached account immutability');
 
@@ -83,8 +91,11 @@ async function main() {
     const saved = await raw.query(`SELECT envelope FROM ${q}.world_saves WHERE world_id=$1 AND revision=2`, [world.id]);
     await raw.query(`UPDATE ${q}.world_saves SET envelope=jsonb_set(envelope,'{world,name}','"corrupt"'::jsonb) WHERE world_id=$1 AND revision=2`, [world.id]);
     await assert.rejects(store.loadWorldView(world.id), { code: 'WORLD_DB_CORRUPT_RECORD' });
+    assert.equal(store.readViewStats().lastFailure.kind, 'corrupt_checkpoint');
+    assert.equal(store.readViewStats().lastFailure.phase, 'restore');
     await raw.query(`UPDATE ${q}.world_saves SET envelope=$2::jsonb WHERE world_id=$1 AND revision=2`, [world.id, JSON.stringify(saved.rows[0].envelope)]);
     assert.equal((await store.loadWorldView(world.id)).revision, 2);
+    assert.equal(store.readViewStats().lastFailure.kind, 'corrupt_checkpoint', 'recovery retains the last failure as history');
     pass('SQL row changes invalidate warm data even with unchanged revision and checksum; corruption is rejected');
 
     await raw.query(`ALTER TABLE ${q}.world_saves RENAME TO unavailable_saves`); renamed = true;
@@ -118,11 +129,15 @@ async function main() {
 
     const cold = reader();
     const concurrent = Promise.all(Array.from({ length: 4 }, () => cold.store.loadWorldView(world.id)));
-    await cold.wait(); cold.release();
+    await cold.wait();
+    assert.equal(cold.store.readViewStats().active, 4);
+    cold.release();
     const results = await concurrent;
     assert.deepStrictEqual(cold.counts(), { heads: 4, payloads: 1 });
     for (const value of results) assert.strictEqual(value, results[0]);
     assert.deepStrictEqual(results[0], await store.loadWorld(world.id));
+    const sharedStats = cold.store.readViewStats();
+    assert.deepStrictEqual([sharedStats.requests, sharedStats.completed, sharedStats.active, sharedStats.peakActive, sharedStats.sharedLoads, sharedStats.payloadLoads], [4, 4, 0, 4, 3, 1]);
     pass('four cold readers each check a fresh SQL head but transfer and validate the payload only once');
 
     const failed = reader(4, true);
@@ -131,8 +146,11 @@ async function main() {
     failed.release();
     for (const result of await failures) { assert.equal(result.status, 'rejected'); assert.equal(result.reason.code, 'WORLD_DB_TIMEOUT'); }
     assert.equal(failed.counts().payloads, 1);
+    assert.equal(failed.store.readViewStats().failed, 4); assert.equal(failed.store.readViewStats().active, 0);
+    assert.equal(failed.store.readViewStats().lastFailure.kind, 'timeout');
     assert.equal((await failed.store.loadWorldView(world.id)).revision, 3);
     assert.equal(failed.counts().payloads, 2);
+    assert.equal(failed.store.readViewStats().completed, 1); assert.equal(failed.store.readViewStats().lastFailure.kind, 'timeout');
     pass('a shared SQL payload timeout rejects every reader and is discarded so the next read can recover');
 
     const race = reader(1), oldRead = race.store.loadWorldView(world.id);
@@ -150,6 +168,7 @@ async function main() {
     await closing.wait(); const closed = closing.store.close(); closing.release();
     assert.equal((await inFlight).revision, 4); await closed;
     await assert.rejects(closing.store.loadWorldView(world.id), { code: 'WORLD_DB_CLOSED' });
+    assert.equal(closing.store.readViewStats().active, 0); assert.equal(closing.store.readViewStats().lastFailure.kind, 'closed');
     pass('close drains pending shared payload work and denies all subsequent reads');
 
     const limited = reader(1, false, { maxConnections: 1, connectionTimeoutMillis: 500 });
@@ -160,6 +179,10 @@ async function main() {
     const unavailable = await request(limitedPort, base + '/players/one/state');
     assert.equal(unavailable.status, 503); assert.equal(unavailable.body.error, 'service_unavailable');
     assert(!JSON.stringify(unavailable.body).includes('timeout'));
+    // The local acquisition deadline and the pg pool timeout race: either can
+    // produce the safe 503 above, and diagnostics preserve the actual outcome.
+    assert(['unavailable', 'timeout'].includes(limited.store.readViewStats().lastFailure.kind));
+    assert.equal(limited.store.readViewStats().lastFailure.phase, 'ready');
     limited.release(); await held;
     assert.equal((await limited.store.loadWorldView(world.id)).revision, 4);
     await limitedApi.close(); limitedApi = null;

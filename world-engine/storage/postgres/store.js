@@ -1,5 +1,7 @@
 'use strict';
 const crypto = require('crypto');
+const { performance } = require('node:perf_hooks');
+const { createReadDiagnostics } = require('./read-diagnostics');
 const { normalizePostgresConfig, safePostgresConfig, databaseError, integer } = require('./config');
 const { MIGRATIONS, checkMigrationHistory } = require('./migrations');
 const { createCommandQueueOperations, readPendingCapacity } = require('./command-queue');
@@ -19,6 +21,7 @@ function createPostgresDatabaseStore(options = {}) {
     application_name: 'phyrex-world-engine', statement_timeout: config.statementTimeoutMillis, lock_timeout: config.lockTimeoutMillis });
   const schema = `"${config.schema}"`;
   let ready = null, closing = false, closePromise = null, poolErrors = 0, readView = null, readViewLoad = null;
+  const readDiagnostics = createReadDiagnostics();
   pool.on('error', () => { poolErrors += 1; });
   const leases = createClientLeaseManager(pool, config);
   function assertOpen() { if (closing) throw databaseError('CLOSED', 'PostgreSQL store is closed'); }
@@ -156,38 +159,50 @@ function createPostgresDatabaseStore(options = {}) {
   // One immutable checkpoint per store, for HTTP projections only. Every call
   // still opens a fresh SQL snapshot; there is no time-based authorization cache.
   async function loadWorldView(worldId) {
-    textId(worldId, 'worldId');
+    const observation = readDiagnostics.begin();
+    let phase = 'ready';
     try {
+      textId(worldId, 'worldId');
       await ensureReady();
-      return await transaction(async client => {
+      const value = await transaction(async client => {
+        phase = 'head';
         const selected = await client.query(`SELECT s.sequence, s.world_id, s.revision, s.payload_digest,
           s.xmin::text AS row_version, s.ctid::text AS row_location FROM ${schema}.worlds w
           JOIN ${schema}.world_saves s ON s.world_id=w.world_id AND s.sequence=w.latest_sequence WHERE w.world_id=$1`, [worldId]);
         const row = selected.rows[0];
-        if (!row) { readView = null; return null; }
+        if (!row) { readView = null; phase = 'commit'; return null; }
         // xmin/ctid also invalidate a changed SQL row even if its revision and
         // digest were left unchanged. Restores and corruption cannot reuse it.
         const key = JSON.stringify(row);
-        if (readView?.key === key) return readView.value;
+        if (readView?.key === key) { observation.source('cache'); phase = 'commit'; return readView.value; }
         // Each reader has already checked the row in its own SQL snapshot.
         // Equal physical row identities may share payload work, never an auth
         // result or a different revision. Keep only one pending entry per store.
-        if (readViewLoad?.key === key) return readViewLoad.promise;
+        if (readViewLoad?.key === key) {
+          observation.source('shared'); phase = 'shared';
+          const value = await readViewLoad.promise; phase = 'commit'; return value;
+        }
+        observation.source('payload'); phase = 'payload';
         const entry = { key, promise: null };
         entry.promise = (async () => {
+          const started = performance.now();
           const result = await client.query(`SELECT sequence, world_id, revision, tick, save_schema, request_id,
             request_hash, payload_digest, saved_at, archived_at, archived_metadata, envelope::text AS envelope_json
             FROM ${schema}.world_saves WHERE world_id=$1 AND sequence=$2`, [worldId, row.sequence]);
           if (result.rows.length !== 1) throw databaseError('CORRUPT_RECORD', 'Missing current checkpoint');
+          const fetched = performance.now(); phase = 'restore';
           const value = freezeReadView(restoreReadView(result.rows[0]));
+          readDiagnostics.payload({ bytes: typeof result.rows[0].envelope_json === 'string' ? Buffer.byteLength(result.rows[0].envelope_json, 'utf8') : 0,
+            fetchMs: fetched - started, restoreMs: performance.now() - fetched });
           if (!closing) readView = { key, value };
           return value;
         })();
         readViewLoad = entry;
-        try { return await entry.promise; }
+        try { const value = await entry.promise; phase = 'commit'; return value; }
         finally { if (readViewLoad === entry) readViewLoad = null; }
       }, true);
-    } catch (error) { readView = null; throw error; }
+      observation.finish({ missing: value === null }); return value;
+    } catch (error) { observation.finish({ error, phase }); readView = null; throw error; }
   }
   async function listWorlds(listOptions = {}) {
     const limit = integer(listOptions.limit, 100, 1, 1000, 'world limit');
@@ -353,7 +368,7 @@ function createPostgresDatabaseStore(options = {}) {
     ...createMaintenanceOperations({ transaction, ensureReady, schema }),
     getCheckpointRequest,
     migrate, saveWorld, loadWorld, loadWorldView, getWorldHead, listWorlds, enqueueCommand, getCommand, listCommands, listPendingCommands,
-    appendEvent, listEvents, summary, close });
+    appendEvent, listEvents, summary, readViewStats: readDiagnostics.snapshot, close });
 }
 function freezeReadView(value) {
   const pending = [value], seen = new Set();

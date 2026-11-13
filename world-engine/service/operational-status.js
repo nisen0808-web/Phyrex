@@ -1,4 +1,5 @@
 'use strict';
+const { FAILURE_KINDS, READ_PHASES, COUNTERS } = require('../storage/postgres/read-diagnostics');
 
 const statuses = new Set(['starting', 'running', 'busy', 'retrying', 'blocked', 'idle', 'closing', 'closed', 'stopped']);
 const failures = new Set(['heartbeat_stale', 'worker_failed', 'database_unavailable', 'revision_conflict', 'runtime_failed']);
@@ -31,4 +32,14 @@ function serviceStatusView(value) {
     },
   };
 }
-module.exports = { serviceStatusView };
+function readDiagnosticsView(value) {
+  if (!value || typeof value !== 'object') return null;
+  const ms = value => Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER ? Math.round(value * 1000) / 1000 : null;
+  return { scope: 'adapter', ...Object.fromEntries(COUNTERS.map(key => [key, count(value[key])])),
+    duration: { lastMs: ms(value.duration?.lastMs), maxMs: ms(value.duration?.maxMs), totalMs: ms(value.duration?.totalMs) },
+    lastPayload: value.lastPayload ? { bytes: count(value.lastPayload.bytes), fetchMs: ms(value.lastPayload.fetchMs), restoreMs: ms(value.lastPayload.restoreMs) } : null,
+    lastFailure: value.lastFailure ? { kind: FAILURE_KINDS.includes(value.lastFailure.kind) ? value.lastFailure.kind : 'unknown',
+      phase: READ_PHASES.includes(value.lastFailure.phase) ? value.lastFailure.phase : 'ready', ageMs: ms(value.lastFailure.ageMs) } : null,
+  };
+}
+module.exports = { serviceStatusView, readDiagnosticsView };

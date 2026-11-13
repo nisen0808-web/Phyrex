@@ -10,7 +10,7 @@ const { validateSession } = require('./account-session-engine');
 const { canAccessPlayer, isPrivileged, requirePermission, requireSession } = require('./api-permission-engine');
 const { createFixedWindowRateLimiter } = require('./request-rate-limit-engine');
 const { createConsoleAssets, serveConsoleAsset } = require('../service/console-assets');
-const { serviceStatusView } = require('../service/operational-status');
+const { serviceStatusView, readDiagnosticsView } = require('../service/operational-status');
 
 const DEFAULT_DURABLE_COMMAND_API_OPTIONS = Object.freeze({
   maxBodyBytes: 64 * 1024,
@@ -235,9 +235,14 @@ async function handleRequest(req, res, store, auditStore, options, audit) {
         const queue = await store.getCommandQueue(route.worldId, { expectedWorldRevision: context.revision });
         if (route.kind === 'operations') {
           const service = serviceStatusView(options.serviceStatus?.());
+          let reads = null;
+          // Diagnostics cannot replace a successfully authorized operation with
+          // a new failure when a custom adapter does not implement telemetry.
+          try { if (typeof store.readViewStats === 'function') reads = readDiagnosticsView(store.readViewStats()); } catch (_) {}
           return writeJson(res, 200, { ok: true, data: {
             worldId: route.worldId, revision: context.revision, tick: context.world.tick,
             service, queue: commandQueueView(queue), audit: options.auditStats(), requests: options.requestStats(),
+            reads,
           } });
         }
         return writeJson(res, 200, { ok: true, data: commandQueueView(queue) });
