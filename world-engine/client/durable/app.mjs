@@ -1,5 +1,5 @@
 import { ConsoleSession } from '/console/session.mjs';
-import { actionNames, actionDescriptions, displayName, itemName, itemDescription, receiptType, receiptText, waitingReceiptId, nextStep, operationalMessage } from '/console/guide.mjs';
+import { actionNames, actionDescriptions, displayName, itemName, itemDescription, receiptType, receiptText, waitingReceiptId, nextStep, operationalMessage, readDiagnosticsRows } from '/console/guide.mjs';
 
 const $ = id => document.getElementById(id);
 let storage;
@@ -20,7 +20,7 @@ const errorText = {
   world_not_found: '此服务没有这个世界，请核对世界 ID。', player_not_found: '找不到该玩家，请核对玩家 ID。',
   connection_unknown: '连接中断或服务正在唤醒，请稍后重试。若有待确认指令，请保留原编号。',
   pending_confirmation: '先按原编号确认上一条指令，再提交新的行动。',
-  service_unavailable: '引擎暂时不能接收指令。稍后刷新或按原编号重试。',
+  service_unavailable: '引擎暂时无法完成请求。稍后刷新；已有待确认指令请按原编号重试。',
   rate_limited: '请求过于频繁，请稍后再试。', command_queue_full: '世界指令队列已满，请稍后重试。',
   player_queue_full: '你的待执行指令过多，请等待结算后重试。',
   pending_storage_unavailable: '浏览器无法保存待确认编号。请允许当前网站使用会话存储后再连接或提交。',
@@ -32,10 +32,11 @@ const errorText = {
 function notice(message, error = false) { $('notice').textContent = message; $('notice').classList.toggle('error', error); }
 function node(tag, text, className) { const el = document.createElement(tag); if (text !== undefined) el.textContent = String(text); if (className) el.className = className; return el; }
 function clearViews() {
+  $('request-progress').hidden = true;
   state = null; lastReceipt = null; historyCursor = null; auditCursor = null; adminLoaded = false;
   shownReceipt = null; waitingId = null; completed.clear(); knownTypes.clear(); viewedReceipts.clear();
   refreshFailed = false; $('stale-state').hidden = true;
-  for (const id of ['character-stats', 'inventory-list', 'shop-list', 'history-list', 'audit-list', 'admin-summary', 'operation-stats', 'receipt-body', 'roster-list', 'neighbor-list', 'people-list', 'organization-list', 'event-list', 'create-location', 'create-species']) $(id).replaceChildren();
+  for (const id of ['character-stats', 'inventory-list', 'shop-list', 'history-list', 'audit-list', 'admin-summary', 'operation-stats', 'read-stats', 'receipt-body', 'roster-list', 'neighbor-list', 'people-list', 'organization-list', 'event-list', 'create-location', 'create-species']) $(id).replaceChildren();
   $('create-name').value = ''; $('creation-help').textContent = ''; $('world-context').textContent = ''; $('roster-count').textContent = '';
   $('operation-status').textContent = ''; $('operation-advice').textContent = ''; $('operation-checked').textContent = '';
   for (const id of ['scope-label', 'updated-at', 'tick', 'revision', 'currency', 'location', 'player-mode', 'character-name', 'character-status', 'character-note', 'receipt-summary']) $(id).textContent = '';
@@ -74,13 +75,18 @@ function updateButtons() {
 async function run(action) {
   if (busy) return;
   busy = true; const generation = epoch; updateButtons();
+  $('request-progress').hidden = false;
+  $('request-progress').textContent = '正在处理当前操作，请稍候…';
+  const progressTimer = setTimeout(() => {
+    if (generation === epoch && busy) $('request-progress').textContent = '仍在等待引擎响应。首次读取存档或免费服务唤醒可能较慢，请勿重复提交。';
+  }, 3000);
   try { await action(); }
   catch (error) {
     if (generation !== epoch || error.code === 'session_changed') return;
     if (error.code === 'player_forbidden') session.disconnect();
     if (!session.connected) clearViews();
     notice((errorText[error.code] || '请求未完成，请稍后再试。') + (error.retryAfter ? ` 建议等待 ${error.retryAfter} 秒。` : ''), true);
-  } finally { if (generation === epoch) { busy = false; updateButtons(); } }
+  } finally { clearTimeout(progressTimer); if (generation === epoch) { busy = false; $('request-progress').hidden = true; updateButtons(); } }
 }
 function pairs(target, data) {
   const fragment = document.createDocumentFragment();
@@ -258,7 +264,7 @@ async function readAudit(before = null) {
 async function admin() {
   // Clear previous privileged data before re-authorizing; never keep an old
   // admin table on screen after access has been revoked.
-  $('admin-content').hidden = true; $('audit-list').replaceChildren(); $('admin-summary').replaceChildren(); $('operation-stats').replaceChildren(); adminLoaded = false; auditCursor = null;
+  $('admin-content').hidden = true; $('audit-list').replaceChildren(); $('admin-summary').replaceChildren(); $('operation-stats').replaceChildren(); $('read-stats').replaceChildren(); adminLoaded = false; auditCursor = null;
   const [summary, operations] = await Promise.all([session.request('/admin/summary'), session.request('/admin/operations')]);
   const queue = operations.queue, service = operations.service, runtime = service?.runtime, message = operationalMessage(operations);
   $('operation-status').textContent = message.title; $('operation-advice').textContent = message.text;
@@ -271,6 +277,7 @@ async function admin() {
     ['运行失败累计（本进程）', runtime?.failures], ['审计失败累计（本进程）', operations.audit.failures],
     ['审计写入数据库', operations.audit.durable ? '是' : '否'], ['最早待处理编号', queue.oldestPendingSequence]]);
   pairs('admin-summary', [['世界步数', summary.tick], ['存档版本', summary.revision], ['存活角色', summary.counts.alive], ['玩家', summary.counts.players], ['待处理指令', `${queue.pendingIsLowerBound ? '≥ ' : ''}${queue.pending}`], ['队列上限', queue.limits.maxPendingCommands]]);
+  pairs('read-stats', readDiagnosticsRows(operations.reads));
   adminLoaded = true; $('admin-content').hidden = false;
   // Audit listing can fail independently. Keep useful runtime diagnostics visible,
   // except when authorization itself has been lost.

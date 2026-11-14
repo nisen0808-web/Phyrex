@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { inventoryFixture, grantItem } = require('./helpers/inventory-fixture');
 const { playerStateView } = require('../core/durable-state-view-engine');
 async function main() {
-  const { nextStep, receiptText, itemName, itemDescription, actionDescriptions, displayName, waitingReceiptId, operationalMessage } = await import('../client/durable/guide.mjs');
+  const { nextStep, receiptText, itemName, itemDescription, actionDescriptions, displayName, waitingReceiptId, operationalMessage, readDiagnosticsRows } = await import('../client/durable/guide.mjs');
   const world = inventoryFixture(), hero = world.entities['hero-one'];
   const state = () => playerStateView(world, 1, 'one');
   assert.equal(nextStep(state()).type, 'work');
@@ -51,6 +51,13 @@ async function main() {
     operation.service.runtime.failureKind = failureKind; assert.equal(operationalMessage(operation).warning, true);
   }
   operation.service.stopping = true; assert.match(operationalMessage(operation).title, /正在停止/);
+  assert.deepEqual(readDiagnosticsRows(null), [['读取诊断', '未接入']]);
+  const diagnosticRows = readDiagnosticsRows({ requests: 5, active: 1, duration: { lastMs: 10, maxMs: 30, totalMs: 60 },
+    lastPayload: { bytes: 1048576, fetchMs: 1000, restoreMs: 100 }, lastFailure: { kind: 'timeout', phase: 'payload', ageMs: 3100 } });
+  assert.equal(diagnosticRows.find(row => row[0] === '平均读取耗时')[1], '15 毫秒');
+  assert(diagnosticRows.some(row => row[1] === '1.00 MB'));
+  assert.match(diagnosticRows.at(-1)[1], /数据库超时.*下载存档.*3 秒前/);
+  assert(!JSON.stringify(readDiagnosticsRows({ duration: { totalMs: Infinity }, lastFailure: { kind: 'secret-token', phase: '__proto__' } })).includes('secret-token'));
   console.log('durable console guide passed: real rules, pending/rejected outcomes, affordable equipment, observer and low-energy recovery');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

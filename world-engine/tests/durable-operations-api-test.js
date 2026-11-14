@@ -6,7 +6,15 @@ const { fixture, request } = require('./helpers/service-fixture');
 const base = '/durable/worlds/service-world/admin/operations';
 const admin = { token: 'admin-secret-token' };
 async function main() {
-  const f = fixture(); let ready = true, failAudit = false, reads = 0;
+  const f = fixture(); let ready = true, failAudit = false, reads = 0, diagnosticReads = 0, diagnosticFailure = false;
+  f.store.readViewStats = () => {
+    diagnosticReads++;
+    if (diagnosticFailure) throw new Error('secret-diagnostic-error');
+    return { requests: 8, completed: 7, failed: 1, active: 0, cacheHits: 4, sharedLoads: 2, payloadLoads: 2,
+      duration: { lastMs: 1.2345, totalMs: 45, maxMs: 20 }, token: 'secret-token',
+      lastPayload: { bytes: 4096, fetchMs: 4, restoreMs: 5, envelope: 'secret-world' },
+      lastFailure: { kind: 'timeout', phase: 'payload', ageMs: 12, message: 'secret-url' } };
+  };
   const originalAppend = f.auditStore.append;
   f.auditStore.append = async row => { if (failAudit) throw new Error('secret-database-url'); return originalAppend(row); };
   const service = await createEngineService({ worldId: f.state.world.id, port: 0, intervalMs: 60000 }, {
@@ -23,6 +31,7 @@ async function main() {
     assert.equal((await request(port, base, { token: null })).status, 401);
     const denied = await request(port, base); assert.equal(denied.status, 403); assert.equal(denied.body.error, 'operations_forbidden');
     assert.equal(reads, 0, 'unauthorized requests must never inspect host telemetry');
+    assert.equal(diagnosticReads, 0);
     assert.equal((await request(port, base + '?include=secrets', admin)).status, 400);
     assert.equal((await request(port, base, { ...admin, method: 'POST' })).status, 405);
     assert.equal((await request(port, base.replace('service-world', 'other'), admin)).status, 404);
@@ -34,8 +43,15 @@ async function main() {
     assert.equal(healthy.body.data.revision, healthy.body.data.queue.revision);
     assert.equal(healthy.body.data.queue.pending, 0);
     assert.deepEqual(healthy.body.data.audit, { failures: 0, durable: true });
+    assert.equal(healthy.body.data.reads.requests, 8);
+    assert.equal(healthy.body.data.reads.duration.lastMs, 1.235);
+    assert.deepEqual(healthy.body.data.reads.lastFailure, { kind: 'timeout', phase: 'payload', ageMs: 12 });
     assert.ok(!JSON.stringify(healthy.body).includes('secret'));
     assert.equal(JSON.stringify(f.state.world), before); assert.equal(f.state.enqueues, 0);
+    diagnosticFailure = true;
+    const noDiagnostics = await request(port, base, admin);
+    assert.equal(noDiagnostics.status, 200); assert.equal(noDiagnostics.body.data.reads, null);
+    diagnosticFailure = false;
     ready = false;
     const blocked = await request(port, base, admin);
     assert.equal(blocked.status, 200, 'diagnostics remain readable when writer is blocked');
@@ -53,9 +69,10 @@ async function main() {
       f.state.world.accounts.byId.operator.roles = ['player']; f.state.revision++;
       return queueRead(...args);
     };
-    const beforeReads = reads;
+    const beforeReads = reads, beforeDiagnosticReads = diagnosticReads;
     assert.equal((await request(port, base, admin)).status, 403);
     assert.equal(reads, beforeReads);
+    assert.equal(diagnosticReads, beforeDiagnosticReads, 'revocation must prevent access to adapter diagnostics too');
   } finally { await service.close(); }
   for (const limitedBy of ['accountReadRateLimit', 'sourceRateLimit']) {
     const api = await createDurableCommandApiServer({ ...fixture(), rateLimitNow: () => 0, [limitedBy]: 1 });
@@ -63,6 +80,7 @@ async function main() {
       await new Promise(resolve => api.server.listen(0, '127.0.0.1', resolve));
       const reply = await request(api.server.address().port, base, admin);
       assert.equal(reply.status, 200); assert.equal(reply.body.data.service, null, 'standalone API must not invent worker health');
+      assert.equal(reply.body.data.reads, null, 'adapters without diagnostics must not invent statistics');
       const limited = await request(api.server.address().port, base, admin);
       assert.equal(limited.status, 429); assert.ok(limited.headers.get('retry-after'));
     } finally { await api.close(); }
